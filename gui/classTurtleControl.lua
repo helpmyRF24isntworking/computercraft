@@ -56,7 +56,10 @@ function TurtleControl:setData(data)
 	if data then
 		self.data = data
 		
-		if self.data.online then
+		if self.data.stuck then
+			self.onlineText = "stuck"
+			self.onlineColor = default.colors.bad
+		elseif self.data.online then
 			self.onlineText = "online"
 			self.onlineColor = default.colors.good
 		else

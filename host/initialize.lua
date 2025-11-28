@@ -55,11 +55,12 @@ parallel.waitForAll(initNode,initStream,initUpdate)
 
 initPosition()
 global.map = ChunkyMap:new(false)
-global.map:setMaxChunks(256) --256 for operational use
+global.map:setMaxChunks(1028) --256 for operational use
 global.map:setLifeTime(-1)
 global.map:load()
 global.loadTurtles()
 global.loadStations()
 loadGroups()
+global.loadAlerts()
 global.monitor = Monitor:new()
 global.display = HostDisplay:new(1,1,global.monitor:getWidth(),global.monitor:getHeight())

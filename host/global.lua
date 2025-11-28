@@ -15,6 +15,7 @@ updates = {}
 
 -- turtles: state, mapLog, mapBuffer
 turtles = {}
+alerts = {}
 
 pos = {}
 taskGroups = {}
@@ -82,6 +83,26 @@ function loadTurtles(fileName)
 	end
 	if not global.turtles then
 		global.turtles = {}
+	end
+end
+
+function saveAlerts(fileName)
+	print("saving alerts")
+	if not fileName then fileName = "runtime/alerts.txt" end
+	local f = fs.open(fileName,"w")
+	f.write(textutils.serialize(global.alerts))
+	f.close()
+end
+
+function loadAlerts()
+	if not fileName then fileName = "runtime/alerts.txt" end
+	local f = fs.open(fileName,"r")
+	if f then
+		global.alerts = textutils.unserialize( f.readAll() )
+		f.close()
+	end
+	if not global.alerts then
+		global.alerts = { open = {}, handled = {} }
 	end
 end
 

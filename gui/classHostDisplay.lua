@@ -43,6 +43,7 @@ function HostDisplay:loadGlobals()
 		self.turtles = global.turtles
 		self.pos = global.pos
 		self.taskGroups = global.taskGroups
+		self.alerts = global.alerts
 	else
 		print("GLOBALS NOT AVAILABLE")
 	end
@@ -80,21 +81,26 @@ function HostDisplay:initialize()
 	
 	local sx, sy = 2, sy+4
 	self.winMain.btnTurtles = Button:new("Turtles", sx, sy, 10, 3)
-	self.winMain.lblRow1 = Label:new(   "      |        |       ", sx+12, sy)
-	self.winMain.lblRow2 = Label:new(   "      |        |       ", sx+12, sy+1)
+	self.winMain.lblRow1 = Label:new(   "      |        |        |", sx+12, sy)
+	self.winMain.lblRow2 = Label:new(   "      |        |        |", sx+12, sy+1)
 	self.winMain.lblTotalHd = Label:new(" total", sx+11, sy)
 	self.winMain.lblTotal =   Label:new("     0", sx+11, sy+1)
 	self.winMain.lblOnlineHd = Label:new(		 "online", sx+20, sy)
 	self.winMain.lblOnline =   Label:new(         "     0", sx+20, sy+1)
-	self.winMain.lblActiveHd = Label:new(				  " active", sx+29, sy)
-	self.winMain.lblActive =   Label:new(				  "      0", sx+29, sy+1)
+	self.winMain.lblActiveHd = Label:new(				  "active", sx+29, sy)
+	self.winMain.lblActive =   Label:new(				  "    0", sx+29, sy+1)
+	self.winMain.lblAlertsHd = Label:new(				  " alerts", sx+38, sy)
+	self.winMain.lblAlerts =   Label:new(				  "      0", sx+38, sy+1)
 
 	self.winMain.btnGlobalReboot = Button:new("reboot", sx+11, sy+2, 7, 1)
 	self.winMain.btnHome = Button:new("home", sx+20, sy+2, 7, 1)
 	self.winMain.btnCancel = Button:new("cancel", sx+29, sy+2, 7, 1)
 	self.winMain.lblTimeVal = Label:new("00:00:00", self:getWidth()-8, sy+2)
-	self.winMain.btnDumpItems = Button:new("dump", sx+38, sy+0, 7, 1)
-	self.winMain.btnRefuel = Button:new("refuel", sx+38, sy+1, 7, 1)
+
+
+	local sx, sy = 2, sy + 12
+	self.winMain.btnDumpItems = Button:new("dump", sx, sy+0, 7, 1)
+	self.winMain.btnRefuel = Button:new("refuel", sx, sy+1, 7, 1)
 
 	self.winMain.btnMap.click = function() return self:displayMap() end
 	self.winMain.btnTurtles.click = function() return self:displayTurtles() end
@@ -129,6 +135,8 @@ function HostDisplay:initialize()
 	self.winMain:addObject(self.winMain.lblOnline)
 	self.winMain:addObject(self.winMain.lblActiveHd)
 	self.winMain:addObject(self.winMain.lblActive)
+	self.winMain:addObject(self.winMain.lblAlertsHd)
+	self.winMain:addObject(self.winMain.lblAlerts)
 	self.winMain:addObject(self.winMain.btnGlobalReboot)
 	self.winMain:addObject(self.winMain.btnHome)
 	self.winMain:addObject(self.winMain.btnCancel)
@@ -283,7 +291,7 @@ function HostDisplay:updateTime()
 			or colors.white
 	local txt = tostring(activeCount)
 	local len = string.len(txt)
-	local txt = string.format("%s%s",string.rep(" ", 7-len),txt)
+	local txt = string.format("%s%s",string.rep(" ", 6-len),txt)
 	winMain.lblActiveHd:setTextColor(activeColor)
 	winMain.lblActive:setText(txt)
 	winMain.lblActive:setTextColor( activeColor )
@@ -303,11 +311,24 @@ function HostDisplay:updateTime()
 	local txt = string.format("%s%s",string.rep(" ", 6-len),txt)
 	winMain.lblTotal:setText(txt)
 
+	local openAlertCount = #self.alerts.open
+	local handledAlertCount = #self.alerts.handled
+	local alertColor = (openAlertCount == 0 and colors.white)
+			or colors.red
+	local txt = tostring(openAlertCount .. "(" .. handledAlertCount .. ")")
+	local len = string.len(txt)
+	local txt = string.format("%s%s",string.rep(" ", 7-len),txt)
+	winMain.lblAlertsHd:setTextColor(alertColor)
+	winMain.lblAlerts:setText(txt)
+	winMain.lblAlerts:setTextColor(alertColor)
+
 	winMain.lblActiveHd:redraw()
 	winMain.lblActive:redraw()	
 	winMain.lblOnlineHd:redraw()
 	winMain.lblOnline:redraw()
 	winMain.lblTotal:redraw()
+	winMain.lblAlertsHd:redraw()
+	winMain.lblAlerts:redraw()
 end
 function HostDisplay:getMapDisplay()
 	return self.mapDisplay

@@ -8,6 +8,7 @@ local nodeUpdate = global.nodeUpdate
 local map = global.map
 local turtles = global.turtles
 local updates = global.updates
+local alerts = global.alerts
 
 local fileExpiration = 1000 * 5 -- 30s
 local files = {}
@@ -251,10 +252,68 @@ local function getStation(id)
 	return result
 end
 
+local function addAlert(msg)
+	local state = msg.data[2]
+	local alert = { lastHandledTime = osEpoch("utc"), time = osEpoch("utc"), id = msg.sender, state = state }
+	alerts.open[#alerts.open+1] = alert
+	global.saveAlerts()
+	return alert
+end
+
+
+local function handleAlert(alert)
+	-- do something with alert
+	-- ask turtles to recover the turtle
+
+	local result = false
+	for id,turtle in pairs(turtles) do
+		local state = turtle.state
+
+		if id ~= alert.id and state.online and not state.task and not state.stuck then
+			-- turtle is available to help
+			local answer, forMsg = node:send(id, {"DO", "recoverTurtle", {alert.id, alert.state.pos}}, true, true, 1)
+			if answer then 
+				if answer.data[1] == "RECEIVED" then 
+					print("Turtle", answer.sender, "accepted recovery task for", alert.state.id)
+					result = true
+					break
+				else
+					print("received other", answer.data[1])
+				end
+			end
+		end
+	end
+
+	if result then 
+		-- remove alert
+		for i,a in ipairs(alerts.open) do
+			if a == alert then
+				table.remove(alerts.open,i)
+				table.insert(alerts.handled, alert)
+				global.saveAlerts()
+				break
+			end
+		end
+	else
+		alert.lastHandledTime = osEpoch("utc")
+	end
+
+end
+
+local function checkAlerts()
+	for i,alert in ipairs(alerts.open) do
+		local timeDiff = osEpoch("utc") - alert.lastHandledTime
+		if timeDiff > 60000 then
+			-- re-handle alert
+			handleAlert(alert)
+		end
+	end
+end
+
 node.onRequestAnswer = function(forMsg)
 	
 	if forMsg.data[1] == "REQUEST_CHUNK" then
-		local start = osEpoch("local")
+		-- local start = osEpoch("local")
 		if map then
 			--print("request_chunk",textutils.serialize(forMsg.data))
 			local chunkId = forMsg.data[2]
@@ -276,7 +335,7 @@ node.onRequestAnswer = function(forMsg)
 		else
 			node:answer(forMsg,{"NO_CHUNK"})
 		end
-		print(osEpoch("local")-start, "id", forMsg.sender, "chunk request", forMsg.data[2])
+		-- print(osEpoch("local")-start, "id", forMsg.sender, "chunk request", forMsg.data[2])
 		
 	elseif forMsg.data[1] == "REQUEST_STATION" then
 		--print(forMsg.sender, "station request")
@@ -294,13 +353,14 @@ node.onRequestAnswer = function(forMsg)
 		-- else
 			-- node:answer(forMsg,{"NO_MAP"})
 		-- end
+	elseif forMsg.data[1] == "ALERT" then
+		local alert = addAlert(forMsg)
+		node:answer(forMsg, {"ALERT_RECEIVED"})
+		--handleAlert(alert)
 	end
 end
 
 
--- node.onReceive = function(msg)
-
--- end
 
 local function checkUpdates()
 	-- function not allowed to yield!!!
@@ -470,6 +530,8 @@ while global.running do
 	refreshState()
 	--print(os.epoch("local")-s, "refreshState")
 	--monitor:checkEvents()
+	checkAlerts()
+
 	if global.printMainTime then 
 		print(osEpoch("local")-start, "done")
 	end

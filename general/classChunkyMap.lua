@@ -54,6 +54,7 @@ function ChunkyMap:new(inMemory)
 	o.chunkLogs = {}
 	o.chunkCount = 0
 	o.unloadedChunks = {}
+	o.recentOres = {}
 	
 	o.lastCleanup = 0
 	-- o.loadedChunks = {}
@@ -68,6 +69,8 @@ function ChunkyMap:new(inMemory)
 	
 	o.minedAreas = {} --TODO
 	o.log = {}
+
+	o.checkOreBlock = function() return false end
 	
 	-- list of turtles: function: getNearestTurtle 
 	
@@ -103,6 +106,9 @@ function ChunkyMap:setSaveInterval(saveInterval)
 	self.saveInterval = saveInterval
 end
 
+function ChunkyMap:setCheckFunction(func)
+	self.checkOreBlock = func
+end
 
 
 function ChunkyMap.xyzToChunkId(x,y,z)
@@ -197,6 +203,32 @@ function ChunkyMap.chunkIdToXYZ(chunkId)
 	return x*chunkSize,y*chunkSize,z*chunkSize
 end
 local chunkIdToXYZ = ChunkyMap.chunkIdToXYZ
+
+function ChunkyMap.xyzToId(x,y,z)
+	-- dont use string IDs for Tables, instead use numbers  
+	-- Cantor pairing - natural numbers only to make it reversable
+	
+	--default.maxHeight - default.minHeight + 64
+	
+	--max length of id = 16 (then its 1.234234e23)
+	-- x,y,z can be up to around 10000,320,10000
+	-- if this is ever an issue, set the coordinates of turtles relative to their home
+	
+	if x < 0 then 
+		x = -x 
+		y = y + 448 
+	end
+	if z < 0 then 
+		z = -z 
+		y = y + 896 
+	end
+	y = y + 64 -- default.minHeight
+	--------------------------------------------------------
+	local temp = 0.5 * ( x + y ) * ( x + y + 1 ) + y
+	return 0.5 * ( temp + z ) * ( temp + z + 1 ) + z 
+	--------------------------------------------------------
+end
+local xyzToId = ChunkyMap.xyzToId
 
 function ChunkyMap:save()
 	for id,chunk in pairs(self.chunks) do
@@ -352,6 +384,13 @@ function ChunkyMap:setData(x,y,z,data,real)
 	local relativeId = xyzToRelativeChunkId(x,y,z)
 	local value = (nameToId[data] or data)
 	
+	-- remember and forget recent ores, consistency not important
+	if data == 0 then
+		self:forgetBlock(chunkId, relativeId)
+	elseif self.checkOreBlock(data) then 
+		self:rememberBlock(chunkId, relativeId, data)
+	end
+
 	-- if self.currentChunkId == chunkId then 
 		-- -- skip accessChunk
 		-- chunk = self.currentChunk
@@ -541,6 +580,40 @@ local function manhattanDistance(sx,sy,sz,ex,ey,ez)
 	return math.abs(ex-sx)+math.abs(ey-sy)+math.abs(ez-sz)
 end
 
+function ChunkyMap:rememberBlock(chunkId, relativeId, blockName)
+	-- internal use for remembering ores
+	local recentOres = self.recentOres
+	if not recentOres[chunkId] then 
+		recentOres[chunkId] = {} 
+	end
+	recentOres[chunkId][relativeId] = blockName
+end
+
+function ChunkyMap:rememberOre(x,y,z ,blockName)
+	-- external use for remembering ores
+	local chunkId = xyzToChunkId(x,y,z)
+	local recentOres = self.recentOres
+	if not recentOres[chunkId] then
+		recentOres[chunkId] = {}
+	end
+	recentOres[chunkId][xyzToRelativeChunkId(x,y,z)] = blockName
+end
+
+function ChunkyMap:forgetBlock(chunkId, relativeId)
+	local recentOres = self.recentOres
+	if recentOres[chunkId] then
+		recentOres[chunkId][relativeId] = nil
+	end
+end
+
+function ChunkyMap:forgetOre(x,y,z)
+	local chunkId = xyzToChunkId(x,y,z)
+	local recentOres = self.recentOres
+	if recentOres[chunkId] then
+		recentOres[chunkId][xyzToRelativeChunkId(x,y,z)] = nil
+	end
+end
+
 function ChunkyMap:findNextBlock(curPos, checkFunction, maxDistance)
 
 	if not maxDistance or maxDistance > default.maxFindDistance then 
@@ -553,6 +626,47 @@ function ChunkyMap:findNextBlock(curPos, checkFunction, maxDistance)
 	local minDist = -1
 	local minPos = nil
 	
+	local curX = curPos.x
+	local curY = curPos.y
+	local curZ = curPos.z
+
+	local sqrt = math.sqrt
+	local type = type
+
+	local minX,minY,minZ = nil,nil,nil
+	
+	-- check recentOres before actually scanning the map
+	local minId = nil
+	local recentOres = self.recentOres
+	for chunkId, chunk in pairs(recentOres) do
+		for relativeId, blockName in pairs(chunk) do
+			if checkFunction(blockName) then
+				local rcx, rcy, rcz = relativeIdToXYZ(relativeId)
+				local x,y,z = chunkIdToXYZ(chunkId)
+				x = x + rcx
+				y = y + rcy
+				z = z + rcz
+				local dist = sqrt( ( x - curX )^2 + ( y - curY )^2 + ( z - curZ )^2 )
+				
+				ct = ct + 1
+				print(blockName, "found", x,y,z)
+								
+				if ( minDist < 0 or dist < minDist) and dist <= maxDistance and dist > 0 then 
+					minDist = dist
+					minId = { chunkId = chunkId, relativeId = relativeId }
+					minX,minY,minZ = x,y,z
+				end
+			end
+		end
+	end
+
+	if minX and minY and minZ then
+		print("FOUND RECENT", os.epoch("local") - start, "ms,", ct, "checks")
+		-- table.remove(recentOres, minId)
+		return vector.new(minX,minY,minZ)
+	end
+
+
 	--TODO: search nearest/current chunk first, then continue with next?
 	-- -> could return a block that isnt actually the nearest though
 	
@@ -609,12 +723,7 @@ function ChunkyMap:findNextBlock(curPos, checkFunction, maxDistance)
 	local cy = curPos.y+halfRange
 	local cz = curPos.z+halfRange
 	
-	local curX = curPos.x
-	local curY = curPos.y
-	local curZ = curPos.z
-	
-	local sqrt = math.sqrt
-	local type = type
+
 	
 	-- chunk based breadth first search 
 	
@@ -627,7 +736,6 @@ function ChunkyMap:findNextBlock(curPos, checkFunction, maxDistance)
     }
 	
 	local rcx,rcy,rcz = xyzToRelativeChunkPos(curX,curY,curZ)
-	local minX, minY, minZ = -rcx, -rcy, -rcz
 	
 	local halfChunk = (default.chunkSize-1)/2
 	local startChunkX,startChunkY,startChunkZ = curX-rcx, curY-rcy, curZ-rcz
@@ -666,6 +774,8 @@ function ChunkyMap:findNextBlock(curPos, checkFunction, maxDistance)
 							( cy+by - curY )^2 + ( cz+bz - curZ )^2 )
 						
 						print(idToName[block] or block, "found", cx+bx,cy+by,cz+bz)
+
+						self:rememberBlock(nearest.id, id, idToName[block] or block)
 						
 						--local dist = 3 -- self:getDistance(curPos, pos)
 						if ( minDist < 0 or dist < minDist) and dist <= maxDistance and dist > 0 then 
@@ -767,32 +877,6 @@ end
 
 
 -- for pathfinding, absolute ids
-
-function ChunkyMap.xyzToId(x,y,z)
-	-- dont use string IDs for Tables, instead use numbers  
-	-- Cantor pairing - natural numbers only to make it reversable
-	
-	--default.maxHeight - default.minHeight + 64
-	
-	--max length of id = 16 (then its 1.234234e23)
-	-- x,y,z can be up to around 10000,320,10000
-	-- if this is ever an issue, set the coordinates of turtles relative to their home
-	
-	if x < 0 then 
-		x = -x 
-		y = y + 448 
-	end
-	if z < 0 then 
-		z = -z 
-		y = y + 896 
-	end
-	y = y + 64 -- default.minHeight
-	--------------------------------------------------------
-	local temp = 0.5 * ( x + y ) * ( x + y + 1 ) + y
-	return 0.5 * ( temp + z ) * ( temp + z + 1 ) + z 
-	--------------------------------------------------------
-end
-local xyzToId = ChunkyMap.xyzToId
 
 function ChunkyMap.posToId(pos)
 	return xyzToId(pos.x, pos.y, pos.z)

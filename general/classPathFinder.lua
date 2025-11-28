@@ -112,6 +112,7 @@ local function calculateCost(current,neighbour)
 		-- it is unknown what type of block is here could be air, could be a chest
 		-- SOLUTION -> recalculate path when it is blocked by a disallowed block
 		cost = cost + 1.5 -- 1.5 fastest
+		-- if map is mostly unknown this is not good
 	end
 	return cost
 end

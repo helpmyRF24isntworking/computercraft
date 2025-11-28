@@ -44,7 +44,6 @@ local mineBlocks = {
 ["minecraft:dirt"]=true,
 ["minecraft:gravel"]=true,
 ["minecraft:sand"]=true,
-["minecraft:bedrock"]=true,
 ["minecraft:flint"]=true,
 ["minecraft:sandstone"]=true,
 ["minecraft:diorite"]=true,
@@ -63,7 +62,27 @@ local mineBlocks = {
 
 local inventoryBlocks = {
 ["minecraft:chest"]=true,
+["minecraft:trapped_chest"]=true,
+["minecraft:ender_chest"]=true, -- ?? 
+["minecraft:shulker_box"]=true,
+["minecraft:white_shulker_box"]=true,
+["minecraft:orange_shulker_box"]=true,
+["minecraft:magenta_shulker_box"]=true,
+["minecraft:light_blue_shulker_box"]=true,
+["minecraft:yellow_shulker_box"]=true,
+["minecraft:lime_shulker_box"]=true,
+["minecraft:pink_shulker_box"]=true,
+["minecraft:gray_shulker_box"]=true,
+["minecraft:light_gray_shulker_box"]=true,
+["minecraft:cyan_shulker_box"]=true,
+["minecraft:purple_shulker_box"]=true,
+["minecraft:blue_shulker_box"]=true,
+["minecraft:brown_shulker_box"]=true,
+["minecraft:green_shulker_box"]=true,
+["minecraft:red_shulker_box"]=true,
+["minecraft:black_shulker_box"]=true,
 ["minecraft:hopper"]=true,
+["minecraft:barrel"]=true,
 }
 --inventoryBlocks = blockTranslation.translateTable(inventoryBlocks)
 
@@ -74,6 +93,7 @@ local disallowedBlocks = {
 ["computercraft:computer_advanced"] = true,
 ["computercraft:wireless_modem_advanced"] = true,
 ["computercraft:monitor_advanced"] = true,
+["minecraft:bedrock"]=true,
 }
 --disallowedBlocks = blockTranslation.translateTable(disallowedBlocks)
 -- local blocks = {
@@ -97,6 +117,27 @@ local oreBlocks = {
 ["minecraft:deepslate_lapis_ore"]=true,
 ["minecraft:copper_ore"]=true,
 ["minecraft:deepslate_copper_ore"]=true,
+["minecraft:emerald_ore"]=true,
+["minecraft:deepslate_emerald_ore"]=true,
+
+-- Nether ores
+["minecraft:nether_gold_ore"]=true,
+["minecraft:nether_quartz_ore"]=true,
+["minecraft:ancient_debris"]=true,
+
+-- Raw ore blocks (storage blocks of raw materials)
+["minecraft:raw_iron_block"]=true,
+["minecraft:raw_copper_block"]=true,
+["minecraft:raw_gold_block"]=true,
+
+-- Amethyst (geodes)
+["minecraft:amethyst_block"]=true, 
+-- ["minecraft:budding_amethyst"]=true, does not drop
+["minecraft:amethyst_cluster"]=true,
+["minecraft:large_amethyst_bud"]=true,
+["minecraft:medium_amethyst_bud"]=true,
+["minecraft:small_amethyst_bud"]=true,
+
 }
 --oreBlocks = blockTranslation.translateTable(oreBlocks)
 
@@ -155,6 +196,7 @@ function Miner:initialize()
 	
 	-- preset chunk request but try not to during initialization
 	self.map.requestChunk = function(chunkId) return self:requestChunk(chunkId) end
+	self.map:setCheckFunction(self.checkOreBlock)
 	--self:requestMap()
 	
 	self:refuel(true)
@@ -238,6 +280,7 @@ function Miner:initOrientation()
 		end
 	end
 	if not newPos then
+		self:sendAlert()
 		self:error("ORIENTATION NOT DETERMINABLE",true)
 		self.orientation = 0
 	else
@@ -367,6 +410,56 @@ function Miner:setStation(station)
 	end
 end
 
+function Miner:sendAlert()
+	-- nofity host to be recovered at pos
+	-- alternatively broadcast distress signal to all turtles and wait for recovery
+	local result = false
+
+	self.stuck = true
+	print("help me stepbro, im stuck D:")
+
+	local state = {}
+	state.id = os.getComputerID()
+	state.label = os.getComputerLabel() or id
+	state.time = osEpoch("utc")
+		
+	state.pos = self.pos
+	state.orientation = self.orientation
+	
+	state.fuelLevel = self:getFuelLevel()
+	state.emptySlots = self:getEmptySlots()
+	
+	if self.taskList.first then
+		state.task = self.taskList.first[1]
+		state.lastTask = self.taskList.last[1]
+	end
+
+	-- why not just use default state communication?
+	-- -> its an important event that needs according handling
+
+	local start = osEpoch("local")
+	if self.node and self.node.host then
+		local answer, forMsg = self.node:send(self.node.host,
+			{"ALERT", state },true,true,5)
+		if answer then
+			if answer.data[1] == "ALERT_RECIEVED" then
+				print(osEpoch("local")-start,"ALERT RECEIVED")
+				result = true
+			else
+				print("received other", answer.data[1])
+			end
+		end
+		--print("no answer")
+	end
+	
+	if not result then 
+		print(osEpoch("local")-start, "ALERT FAILED")
+		-- TODO: broadcast to turtles directly if host is not available
+		-- alternatively continuously resend alert until confirmed
+
+	end
+	return result
+end
 
 function Miner:getCostHome()
 	local result = 0
@@ -435,6 +528,9 @@ function Miner:checkStatus()
 	
 	self.taskList:remove(currentTask)
 end
+
+
+
 
 function Miner:getFuelLevel()
 	return turtle.getFuelLevel()
@@ -696,6 +792,7 @@ function Miner:refuel(simple)
 			refueled = true
 		elseif turtle.getFuelLevel() == 0 then
 			-- ran out of fuel
+			self:sendAlert()
 			self:error("NEED FUEL, STUCK",true)
 		else
 			if not simple then -- for initializing
@@ -1170,6 +1267,8 @@ function Miner:inspect(safe)
 		self:setMapValue(self.lookingAt.x,self.lookingAt.y,self.lookingAt.z,
 		( data and data.name ) or 0)
 		block = data.name
+	elseif checkOreBlock(block) then
+		self.map:rememberOre(self.lookingAt.x,self.lookingAt.y,self.lookingAt.z, block)
 	end
 	return block
 end
@@ -1184,6 +1283,8 @@ function Miner:inspectUp(safe)
 		self:setMapValue(self.pos.x,self.pos.y+1,self.pos.z,
 		( data and data.name ) or 0)
 		block = data.name
+	elseif checkOreBlock(block) then
+		self.map:rememberOre(self.pos.x,self.pos.y+1,self.pos.z, block)
 	end
 	return block
 end
@@ -1198,30 +1299,38 @@ function Miner:inspectDown(safe)
 		self:setMapValue(self.pos.x,self.pos.y-1,self.pos.z,
 		( data and data.name ) or 0)
 		block = data.name
+	elseif checkOreBlock(block) then
+		self.map:rememberOre(self.pos.x,self.pos.y-1,self.pos.z, block)
 	end
 	return block
 end
 function Miner:inspectLeft()
 	local block = self.pos + self.vectors[(orientation-1)%4]
-	local block = self:getMapValue(block.x, block.y, block.z)
-	if block == nil then
+	local name = self:getMapValue(block.x, block.y, block.z)
+	if name == nil then
 		self:turnTo((orientation-1)%4)
 		local hasBlock, data = turtle.inspect()
 		self:setMapValue(block.x, block.y, block.z, 
 		( data and data.name ) or 0)
 		block = data.name
+	elseif checkOreBlock(name) then
+		self.map:rememberOre(block.x, block.y, block.z, name)
+		block = name
 	end
 	return block
 end
 function Miner:inspectRight()
 	local block = self.pos + self.vectors[(orientation+1)%4]
-	local block = self:getMapValue(block.x, block.y, block.z)
-	if block == nil then
+	local name = self:getMapValue(block.x, block.y, block.z)
+	if name == nil then
 		self:turnTo((orientation+1)%4)
 		local hasBlock, data = turtle.inspect()
 		self:setMapValue(block.x, block.y, block.z,
 		( data and data.name ) or 0)
 		block = data.name
+	elseif checkOreBlock(name) then
+		self.map:rememberOre(block.x, block.y, block.z, name)
+		block = name
 	end
 	return block
 end
@@ -1233,18 +1342,23 @@ function Miner:inspectAll()
 	
 	local orientation = self.orientation
 	local hasBlock, data
-	self:inspect()
+	--self:inspect()
 	self:inspectDown()
 	self:inspectUp()
 	
 	-- inspect Front, Left, Behind, Right
 	for i=0,3 do
 		block = self.pos + self.vectors[(orientation+i)%4]
-		if self:getMapValue(block.x, block.y, block.z) == nil then
+		local mapValue = self:getMapValue(block.x, block.y, block.z)
+
+		if mapValue == nil then
 			self:turnTo((orientation+i)%4)
 			hasBlock, data = turtle.inspect()
 			self:setMapValue(block.x, block.y, block.z, 
 			( data and data.name ) or 0)
+		elseif checkOreBlock(mapValue) then
+			-- mark as ore block
+			self.map:rememberOre(block.x, block.y, block.z, mapValue)
 		end
 	end
 	self.taskList:remove(currentTask)
@@ -1572,7 +1686,7 @@ function Miner:mineVein()
 	self.taskList:remove(currentTask)
 end
 
-function Miner:stripMine(rowLength, rows, levels, rowFactor, levelFactor)
+function Miner:stripMine(rowLength, rows, levels, rowFactor, levelFactor, offset)
 	local currentTask = self:addCheckTask({debug.getinfo(1, "n").name}, true)
 	print("stripmining", "rows", rows, "levels", levels)
 
@@ -1580,7 +1694,7 @@ function Miner:stripMine(rowLength, rows, levels, rowFactor, levelFactor)
 
 	local taskState = currentTask.taskState
 	if taskState then
-		rowLength, rows, levels, rowFactor, levelFactor = tableunpack(taskState.args,1,taskState.args.n)
+		rowLength, rows, levels, rowFactor, levelFactor, offset = tableunpack(taskState.args,1,taskState.args.n)
 	else
 		taskState = {
 			stage = 1,
@@ -1593,7 +1707,7 @@ function Miner:stripMine(rowLength, rows, levels, rowFactor, levelFactor)
 				startPos = vector.new(self.pos.x, self.pos.y, self.pos.z),
 				startOrientation = self.orientation,
 			},
-			args = tablepack(rowLength, rows, levels, rowFactor, levelFactor),
+			args = tablepack(rowLength, rows, levels, rowFactor, levelFactor, offset),
 		}
 	end
 	local vars = taskState.vars
@@ -1660,6 +1774,7 @@ function Miner:stripMine(rowLength, rows, levels, rowFactor, levelFactor)
 
 			if not rowFactor then rowFactor = 3 end
 			if not levelFactor then levelFactor = 2 end
+			if not offset then offset = 1 end
 			
 			for currentLevel = vars.currentLevel, levels do
 				vars.currentLevel = currentLevel
@@ -1692,20 +1807,20 @@ function Miner:stripMine(rowLength, rows, levels, rowFactor, levelFactor)
 					end
 					if self.orientation == vars.startOrientation or currentLevel%2 == 0 then
 							self:turnRight() 
-							self:tunnelStraight(1)
+							self:tunnelStraight(offset)
 							self:turnRight()
-							self:tunnelStraight(1)
+							self:tunnelStraight(offset)
 					else
 						if rows%2 == 0 then
-							self:tunnelStraight(1)
+							self:tunnelStraight(offset)
 							self:turnLeft()
-							self:tunnelStraight(1)
+							self:tunnelStraight(offset)
 							self:turnLeft()
 						else
 							self:turnLeft()
-							self:tunnelStraight(1)
+							self:tunnelStraight(offset)
 							self:turnLeft()
-							self:tunnelStraight(1)
+							self:tunnelStraight(offset)
 						end
 					end
 					
@@ -1745,6 +1860,63 @@ function Miner:stripMine(rowLength, rows, levels, rowFactor, levelFactor)
 	self.checkPointer:save(self)
 end
 
+function Miner:getAreaStart(start, finish)
+	-- determine nearest starting position for an area
+
+	local minX = math.min(start.x, finish.x)
+	local minY = math.min(start.y, finish.y)
+	local minZ = math.min(start.z, finish.z)
+	local maxX = math.max(start.x, finish.x)
+	local maxY = math.max(start.y, finish.y)
+	local maxZ = math.max(start.z, finish.z)
+	
+	local corners = {
+		-- 1-4 bottom
+		vector.new(minX, minY, minZ),
+		vector.new(minX, minY, maxZ),
+		vector.new(maxX, minY, minZ),
+		vector.new(maxX, minY, maxZ),
+		-- 5-8 top
+		vector.new(maxX, maxY, maxZ),
+		vector.new(maxX, maxY, minZ),
+		vector.new(minX, maxY, maxZ),
+		vector.new(minX, maxY, minZ),
+		-- 1 is opposite to (id + 4) % 8
+	}
+	
+	local minCost, minId
+	for id,corner in ipairs(corners) do
+		local cost = math.abs(self.pos.x - corner.x) + math.abs(self.pos.y - corner.y) + math.abs(self.pos.z - corner.z)
+		if minCost == nil or cost < minCost then
+			minCost = cost
+			minId = id
+		end
+	end
+	
+	start = corners[minId]
+	finish = corners[((minId+3)%8)+1] -- opposite corner
+
+	-- turn to the correct orientation 
+	-- 	+z = 0	south
+	-- 	-x = 1	west
+	-- 	-z = 2	north
+	-- 	+x = 3 	east
+	local diff = finish - start
+	local orientation
+	if diff.x <= 0 and diff.z > 0 then
+		orientation = 1 
+	elseif diff.x <= 0 and diff.z <= 0 then
+		orientation = 2 
+	elseif diff.x > 0 and diff.z <= 0 then
+		orientation = 3 
+	else
+		orientation = 0 
+	end
+
+	return start, finish, orientation
+
+end
+
 function Miner:mineArea(start, finish) 
 	local currentTask = self:addCheckTask({debug.getinfo(1, "n").name}, true)
 	-- TODO: mine area within start and finish pos
@@ -1769,67 +1941,14 @@ function Miner:mineArea(start, finish)
 
 	if taskState.stage == 1 then
 
-		local minX = math.min(start.x, finish.x)
-		local minY = math.min(start.y, finish.y)
-		local minZ = math.min(start.z, finish.z)
-		local maxX = math.max(start.x, finish.x)
-		local maxY = math.max(start.y, finish.y)
-		local maxZ = math.max(start.z, finish.z)
-		
-		local width = math.abs(start.x - finish.x)
-		local height = math.abs(start.y - finish.y)
-		local depth = math.abs(start.z - finish.z)
-		
-		
-		local corners = {
-			-- 1-4 bottom
-			vector.new(minX, minY, minZ),
-			vector.new(minX, minY, maxZ),
-			vector.new(maxX, minY, minZ),
-			vector.new(maxX, minY, maxZ),
-			-- 5-8 top
-			vector.new(maxX, maxY, maxZ),
-			vector.new(maxX, maxY, minZ),
-			vector.new(minX, maxY, maxZ),
-			vector.new(minX, maxY, minZ),
-			-- 1 is opposite to (id + 4) % 8
-		}
-		
-		local minCost, minId
-		for id,corner in ipairs(corners) do
-			local cost = math.abs(self.pos.x - corner.x) + math.abs(self.pos.y - corner.y) + math.abs(self.pos.z - corner.z)
-			if minCost == nil or cost < minCost then
-				minCost = cost
-				minId = id
-			end
-		end
-		
-		print("start", start,"end",finish)
-		
-		start = corners[minId]
-		finish = corners[((minId+3)%8)+1] -- opposite corner
-		
+		local orientation
+		start, finish, orientation = self:getAreaStart(start, finish)
 		
 		local diff = finish - start
 		local width = math.abs(diff.x)
 		local height = math.abs(diff.y)
 		local depth = math.abs(diff.z)
 		
-		-- turn to the correct orientation 
-		-- 	+z = 0	south
-		-- 	-x = 1	west
-		-- 	-z = 2	north
-		-- 	+x = 3 	east
-		local orientation
-		if diff.x <= 0 and diff.z > 0 then
-			orientation = 1 
-		elseif diff.x <= 0 and diff.z <= 0 then
-			orientation = 2 
-		elseif diff.x > 0 and diff.z <= 0 then
-			orientation = 3 
-		else
-			orientation = 0 
-		end
 		
 		local rowFactor = 3
 		local levelFactor = 2
@@ -1855,6 +1974,8 @@ function Miner:mineArea(start, finish)
 		if not self:navigateToPos(start.x, start.y, start.z) then
 			print("unable to get to area")
 			self:returnHome()
+			-- save checkpoint, tasklist remove
+			-- error? could resume after error?
 		else
 		
 			self:turnTo(orientation)
@@ -1975,6 +2096,148 @@ function Miner:inspectMine()
 	-- useless function
 	self:mineVein()
 	return
+end
+
+
+function Miner:excavateArea(start, finish)
+	-- similar to mineArea, but digs out everything
+	-- works but does a lot of unnecessary inspecting -> slow
+	local currentTask = self:addCheckTask({debug.getinfo(1, "n").name}, true)
+
+	local taskState = currentTask.taskState
+	if taskState then
+		start, finish = tableunpack(taskState.args,1,taskState.args.n)
+	else
+		taskState = {
+			stage = 1,
+			ignorePosition = true,
+			vars = {
+			},
+			args = tablepack(start, finish),
+		}
+	end
+	local vars = taskState.vars
+	currentTask.taskState = taskState
+	self.checkPointer:save(self)
+
+
+	if taskState.stage == 1 then
+
+		local orientation
+		start, finish, orientation = self:getAreaStart(start, finish)
+
+		local diff = finish - start
+		local width = math.abs(diff.x) + 1
+		local height = math.abs(diff.y) + 1
+		local depth = math.abs(diff.z) + 1
+		
+		local rowLength, rows, levels
+		if orientation%2 == 0 then
+			rowLength = depth
+			rows = width
+		else
+			rowLength = width
+			rows = depth
+		end
+		if diff.y < 0 then
+			levels = -height
+		else
+			levels = height
+		end
+		rowLength = rowLength - 1
+
+		print("start", start,"end",finish, "diff", diff, "levels", levels)
+		
+		if not self:navigateToPos(start.x, start.y, start.z) then
+			print("unable to get to area")
+			self:returnHome()
+			-- save checkpoint, tasklist remove
+			-- error? could resume after error?
+			self.checkPointer:save(self) -- next time turtle will try again
+			self:error("UNABLE TO REACH AREA", true)
+		else
+		
+			self:turnTo(orientation)
+			
+			taskState.stage = 2
+			taskState.ignorePosition = true
+			self.checkPointer:save(self)
+
+			local rowFactor, levelFactor, offset = 1, 1, 0
+			self:stripMine(rowLength, rows, levels, rowFactor, levelFactor, offset)
+
+			
+		end
+	end
+
+	-- Stage 2: Execute post-excavation steps
+	if taskState.stage == 2 then
+		self:returnHome()
+		self:condenseInventory()
+		self:dumpBadItems()
+		self:transferItems()
+		--self:getFuel()
+	end 
+
+	self.taskList:remove(currentTask)
+	self.checkPointer:save(self)
+
+end
+
+
+
+function Miner:recoverTurtle(id, pos)
+	-- UNTESTED
+	-- navigate to a turtle at pos, mine, place, reboot
+	local currentTask = self:addCheckTask({debug.getinfo(1, "n").name})
+	print("recoverTurtle", id, "at", pos.x, pos.y, pos.z)
+
+	local result = true
+
+	local startPos = vector.new(self.pos.x, self.pos.y, self.pos.z)
+	local startOrientation = self.orientation
+
+	-- make sure inventory has at least one free slot
+	if self:getEmptySlots() == 0 then
+		self:condenseInventory()
+		if self:getEmptySlots() == 0 then
+			self:dumpBadItems()
+			if self:getEmptySlots() == 0 then
+				-- cannot recover turtle
+				-- self:error("NO FREE INVENTORY SLOTS TO RECOVER TURTLE", true)
+				self:print("NO FREE INVENTORY SLOTS TO RECOVER TURTLE")
+				result = false
+			end
+		end
+	end
+
+	-- somehow ping turtle? make sure its there using low level communication (automatic responses)
+	-- self.node:lookup("turtlename")
+	
+	if not self:navigateToPos(pos.x, pos.y+1, pos.z) then
+		self:error("UNABLE TO REACH TURTLE", true)
+		result = false
+	else
+		-- mine turtle
+		local block = self:inspectDown(true)
+		if block == "computercraft:turtle_normal" or
+		   block == default.turtleName then
+			self:digDown()
+			sleep(1)
+			self:checkMinedTurtle()
+		else
+			print("Block", block)
+			-- self:error("NO TURTLE FOUND TO RECOVER", true)
+			self:print("NO TURTLE FOUND TO RECOVER")
+			result = false
+		end
+	end
+
+	self:navigateToPos(startPos.x, startPos.y, startPos.z)
+	self:turnTo(startOrientation)
+
+	self.taskList:remove(currentTask)
+	return result
 end
 
 --##############################################################

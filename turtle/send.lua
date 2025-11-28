@@ -91,6 +91,7 @@ nodeStream.onRequestStreamData = function(previous)
 		
 		state.pos = miner.pos
 		state.orientation = miner.orientation
+		state.stuck = miner.stuck -- can be nil
 		
 		state.fuelLevel = miner:getFuelLevel()
 		state.emptySlots = miner:getEmptySlots()
