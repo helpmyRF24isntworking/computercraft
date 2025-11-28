@@ -67,7 +67,10 @@ https://tweaked.cc/guide/gps_setup.html
    3.  Add new Stations:  
          ``global.addStation(x, y, z, facing, type)``  
          facing = "north", "west", "south", "east"  
-         type = "turtle" for home and dropoff, "refuel" for refueling
+         type = "turtle" for home and dropoff, "refuel" for refueling   
+   4. optional but recommended: add a refuel queue area   
+         ``global.setRefuelQueue(x, y, z, maxDistance)``  
+         maxDistance like 8, and position a few blocks above the actual refuel stations
 4.  Save Config:  
       ``global.saveConfig()``
 
