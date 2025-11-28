@@ -442,7 +442,7 @@ function Miner:sendAlert()
 		local answer, forMsg = self.node:send(self.node.host,
 			{"ALERT", state },true,true,5)
 		if answer then
-			if answer.data[1] == "ALERT_RECIEVED" then
+			if answer.data[1] == "ALERT_RECEIVED" then
 				print(osEpoch("local")-start,"ALERT RECEIVED")
 				result = true
 			else

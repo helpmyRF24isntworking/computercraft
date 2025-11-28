@@ -129,6 +129,7 @@ nodeStream.onRequestStreamData = function(previous)
 		state.orientation = -1
 		state.fuelLevel = -1
 		state.emptySlots = -1
+		state.stuck = true
 		if global.err then
 			state.lastTask = global.err.func
 			state.task = global.err.text

@@ -201,12 +201,36 @@ function HostDisplay:initialize()
 	
 	-- add turtles window objects
 	self.winTurtles.lblTurtles = Label:new("Turtles",1,1)
+
+	self.winTurtles.filter = {
+		online = true,
+		active = false,
+		stuck = false,
+	}
+	
+	self.winTurtles.chkFilterOnline = CheckBox:new(14,1,"online",self.winTurtles.filter.online)
+	self.winTurtles.chkFilterActive = CheckBox:new(27,1,"active",self.winTurtles.filter.active)
+	self.winTurtles.chkFilterStuck = CheckBox:new(40,1,"stuck",self.winTurtles.filter.stuck)
+
+	self.winTurtles.chkFilterOnline.click = function()
+		self.winTurtles.filter.online = self.winTurtles.chkFilterOnline.active
+	end
+	self.winTurtles.chkFilterActive.click = function()
+		self.winTurtles.filter.active = self.winTurtles.chkFilterActive.active
+	end
+	self.winTurtles.chkFilterStuck.click = function()
+		self.winTurtles.filter.stuck = self.winTurtles.chkFilterStuck.active
+	end
+
 	self.winTurtles.turtleControls = {}
 	self.winTurtles.turtleCt = 0
 	
 	self.winTurtles.refresh = function() self:updateTurtles() end
 	
 	self.winTurtles:addObject(self.winTurtles.lblTurtles)
+	self.winTurtles:addObject(self.winTurtles.chkFilterOnline)
+	self.winTurtles:addObject(self.winTurtles.chkFilterActive)
+	self.winTurtles:addObject(self.winTurtles.chkFilterStuck)
 	
 	-- init groups window
 	self.winGroups.lblName = Label:new("Task Groups",1,1)
@@ -355,21 +379,34 @@ function HostDisplay:updateTurtles()
 		local prvHeight = 1
 		local turtleControls = self.winTurtles.turtleControls
 		for id,data in pairs(self.turtles) do
-			if not turtleControls[id] then 		
-				turtleControls[id] = TurtleControl:new(1,y,data.state,self.node)
-				self.winTurtles:addObject(turtleControls[id])
-				turtleControls[id]:fillWidth()
-				turtleControls[id]:setHostDisplay(self)
-				self.winTurtles.turtleCt = self.winTurtles.turtleCt + 1
-			else
-				if prvHeight > 3 and turtleControls[id]:getHeight() > 3 then
-					y = y - 1
+			
+			local filter = self.winTurtles.filter
+			if filter.online == data.state.online and filter.active == (data.state.task ~= nil)
+				and (filter.stuck == data.state.stuck or (not filter.stuck and data.state.stuck == nil)) then
+
+				if not turtleControls[id] then 		
+					turtleControls[id] = TurtleControl:new(1,y,data.state,self.node)
+					self.winTurtles:addObject(turtleControls[id])
+					turtleControls[id]:fillWidth()
+					turtleControls[id]:setHostDisplay(self)
+					self.winTurtles.turtleCt = self.winTurtles.turtleCt + 1
+				else
+					if prvHeight > 3 and turtleControls[id]:getHeight() > 3 then
+						y = y - 1
+					end
+					turtleControls[id]:setY(y)
+					turtleControls[id]:setData(data.state)
 				end
-				turtleControls[id]:setY(y)
-				turtleControls[id]:setData(data.state)
+				y = y + turtleControls[id]:getHeight()
+				prvHeight = turtleControls[id]:getHeight()
+			else
+				-- remove turtle
+				if turtleControls[id] then
+					self.winTurtles:removeObject(turtleControls[id])
+					turtleControls[id] = nil
+					self.winTurtles.turtleCt = self.winTurtles.turtleCt - 1
+				end
 			end
-			y = y + turtleControls[id]:getHeight()
-			prvHeight = turtleControls[id]:getHeight()
 		end
 		self.winTurtles:redraw()
 	end
