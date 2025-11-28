@@ -104,6 +104,12 @@ function loadAlerts()
 	if not global.alerts then
 		global.alerts = { open = {}, handled = {} }
 	end
+	if not global.alerts.open then
+		global.alerts.open = {}
+	end
+	if not global.alerts.handled then
+		global.alerts.handled = {}
+	end
 end
 
 function saveGroups(fileName)
@@ -212,6 +218,7 @@ function deleteAllStations()
 	end
 	config.stations.turtles = {}
 	config.stations.refuel = {}
+	config.stations.refuelQueue = nil
 	print("all stations deleted")
 end
 
