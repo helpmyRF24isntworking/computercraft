@@ -13,3 +13,10 @@ while true do
 		--print(event,time)
 	end
 end
+
+
+
+
+m = global.miner; m.map:findNextBlock(m.pos, m.checkOreBlock, 8)
+
+m = global.miner; s = vector.new(2229, 68, -2651); e = vector.new(2226, 69, -2647); m:excavateArea(s,e)

@@ -4,8 +4,8 @@ local nameToId = translation.nameToId
 local idToName = translation.idToName
 
 local utilsSerialize = require("utilsSerialize")
-local simpleSerialize = utilsSerialize.serialize
-local simpleUnserialize = utilsSerialize.unserialize
+local binarize = utilsSerialize.binarize
+local unbinarize = utilsSerialize.unbinarize
 
 local default =  {
 	bedrockLevel = -60,
@@ -22,6 +22,7 @@ local default =  {
 	saveInterval = 72000*20,
 }
 
+local maxIndex = default.chunkSize^3
 local chunkSize = default.chunkSize
 local chunkOffsetY = math.ceil(64/default.chunkSize)
 local chunkOffsetX = math.ceil(448/default.chunkSize)
@@ -241,12 +242,9 @@ function ChunkyMap:saveChunk(chunkId)
 	if chunk then
 		local path = default.folder .. chunkId .. ".txt"
 		local f = fs.open(path,"w")
-		--f.write("jooooooooooooooooooooo") 
-		
-			f.write(simpleSerialize(chunk))
-		
-		--f.write(textutils.serialize(self.chunks[chunkId]), true, true)
+		f.write(binarize(chunk, maxIndex))
 		f.close()
+
 		os.pullEvent(os.queueEvent("yield"))
 	end
 	--print("SAVED CHUNK", chunkId)
@@ -265,8 +263,7 @@ function ChunkyMap:loadChunk(chunkId)
 		local path = default.folder .. chunkId .. ".txt"
 		local f = fs.open(path,"r")
 		if f then
-			chunk = simpleUnserialize( f.readAll() )
-			--chunk = textutils.unserialize( f.readAll() )
+			chunk = unbinarize( f.readAll() )
 			self.chunks[chunkId] = chunk
 			f.close()
 			print("READ CHUNK FROM DISK", chunkId)
@@ -649,7 +646,7 @@ function ChunkyMap:findNextBlock(curPos, checkFunction, maxDistance)
 				local dist = sqrt( ( x - curX )^2 + ( y - curY )^2 + ( z - curZ )^2 )
 				
 				ct = ct + 1
-				print(blockName, "found", x,y,z)
+				-- print(blockName, "found", x,y,z)
 								
 				if ( minDist < 0 or dist < minDist) and dist <= maxDistance and dist > 0 then 
 					minDist = dist
@@ -773,7 +770,7 @@ function ChunkyMap:findNextBlock(curPos, checkFunction, maxDistance)
 						local dist = sqrt( ( cx+bx - curX )^2 + 
 							( cy+by - curY )^2 + ( cz+bz - curZ )^2 )
 						
-						print(idToName[block] or block, "found", cx+bx,cy+by,cz+bz)
+						-- print(idToName[block] or block, "found", cx+bx,cy+by,cz+bz)
 
 						self:rememberBlock(nearest.id, id, idToName[block] or block)
 						

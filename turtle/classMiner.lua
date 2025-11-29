@@ -211,12 +211,13 @@ function Miner:finishInitialization()
 	-- split initialization into two parts
 	local currentTask = self:addCheckTask({debug.getinfo(1, "n").name})
 	
-	self:refuel()
 	if not self:requestStation() then
 		-- TODO: load station from settings
 		self:setHome(self.pos.x, self.pos.y, self.pos.z)
 	end
 	self:setStartupPos(self.pos)
+
+	self:refuel()
 
 	
 	local existsCheckpoint = self.checkPointer:existsCheckpoint()
@@ -800,8 +801,13 @@ function Miner:refuel(simple)
 				local startPos = vector.new(self.pos.x, self.pos.y, self.pos.z)
 				local startOrientation = self.orientation
 				if not self:getFuel() then
-					self:returnHome()
-					self:error("NEED FUEL",true) -- -> terminates stripMine etc.
+					if not self:returnHome() and turtle.getFuelLevel() == 0 then
+						-- could not refuel, ran out on the way back home
+						self:sendAlert()
+						self:error("NEED FUEL, STUCK",true)
+					else
+						self:error("NEED FUEL",true) -- -> terminates stripMine etc.
+					end
 				else
 					refueled = true
 					if not self.returningHome then
