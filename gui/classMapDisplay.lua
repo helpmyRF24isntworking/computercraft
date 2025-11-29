@@ -255,7 +255,6 @@ function MapDisplay:setFocus(id)
 end
 
 function MapDisplay:checkUpdates()
-	if not self.prvLogCount then self.prvLogCount = 0 end
 	
 	if self.parent and self.visible then
 		local redraw = false
@@ -272,11 +271,10 @@ function MapDisplay:checkUpdates()
 			end
 		end
 		
-		if #self.map.log > self.prvLogCount then
-			redraw = true
-			--TODO: clear log once in a while
-			self.prvLogCount = #self.map.log
-		end
+		redraw = true
+		--TODO: use chunk._lastChange to determine if redraw is needed
+		-- DO NOT USE MAPLOG to determine redraw
+		
 		if redraw then self:redraw() end
 	end
 end
