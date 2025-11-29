@@ -404,7 +404,7 @@ local function checkUpdates()
 			local entry = mapLog[i]
 			local chunkId = entry[1]
 
-			map:setChunkData(chunkId,entry[2],entry[3],false) -- no logging
+			map:setChunkData(chunkId,entry[2],entry[3],true)
 			if printStatus then
 				print("chunkid,pos,data", chunkId,entry[2],entry[3])
 			end			

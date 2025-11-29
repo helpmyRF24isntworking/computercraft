@@ -189,6 +189,7 @@ end
 
 function TaskGroupSelector:addToGlobal()
 	self.taskGroups[self.taskGroup.id] = self.taskGroup
+	global.saveGroups()
 end
 
 --- RANDOM

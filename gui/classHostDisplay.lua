@@ -467,6 +467,7 @@ function HostDisplay:deleteGroup(id)
 	if self.taskGroups[id] then
 		-- delete from global
 		self.taskGroups[id] = nil
+		global.saveGroups()
 	end
 	for _,groupControl in pairs(self.winGroups.taskGroupControls) do
 		self.winGroups:removeObject(groupControl)

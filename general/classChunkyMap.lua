@@ -351,13 +351,11 @@ end
 function ChunkyMap:setChunkData(chunkId,relativeId,data,real)
 	-- no translation needed -> ids are known so translation should have happenend by now
 	local chunk = self:accessChunk(chunkId,true,real)
-	if chunk then -- and chunk[relativeId] ~= data then -- not really needed here
-		if real then
-			tableinsert(self.log,{chunkId,relativeId,data})
-			--self.log[#self.log]
-			-- better to do it like this?
-			-- self.log[chunkId][relativeId] = data
-		end
+	if chunk then
+		
+		-- no logging for setChunkData -- use setData for logging
+		-- if real then tableinsert(self.log,{chunkId,relativeId,data}) end
+		
 		chunk[relativeId] = data
 	end
 
