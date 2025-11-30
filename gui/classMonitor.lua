@@ -596,4 +596,47 @@ function Monitor:drawFilledBox(x,y,width,height,color)
 	-- self:restoreBackgroundColor()
 end
 
+function Monitor:drawCircle(x,y,radius,color)
+    -- Bresenham / midpoint circle algorithm
+    if not radius or radius <= 0 then return end
+    local w,h = self.width, self.height
+    local cx, cy = math.floor(x), math.floor(y)
+    local r = math.floor(radius + 0.5)
+    local col = toBlit(color)
+
+    local frame = self.frame
+    local function plot(px, py)
+        if px < 1 or px > w or py < 1 or py > h then return end
+        local line = frame[py]
+        if not line then return end
+        line.text[px] = " "
+        line.textColor[px] = col
+        line.backgroundColor[px] = col
+        line.modified = true
+    end
+
+    local dx = r
+    local dy = 0
+    local err = 1 - dx
+
+    while dx >= dy do
+        plot(cx + dx, cy + dy)
+        plot(cx - dx, cy + dy)
+        plot(cx + dx, cy - dy)
+        plot(cx - dx, cy - dy)
+        plot(cx + dy, cy + dx)
+        plot(cx - dy, cy + dx)
+        plot(cx + dy, cy - dx)
+        plot(cx - dy, cy - dx)
+
+        dy = dy + 1
+        if err < 0 then
+            err = err + 2 * dy + 1
+        else
+            dx = dx - 1
+            err = err + 2 * (dy - dx) + 1
+        end
+    end
+end
+
 return Monitor

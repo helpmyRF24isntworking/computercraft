@@ -37,6 +37,7 @@ while global.running do
 	sleep(0.05)
 end
 
+print("display stopped, how?")
 --if pocket then
 --	-- if on pocket, pull events
 --	parallel.waitForAny(

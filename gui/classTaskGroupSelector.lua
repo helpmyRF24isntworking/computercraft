@@ -2,6 +2,7 @@ local Button = require("classButton")
 local Label = require("classLabel")
 local Window = require("classWindow")
 local Frame = require("classFrame")
+local ChoiceSelector = require("classChoiceSelector")
 require("classTaskGroup")
 
 local default = {
@@ -56,38 +57,46 @@ function TaskGroupSelector:initialize()
 	
 	self.frm = Frame:new("new group - "..string.sub(self.taskGroup.id,1,4), 1,1,self.width,self.height,default.borderColor)
 	
-	self.lblGroupSizeTxt = Label:new("group size", 3,3)
-	self.btnDecreaseSize = Button:new("-",19,3,1,1)
-	self.lblGroupSize = Label:new(self.taskGroup.groupSize,21,3)
-	self.btnIncreaseSize = Button:new("+",23,3,1,1)
+	local sx, sy = 41, 3
+	self.lblGroupSizeTxt = Label:new("group size", sx, sy)
+	self.btnDecreaseSize = Button:new("-",sx+2,sy+2,1,1)
+	self.lblGroupSize = Label:new(self.taskGroup.groupSize,sx+4,sy+2)
+	self.btnIncreaseSize = Button:new("+",sx+7,sy+2,1,1)
 	
 	self.btnIncreaseSize.click = function() self:changeGroupSize(1) end
 	self.btnDecreaseSize.click = function() self:changeGroupSize(-1) end
 	
-	self.btnSelectArea = Button:new("select area", 5,11,13,1)
+	sx, sy = 25, 3
+	self.btnSelectTask = Button:new("select task", sx,sy+3,13,1)
+	self.lblTask = Label:new(self.taskName, sx, sy+1)
+	self.btnSelectTask.click = function() return self:selectTask() end
+
+	self.btnSelectArea = Button:new("select area", 6,3,14,1)
 	self.btnSelectArea.click = function() self:selectArea() end
+	
 	
 	self.lblAreaStart = Label:new("start  ",3,13)
 	self.lblAreaEnd = Label:new("end    ", 3, 14)
 
-	self.lblXStart = Label:new("X  " .. "-",3,6)
-	self.lblYStart = Label:new("Y  " .. "-",3,7)
-	self.lblZStart = Label:new("Z  " .. "-",3,8)
+	sx, sy = 3, 5
+	self.lblXStart = Label:new("X   " .. "-",sx,sy)
+	self.lblYStart = Label:new("Y   " .. "-",sx,sy+1)
+	self.lblZStart = Label:new("Z   " .. "-",sx,sy+2)
 	
-	self.lblXFinish = Label:new("-",13,6)
-	self.lblYFinish = Label:new("-",13,7)
-	self.lblZFinish = Label:new("-",13,8)
+	self.lblXFinish = Label:new("-",sx+12,sy)
+	self.lblYFinish = Label:new("-",sx+12,sy+1)
+	self.lblZFinish = Label:new("-",sx+12,sy+2)
 	
 	
-	self.btnFromTop = Button:new("top",5,9,6,1 )
-	self.btnToBottom = Button:new("bottom", 12,9,6,1)
+	self.btnFromTop = Button:new("top",sx+3,sy+4,6,1 )
+	self.btnToBottom = Button:new("bottom", sx+11,sy+4,6,1)
 	self.btnFromTop.click = function() self:setFromTop() end
 	self.btnToBottom.click = function() self:setToBottom() end
 	
 	self.btnSplitArea = Button:new("split area", 3,19,14)
 	self.btnSplitArea.click = function() self:splitArea() end
 	
-	self.btnStartTasks = Button:new("start", 41,9,8,1)
+	self.btnStartTasks = Button:new("start", 42,9,8,1)
 	self.btnStartTasks.click = function() self:startTasks() end
 	self.btnStartTasks:setEnabled(false)
 	
@@ -105,13 +114,16 @@ function TaskGroupSelector:initialize()
 	
 	self:addObject(self.lblGroupSizeTxt)
 	self:addObject(self.lblGroupSize)
-	self:addObject(self.lblAreaStart)
-	self:addObject(self.lblAreaEnd)
+	--self:addObject(self.lblAreaStart)
+	--self:addObject(self.lblAreaEnd)
+
+	self:addObject(self.btnSelectTask)
+	self:addObject(self.lblTask)
 	
 	self:addObject(self.btnIncreaseSize)
 	self:addObject(self.btnDecreaseSize)
 	self:addObject(self.btnSelectArea)
-	self:addObject(self.btnSplitArea)
+	--self:addObject(self.btnSplitArea) -- testing
 	self:addObject(self.btnStartTasks)
 	self:addObject(self.btnFromTop)
 	self:addObject(self.btnToBottom)
@@ -130,10 +142,10 @@ end
 
 function TaskGroupSelector:refreshPos()
 	if self.positions and self.positions[1] then
-		self.lblAreaStart:setText("start  "..self.positions[1].x.." "..self.positions[1].y.." "..self.positions[1].z )
-		self.lblXStart:setText("X  " .. self.positions[1].x)
-		self.lblYStart:setText("Y  " .. self.positions[1].y)
-		self.lblZStart:setText("Z  " .. self.positions[1].z)
+		--self.lblAreaStart:setText("start  "..self.positions[1].x.." "..self.positions[1].y.." "..self.positions[1].z )
+		self.lblXStart:setText("X   " .. self.positions[1].x)
+		self.lblYStart:setText("Y   " .. self.positions[1].y)
+		self.lblZStart:setText("Z   " .. self.positions[1].z)
 	end
 	if self.positions and self.positions[2] then
 		self.lblAreaEnd:setText("end    "..self.positions[2].x.." "..self.positions[2].y.." "..self.positions[2].z )
@@ -145,10 +157,25 @@ end
 function TaskGroupSelector:refresh()
 	self.lblGroupSize:setText(self.taskGroup.groupSize)
 	self:refreshPos()
-	if self.positions and #self.positions == 2 then
+	if self.positions and #self.positions == 2 and self.taskName then
 		self.btnStartTasks:setEnabled(true)
 	else
 		self.btnStartTasks:setEnabled(false)
+	end
+end
+
+function TaskGroupSelector:redraw() -- super override
+	self:refresh()
+	
+	Window.redraw(self) -- super
+	
+	for i=3,9 do
+		self:setCursorPos(23,i)
+		self:blit("|",colors.toBlit(colors.lightGray),colors.toBlit(self.backgroundColor))
+	end
+	for i=3,9 do
+		self:setCursorPos(39,i)
+		self:blit("|",colors.toBlit(colors.lightGray),colors.toBlit(self.backgroundColor))
 	end
 end
 
@@ -235,7 +262,6 @@ function TaskGroupSelector:mineArea()
 	end
 end
 
-
 function TaskGroupSelector:onAreaSelected(x, y, z)
 	print("selected position", #self.positions, x,y,z)
 	if x and z then
@@ -281,11 +307,20 @@ function TaskGroupSelector:onPositionSelected(x,y,z)
 	self.mapDisplay:close()
 end
 	
-function TaskGroupSelector:navigateToPos()
-	if self.node then
-		self.taskName = "navigateToPos"
-		self:selectPosition()
+function TaskGroupSelector:selectTask()
+	local choices = {"mineArea", "excavateArea"}
+	
+	self.choiceSelector = ChoiceSelector:new(self.btnSelectTask.x,self.btnSelectTask.y-4,16,6,choices)
+	self.choiceSelector.onChoiceSelected = function(choice) 
+		self.taskName = choice
+		self.lblTask:setText(self.taskName)
+		self:refresh()
+		self:redraw()
 	end
+	self.parent:addObject(self.choiceSelector)
+	self.parent:redraw()
+	return true -- noBlink
 end
+
 
 return TaskGroupSelector

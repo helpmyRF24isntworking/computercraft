@@ -189,6 +189,35 @@ function HostDisplay:initialize()
 	self.winData:addObject(self.winData.btnPrintMainTime)
 	self.winData:addObject(self.winData.btnPrintSendTime)
 	self.winData:addObject(self.winData.chkSlowReboot)
+
+	-- settings subwindow for main display
+	self.winSettings = Window:new(12,18,30,1)
+	self.winSettings:removeObject(self.winSettings.btnClose)
+	self.winMain:addObject(self.winSettings)
+
+	self.winSettings.lblMsgDelay = Label:new("message interval", 1,1)
+	self.winSettings.btnDecreaseDelay = Button:new("-",21,1,1,1)
+	self.winSettings.lblMsgDelayVal = Label:new(string.format("%.2f",global.minMessageDelay),23,1)
+	self.winSettings.btnIncreaseDelay = Button:new("+",28,1,1,1)
+	
+	self.winSettings.changeMsgDelay = function(increment)
+		global.minMessageDelay = global.minMessageDelay + increment
+		if global.minMessageDelay < 0 then global.minMessageDelay = 0 end
+		self.winSettings.lblMsgDelayVal:setText(string.format("%.2f",global.minMessageDelay))
+		self.winSettings.lblMsgDelayVal:redraw()
+	end
+	self.winSettings.btnIncreaseDelay.click = function() self.winSettings.changeMsgDelay(0.05) end
+	self.winSettings.btnDecreaseDelay.click = function() self.winSettings.changeMsgDelay(-0.05) end
+
+	self.winSettings.lblMsgCount = Label:new("messages:",1,2)
+	self.winSettings.lblMsgCountVal = Label:new("0",12,2)
+
+	self.winSettings:addObject(self.winSettings.lblMsgDelay)
+	self.winSettings:addObject(self.winSettings.btnDecreaseDelay)
+	self.winSettings:addObject(self.winSettings.lblMsgDelayVal)
+	self.winSettings:addObject(self.winSettings.btnIncreaseDelay)
+	self.winSettings:addObject(self.winSettings.lblMsgCount)
+	self.winSettings:addObject(self.winSettings.lblMsgCountVal)
 	
 	-- init hidden windows
 	self.mapDisplay = MapDisplay:new(4,4,32,16)
@@ -345,6 +374,11 @@ function HostDisplay:updateTime()
 	winMain.lblAlertsHd:setTextColor(alertColor)
 	winMain.lblAlerts:setText(txt)
 	winMain.lblAlerts:setTextColor(alertColor)
+
+	-- not sure if this is clean like this...
+	local winSettings = self.winSettings
+	winSettings.lblMsgCountVal:setText(global.messageCount or "0")
+	winSettings.lblMsgCountVal:redraw()
 
 	winMain.lblActiveHd:redraw()
 	winMain.lblActive:redraw()	

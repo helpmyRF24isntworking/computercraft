@@ -2211,7 +2211,7 @@ function Miner:recoverTurtle(id, pos)
 			if self:getEmptySlots() == 0 then
 				-- cannot recover turtle
 				-- self:error("NO FREE INVENTORY SLOTS TO RECOVER TURTLE", true)
-				self:print("NO FREE INVENTORY SLOTS TO RECOVER TURTLE")
+				print("NO FREE INVENTORY SLOTS TO RECOVER TURTLE")
 				result = false
 			end
 		end
@@ -2221,7 +2221,8 @@ function Miner:recoverTurtle(id, pos)
 	-- self.node:lookup("turtlename")
 	
 	if not self:navigateToPos(pos.x, pos.y+1, pos.z) then
-		self:error("UNABLE TO REACH TURTLE", true)
+		print("UNABLE TO REACH TURTLE")
+		--self:error("UNABLE TO REACH TURTLE", true)
 		result = false
 	else
 		-- mine turtle
@@ -2234,7 +2235,7 @@ function Miner:recoverTurtle(id, pos)
 		else
 			print("Block", block)
 			-- self:error("NO TURTLE FOUND TO RECOVER", true)
-			self:print("NO TURTLE FOUND TO RECOVER")
+			print("NO TURTLE FOUND TO RECOVER")
 			result = false
 		end
 	end

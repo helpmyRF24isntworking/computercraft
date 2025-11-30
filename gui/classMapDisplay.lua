@@ -15,6 +15,7 @@ turtleColor = colors.blue,
 aboveColor = colors.purple,
 belowColor = colors.orange,
 homeColor = colors.magenta,
+circleRadius = 16 * 16, -- render distance of 16 chunks
 }
 
 
@@ -48,6 +49,7 @@ function MapDisplay:new(x,y,width,height,map)
 	o.zoomLevel = 1
 	self.displayTurtles = true
 	self.displayHome = true
+	self.displayChunkCircle = true
 	self.focusId = nil
 	self.focusPos = nil
 	
@@ -80,8 +82,9 @@ function MapDisplay:initialize()
 	self.btnZoomOut = Button:new("-",self.width-2,self.height-2,3,3,default.buttonColor)
 	self.btnZoomIn = Button:new("+",self.width-2,self.height-6,3,3,default.buttonColor)
 	self.lblZoom = Label:new(self.zoomLevel..":1", self.width-2, self.height-3)
-	self.btnTurtles = CheckBox:new(1,self.height,"turtles",self.displayTurtles,nil,nil,self.backgroundColor)
+	self.btnTurtles = CheckBox:new(1,self.height-2,"turtles",self.displayTurtles,nil,nil,self.backgroundColor)
 	self.btnHome = CheckBox:new(1,self.height-1,"home",self.displayHome,nil,nil,self.backgroundColor)
+	self.btnCircle = CheckBox:new(1,self.height, default.circleRadius .. " block circle",self.displayChunkCircle,nil,nil,self.backgroundColor)
 	
 	-- self == MapDisplay not button!
 	self.btnLeft.click = function()
@@ -116,6 +119,11 @@ function MapDisplay:initialize()
 		self.displayHome = self.btnHome.active
 		self:redraw()
 	end
+	self.btnCircle.click = function()
+		self.displayChunkCircle = self.btnCircle.active
+		self:redraw()
+	end
+
 	
 	-- self:addObject(self.btnClose)
 	self:addObject(self.btnLeft)
@@ -133,6 +141,7 @@ function MapDisplay:initialize()
 	self:addObject(self.lblZoom)
 	self:addObject(self.btnTurtles)
 	self:addObject(self.btnHome)
+	self:addObject(self.btnCircle)
 	
 end
 
@@ -169,8 +178,9 @@ function MapDisplay:onResize()
 	self.btnZoomIn:setPos(self.width-2, self.height-6)
 	self.lblZoom:setPos(self.width-2, self.height-3)
 	
-	self.btnTurtles:setPos(1,self.height)
+	self.btnTurtles:setPos(1,self.height-2)
 	self.btnHome:setPos(1,self.height-1)
+	self.btnCircle:setPos(1,self.height)
 end
 function MapDisplay:onRemove(parent)
 	self.focusId = nil
@@ -362,6 +372,13 @@ end
 function MapDisplay:redrawOverlay()
 	-- draw turtles and other stuff
 	
+	if self.displayChunkCircle then
+		local pos = global.pos
+		-- draw a single circle around the current position
+		local centerX, centerZ = self:transformPos(pos)
+		local radius = 16*8 / self.zoomLevel
+		self:drawCircle(centerX, centerZ, radius, colors.yellow)
+	end
 	if self.displayAreas then
 		
 	end

@@ -9,6 +9,7 @@ printStatus = false
 printEvents = false
 printSend = false
 printMainTime = false
+minMessageDelay = 0.2 -- min time between messages to turtles
 
 map = {}
 updates = {}

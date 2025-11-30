@@ -240,7 +240,7 @@ end
 function ChunkyMap:saveChunk(chunkId)
 	local chunk = self.chunks[chunkId]
 	if chunk then
-		local path = default.folder .. chunkId .. ".txt"
+		local path = default.folder .. chunkId .. ".bin"
 		local f = fs.open(path,"w")
 		f.write(binarize(chunk, maxIndex))
 		f.close()
@@ -260,7 +260,7 @@ function ChunkyMap:loadChunk(chunkId)
 	--print(textutils.serialize(debug.traceback()))
 	local chunk
 	if not self.inMemory then 
-		local path = default.folder .. chunkId .. ".txt"
+		local path = default.folder .. chunkId .. ".bin"
 		local f = fs.open(path,"r")
 		if f then
 			chunk = unbinarize( f.readAll() )

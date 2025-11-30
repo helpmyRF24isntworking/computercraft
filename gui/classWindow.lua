@@ -95,7 +95,7 @@ function Window:onResize()
 	local o = self.objects.first
 	while o do
 		if o.onResize then o:onResize() end
-		o = self.objects.next
+		o = o._next
 	end
 end
 
@@ -114,14 +114,20 @@ function Window:setY(y)
 	self:onResize()
 end
 function Window:setPos(x,y)
-	self:setX(x)
-	self:setY(y)
+	self.x = x
+	self.y = y
+	self:onResize()
 end
 function Window:getMidX()
 	return self.midX
 end
 function Window:getMidY()
 	return self.midY
+end
+function Window:setSize(width,height)
+	self.width = width
+	self.height = height
+	self:onResize()
 end
 function Window:setWidth(width)
 	self.width = width
@@ -329,6 +335,12 @@ end
 function Window:drawFilledBox(x,y,width,height,color)
 	--if self.parent then
 		self.parent:drawFilledBox(self.x-1+x, self.y-1+y, width, height, color)
+	--end
+end
+
+function Window:drawCircle(centerX,centerY,radius,color)
+	--if self.parent then
+		self.parent:drawCircle(self.x-1+centerX, self.y-1+centerY, radius, color)
 	--end
 end
 

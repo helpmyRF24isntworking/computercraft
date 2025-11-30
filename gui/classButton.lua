@@ -99,4 +99,14 @@ function Button:setDisabledColor(color)
 	self.disabledColor = color
 end
 
+function Button:setWidth(width)
+	self.width = width
+	self:calculateMid()
+end
+
+function Button:setHeight(height)
+	self.height = height
+	self:calculateMid()
+end
+
 return Button

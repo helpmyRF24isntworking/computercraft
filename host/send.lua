@@ -66,7 +66,7 @@ while global.running do
 		global.timerCount = 0
 		end
 	local delay = (osEpoch("local")-startTime) / 1000
-	if delay < 0.2 then delay = 0.2 
+	if delay < global.minMessageDelay then delay = global.minMessageDelay
 	elseif delay > 1 then delay = 1 end
 	--else delay = delay * 2 end
 	--print("delay", delay)
