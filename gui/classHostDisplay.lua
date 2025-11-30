@@ -540,11 +540,11 @@ function HostDisplay:globalCallHome()
 		end
 	end
 end
-function HostDisplay:globalDumpItems()
+function HostDisplay:globalDumpItems(dropAll)
 	-- cancel all running tasks of the turtles
 	if self.node then
 		for id,turtle in pairs(self.turtles) do
-			self.node:send(id, {"DO", "dumpBadItems"}, false, false)
+			self.node:send(id, {"DO", "dumpBadItems", {dropAll}}, false, false)
 		end
 	end
 end

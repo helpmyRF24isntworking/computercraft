@@ -123,7 +123,7 @@ function TaskGroupSelector:initialize()
 	self:addObject(self.btnIncreaseSize)
 	self:addObject(self.btnDecreaseSize)
 	self:addObject(self.btnSelectArea)
-	--self:addObject(self.btnSplitArea) -- testing
+	self:addObject(self.btnSplitArea) -- testing
 	self:addObject(self.btnStartTasks)
 	self:addObject(self.btnFromTop)
 	self:addObject(self.btnToBottom)
@@ -181,8 +181,9 @@ end
 
 function TaskGroupSelector:splitArea()
 	if #self.positions == 2 then
+		self.taskGroup.taskName = self.taskName
 		self.taskGroup:setArea(self.positions[1], self.positions[2])
-		self.taskGroup:splitArea()		
+		self.taskGroup:splitArea()
 	end
 end
 
@@ -202,8 +203,8 @@ end
 
 function TaskGroupSelector:startTasks()
 	if self.node then 
-		self:splitArea()
 		self.taskGroup.taskName = self.taskName
+		self:splitArea()
 		for _,assignment in ipairs(self.taskGroup:getAssignments()) do
 			self.node:send(assignment.turtleId, {
 					"DO", self.taskName, 
@@ -253,13 +254,6 @@ function TaskGroupSelector:selectArea()
 	self.mapDisplay.onPositionSelected = function(objRef,x,y,z) self:onAreaSelected(x,y,z) end
 	self.mapDisplay:selectPosition()
 	self:openMap()
-end
-
-function TaskGroupSelector:mineArea()
-	if self.node then
-		self.taskName = "mineArea"
-		self:selectArea()
-	end
 end
 
 function TaskGroupSelector:onAreaSelected(x, y, z)

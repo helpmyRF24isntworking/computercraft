@@ -55,7 +55,7 @@ parallel.waitForAll(initNode,initStream,initUpdate)
 
 initPosition()
 global.map = ChunkyMap:new(false)
-global.map:setMaxChunks(1028) --256 for operational use
+global.map:setMaxChunks(2048) --256 for operational use
 global.map:setLifeTime(-1)
 global.map:load()
 global.loadTurtles()

@@ -341,8 +341,16 @@ end
 function TaskGroup:splitArea()
 	local start = self.area.start
 	local finish = self.area.finish
-	
-	local areas = self.split3dArea(start,finish,self.groupSize,2,1)
+	local rowMargin, levelMargin = 1, 1
+	if self.taskName == "mineArea" then 
+		rowMargin = 2
+		levelMargin = 1
+	elseif self.taskName == "excavateArea" then
+		rowMargin = 0
+		levelMargin = 0
+	end
+
+	local areas = self.split3dArea(start,finish,self.groupSize,rowMargin,levelMargin)
 	self:assignAreas(areas)
 end
 

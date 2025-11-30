@@ -20,6 +20,7 @@ end
 local function initPosition()
 	local x,y,z = gps.locate()
 	if x and y and z then
+		x, y, z = math.floor(x), math.floor(y), math.floor(z)
 		global.pos = vector.new(x,y,z)
 	else
 		print("gps not working")
@@ -54,11 +55,12 @@ parallel.waitForAll(initNode,initStream,initUpdate)
 
 initPosition()
 global.map = ChunkyMap:new(false)
-global.map:setMaxChunks(256) --256 for operational use
+global.map:setMaxChunks(2048) --256 for operational use
 global.map:setLifeTime(-1)
 global.map:load()
 global.loadTurtles()
 global.loadStations()
+global.loadAlerts()
 loadGroups()
 
 --global.monitor = Monitor:new(term.current())

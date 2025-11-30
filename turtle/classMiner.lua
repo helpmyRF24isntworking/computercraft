@@ -37,6 +37,9 @@ local fuelItems = {
 }
 -- do not translate
 
+-- blocks that can explicitly be mined, without making the world look destroyed
+-- otherwise turtle might decide to navigate through decorative blocks of the base
+-- though this could lead to pathfinding issues if the target pos is a leaf block
 local mineBlocks = {
 ["minecraft:cobblestone"]=true,
 ["minecraft:stone"]=true,
@@ -704,14 +707,14 @@ function Miner:transferItems()
 	self.taskList:remove(currentTask)
 end
 
-function Miner:dumpBadItems()
+function Miner:dumpBadItems(dropAll)
 	--check for bad items and drop them
 	local currentTask = self:addCheckTask({debug.getinfo(1, "n").name})
 	local startSlot = turtle.getSelectedSlot()
 	for i = 0,default.inventorySize-1 do
 		local slot = (i+startSlot-1)%default.inventorySize +1
 		local data = turtle.getItemDetail(slot)
-		if data and mineBlocks[data.name] then
+		if data and (mineBlocks[data.name] or ( dropAll and not fuelItems[data.name])) then
 			--drop items
 			self:select(slot)
 			local ok = turtle.drop(data.count)
@@ -1692,7 +1695,7 @@ function Miner:mineVein()
 	self.taskList:remove(currentTask)
 end
 
-function Miner:stripMine(rowLength, rows, levels, rowFactor, levelFactor, offset)
+function Miner:stripMine(rowLength, rows, levels, rowFactor, levelFactor, offset, noInspect)
 	local currentTask = self:addCheckTask({debug.getinfo(1, "n").name}, true)
 	print("stripmining", "rows", rows, "levels", levels)
 
@@ -1700,7 +1703,7 @@ function Miner:stripMine(rowLength, rows, levels, rowFactor, levelFactor, offset
 
 	local taskState = currentTask.taskState
 	if taskState then
-		rowLength, rows, levels, rowFactor, levelFactor, offset = tableunpack(taskState.args,1,taskState.args.n)
+		rowLength, rows, levels, rowFactor, levelFactor, offset, noInspect = tableunpack(taskState.args,1,taskState.args.n)
 	else
 		taskState = {
 			stage = 1,
@@ -1713,7 +1716,7 @@ function Miner:stripMine(rowLength, rows, levels, rowFactor, levelFactor, offset
 				startPos = vector.new(self.pos.x, self.pos.y, self.pos.z),
 				startOrientation = self.orientation,
 			},
-			args = tablepack(rowLength, rows, levels, rowFactor, levelFactor, offset),
+			args = tablepack(rowLength, rows, levels, rowFactor, levelFactor, offset, noInspect),
 		}
 	end
 	local vars = taskState.vars
@@ -1792,10 +1795,10 @@ function Miner:stripMine(rowLength, rows, levels, rowFactor, levelFactor, offset
 				for currentRow = vars.currentRow, rows do
 					vars.currentRow = currentRow
 					self.checkPointer:save(self) -- perhaps at start of for-loop
-					self:tunnelStraight(rowLength)
+					self:tunnelStraight(rowLength, noInspect)
 					if currentRow < rows then
 						self:turnTo(vars.rowOrientation + vars.tunnelDirection)
-						self:tunnelStraight(rowFactor)
+						self:tunnelStraight(rowFactor, noInspect)
 						if currentRow%2 == 1 then
 							self:turnTo(vars.rowOrientation-2)
 						else
@@ -1807,26 +1810,26 @@ function Miner:stripMine(rowLength, rows, levels, rowFactor, levelFactor, offset
 				if currentLevel < levels then
 					-- move up
 					if positiveLevel then
-						self:tunnelUp(levelFactor)
+						self:tunnelUp(levelFactor, noInspect)
 					else
-						self:tunnelDown(levelFactor)
+						self:tunnelDown(levelFactor, noInspect)
 					end
 					if self.orientation == vars.startOrientation or currentLevel%2 == 0 then
 							self:turnRight() 
-							self:tunnelStraight(offset)
+							self:tunnelStraight(offset, noInspect)
 							self:turnRight()
-							self:tunnelStraight(offset)
+							self:tunnelStraight(offset, noInspect)
 					else
 						if rows%2 == 0 then
-							self:tunnelStraight(offset)
+							self:tunnelStraight(offset, noInspect)
 							self:turnLeft()
-							self:tunnelStraight(offset)
+							self:tunnelStraight(offset, noInspect)
 							self:turnLeft()
 						else
 							self:turnLeft()
-							self:tunnelStraight(offset)
+							self:tunnelStraight(offset, noInspect)
 							self:turnLeft()
-							self:tunnelStraight(offset)
+							self:tunnelStraight(offset, noInspect)
 						end
 					end
 					
@@ -2010,13 +2013,15 @@ function Miner:mineArea(start, finish)
 end
 
 
-function Miner:tunnel(length, direction)
+function Miner:tunnel(length, direction, noInspect)
 	-- throws error
 	local currentTask = self:addCheckTask({debug.getinfo(1, "n").name})
 	
 	local result = true
 	local skipSteps = 0
 	
+	-- noInspect default false: look for and mine ore veins while tunneling
+
 	-- determine direction to mine
 	local directionVector, digFunc
 
@@ -2038,7 +2043,7 @@ function Miner:tunnel(length, direction)
 	for i=1,length do
 		if skipSteps == 0 then 
 		
-			self:inspectMine()
+			if not noInspect then self:inspectMine() end
 			if not digFunc(self) then 
 				-- if two turtles get in each others way, steps could be skipped
 				-- try to navigate to next step, else quit
@@ -2063,7 +2068,7 @@ function Miner:tunnel(length, direction)
 		
 	end
 	
-	self:inspectMine()
+	if not noInspect then self:inspectMine() end
 	
 	if self.pos ~= expectedEndPos then
 		-- try navigating to the position we should be at
@@ -2083,18 +2088,18 @@ function Miner:tunnel(length, direction)
 	
 end
 
-function Miner:tunnelStraight(length)
-	local result = self:tunnel(length,"straight")
+function Miner:tunnelStraight(length, noInspect)
+	local result = self:tunnel(length,"straight", noInspect)
 	return result
 end
 
-function Miner:tunnelUp(height)
-	local result = self:tunnel(height,"up")
+function Miner:tunnelUp(height, noInspect)
+	local result = self:tunnel(height,"up", noInspect)
 	return result
 end
 
-function Miner:tunnelDown(height)
-	local result = self:tunnel(height,"down")
+function Miner:tunnelDown(height, noInspect)
+	local result = self:tunnel(height,"down", noInspect)
 	return result
 end
 
@@ -2170,7 +2175,8 @@ function Miner:excavateArea(start, finish)
 			self.checkPointer:save(self)
 
 			local rowFactor, levelFactor, offset = 1, 1, 0
-			self:stripMine(rowLength, rows, levels, rowFactor, levelFactor, offset)
+			local noInspect = true -- excavate does not need inspecting
+			self:stripMine(rowLength, rows, levels, rowFactor, levelFactor, offset, noInspect)
 
 			
 		end
@@ -2253,8 +2259,12 @@ function Miner:navigateToPos(x,y,z)
 	local currentTask = self:addCheckTask({debug.getinfo(1, "n").name})
 	local result = true
 	local goal = vector.new(x,y,z)
+
+	local safe = true -- always be safe except very close to goal
+	local safeDistance = 3
+
 	if self.pos ~= goal then
-	
+
 		-- calculate how many tries are allowed
 		local diff = self.pos - goal
 		local cost = math.abs(diff.x) + math.abs(diff.y) + math.abs(diff.z)	
@@ -2275,8 +2285,18 @@ function Miner:navigateToPos(x,y,z)
 			repeat 
 				countParts = countParts+1
 				local path = pathFinder:aStarPart(self.pos, self.orientation, goal , self.map, nil)
+				-- check near goal, and path leads to goal
+				-- if path and path[#path].pos == goal and #path < safeDistance + 3 then -- keep eye on this ordeal
+				local movesToGoal = math.abs(self.pos.x - goal.x) + math.abs(self.pos.y - goal.y) + math.abs(self.pos.z - goal.z)
+				if movesToGoal <= safeDistance then
+					if not checkDisallowed(self:getMapValue(goal.x, goal.y, goal.z)) then
+						if safe then print("OVERRIDE SAFETY", movesToGoal) end
+						safe = false
+					end
+				end
+
 				if path then 
-					if not self:followPath(path) then 
+					if not self:followPath(path,safe) then 
 						-- print("NOT SAFE TO FOLLOW PATH")
 						result = false
 					else 
@@ -2305,6 +2325,10 @@ function Miner:navigateToPos(x,y,z)
 										ct = maxTries
 										countParts = maxParts
 										-- get home as near as possible
+										-- navigateHome but without restarting pathfinding on error?
+										-- if self.returningHome == false then 
+										--	self:navigateToPos(self.home.x, self.home.y, self.home.z) 
+										-- end
 										result = false -- return false otherwise will continue with mining at home
 										self:digToPos(self.home.x, self.home.y, self.home.z, true)
 										
@@ -2312,14 +2336,15 @@ function Miner:navigateToPos(x,y,z)
 									
 								else
 									print("GOAL POSSIBLE", goal, #path)
-									result = self:followPath(path)
+									result = self:followPath(path, safe)
 								end
 							end
 						end
 					end
 				else
-					-- change, dont dig home, dig to target
-					if not self:digToPos(goal.x, goal.y, goal.z, true) then
+					-- dig to target
+					safe = movesToGoal > safeDistance
+					if not self:digToPos(goal.x, goal.y, goal.z, safe) then
 						--path was not safe
 						print("NOT SAFE TO DIG TO POS")
 						result = false
@@ -2340,12 +2365,12 @@ function Miner:navigateToPos(x,y,z)
 	return result
 end
 
-function Miner:followPath(path)
+function Miner:followPath(path,safe)
 	-- safe function
 	--print("FOLLOWING PATH TO", path[#path].pos)
 	local currentTask = self:addCheckTask({debug.getinfo(1, "n").name})
 	local result = true
-	local safe = true -- always safe?
+	if safe == nil then safe = true end -- always safe?
 
 	for i,step in ipairs(path) do
 		if step.pos ~= self.pos  then

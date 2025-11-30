@@ -84,7 +84,7 @@ function MapDisplay:initialize()
 	self.lblZoom = Label:new(self.zoomLevel..":1", self.width-2, self.height-3)
 	self.btnTurtles = CheckBox:new(1,self.height-2,"turtles",self.displayTurtles,nil,nil,self.backgroundColor)
 	self.btnHome = CheckBox:new(1,self.height-1,"home",self.displayHome,nil,nil,self.backgroundColor)
-	self.btnCircle = CheckBox:new(1,self.height, default.circleRadius .. " block circle",self.displayChunkCircle,nil,nil,self.backgroundColor)
+	self.btnCircle = CheckBox:new(1,self.height, "128/256 circles",self.displayChunkCircle,nil,nil,self.backgroundColor)
 	
 	-- self == MapDisplay not button!
 	self.btnLeft.click = function()
@@ -377,7 +377,9 @@ function MapDisplay:redrawOverlay()
 		-- draw a single circle around the current position
 		local centerX, centerZ = self:transformPos(pos)
 		local radius = 16*8 / self.zoomLevel
-		self:drawCircle(centerX, centerZ, radius, colors.yellow)
+		self:drawCircle(centerX, centerZ, radius, colors.orange)
+		local radius = 16*16 / self.zoomLevel
+		self:drawCircle(centerX, centerZ, radius, colors.red)
 	end
 	if self.displayAreas then
 		
