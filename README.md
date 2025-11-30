@@ -58,7 +58,7 @@ https://tweaked.cc/guide/gps_setup.html
 1. Place the Host-Computer with a Wireless Modem and Monitor next to it
    ( I recommend the monitors facing south, so the map is aligned more intuitively )
 3. Download and run the installation using those commands:  
-   ``pastebin get https://pastebin.com/NaFu674J install``  
+   ``pastebin get https://pastebin.com/Hdj1Lcda install``  
    ``install``
 3. Setup the Stations for the Turtles:
    1. Open lua
