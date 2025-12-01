@@ -80,7 +80,7 @@ nodeUpdate.onRequestAnswer = function(forMsg)
 		local file = files[fileName] 
 		if file then 
 			if not requestedModified or file.modified > requestedModified then
-				nodeupdate:answer(forMsg, { "FILE" , file })
+				nodeUpdate:answer(forMsg, { "FILE" , file })
 				sleep(0)
 			else
 				nodeUpdate:answer(forMsg, { "FILE_UNCHANGED", { name = fileName } })
@@ -194,6 +194,60 @@ nodeUpdate.onRequestAnswer = function(forMsg)
 			sleep(0)
 		end
 		
+	elseif forMsg.data[1] == "HOST_TRANSFER_REQUEST" then
+		-- do we want to accept host transfer? yeah why not
+		nodeUpdate:answer(forMsg, {"HOST_TRANSFER_OK"})
+
+	elseif forMsg.data[1] == "HOST_TRANSFER_PREPARE" then 
+		-- prepare for host transfer
+
+		global.sending = false 			-- stop sending to turtles
+		global.processOnlyUpdate = true -- stop processing other messages
+
+		-- save all current data to disk
+		global.map:save()
+		global.saveConfig() -- optional but whatever
+		global.saveStations()
+		global.saveGroups()
+		global.saveAlerts()
+
+		nodeUpdate:answer(forMsg, {"HOST_TRANSFER_PREPARE_OK"})
+
+	elseif forMsg.data[1] == "HOST_TRANSFER_COMPLETE" then
+		-- notify other nodes that a new host exists
+		local newHost = forMsg.sender
+		local noAck = {}
+		for id, turtle in pairs(turtles) do
+			if id ~= newHost and ( turtle.state and turtle.state.online ) then
+				local noAnswer = false
+				local answer = node:send(id, {"NEW_HOST", newHost}, true, true, 1)
+				if not answer then noAnswer = true end
+				local answer = nodeStream:send(id, {"NEW_HOST", newHost}, true, true, 1)
+				if not answer then noAnswer = true end
+				if noAnswer then
+					noAck[#noAck+1] = id
+				end
+			end
+		end
+		nodeUpdate:answer(forMsg, {"HOST_TRANSFER_COMPLETE_OK", { noAck = noAck }})
+		-- also clear the file cache, could be lots of files
+		files = {}
+		folders = {}
+		foldersLastRead = {}
+
+	elseif forMsg.data[1] == "HOST_TRANSFER_SHUTDOWN" then
+		nodeUpdate:answer(forMsg, {"HOST_TRANSFER_SHUTDOWN_OK"})
+		global.display:terminate()
+		os.shutdown()
+
+	elseif forMsg.data[1] == "HOST_TRANSFER_FAILED" then
+		-- resume normal operations
+		global.sending = true
+		global.processOnlyUpdate = false
+		
+		-- maybe reboot to clear all the received messages in meantime?
+		-- also reclaim all the turtles, so they know this is still host
+		nodeUpdate:answer(forMsg, {"HOST_TRANSFER_FAILED_OK"})
 	end
 end
 
@@ -510,28 +564,30 @@ end
 
 
 while global.running do
+	
 	local start = osEpoch("local")
-	--local s = os.epoch("local")
-	--node:checkEvents()
-	node:checkMessages()
-	--print(os.epoch("local")-s,"events")
-	--s = os.epoch("local")
-	--nodeStream:checkEvents()
-	nodeStream:checkMessages()
-	--print(os.epoch("local")-s,"nodeStream:checkEvents")
-	--s = os.epoch("local")
-	--nodeUpdate:checkEvents()
-	nodeUpdate:checkMessages()
-	--print(os.epoch("local")-s,"nodeUpdate:checkEvents")
-	--s = os.epoch("local")
-	checkUpdates()
-	--print(os.epoch("local")-s,"checkUpdates")
-	--s = os.epoch("local")
-	refreshState()
-	--print(os.epoch("local")-s, "refreshState")
-	--monitor:checkEvents()
-	checkAlerts()
+	
+	if global.processOnlyNodeUpdate then
+		nodeUpdate:checkMessages()
+	else
+		--local s = os.epoch("local")
+		node:checkMessages()
+		--print(os.epoch("local")-s,"events")
+		--s = os.epoch("local")
+		nodeStream:checkMessages()
+		--print(os.epoch("local")-s,"nodeStream:checkEvents")
+		--s = os.epoch("local")
+		nodeUpdate:checkMessages()
+		--print(os.epoch("local")-s,"nodeUpdate:checkEvents")
+		--s = os.epoch("local")
+		checkUpdates()
+		--print(os.epoch("local")-s,"checkUpdates")
+		--s = os.epoch("local")
+		refreshState()
+		--print(os.epoch("local")-s, "refreshState")
+		checkAlerts()
 
+	end
 	if global.printMainTime then 
 		print(osEpoch("local")-start, "done")
 	end

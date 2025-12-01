@@ -1,11 +1,11 @@
 stations = {
   refuelQueue = {
+    maxDistance = 8,
     origin = {
       y = 72,
       x = 2221,
       z = -2653,
     },
-    maxDistance = 8,
   },
   refuel = {
     {
@@ -26,15 +26,6 @@ stations = {
         z = -2651,
       },
     },
-    [ 5 ] = {
-      orientation = 3,
-      occupied = false,
-      pos = {
-        y = 68,
-        x = 2219,
-        z = -2653,
-      },
-    },
     [ 7 ] = {
       orientation = 0,
       occupied = false,
@@ -42,6 +33,15 @@ stations = {
         y = 68,
         x = 2221,
         z = -2655,
+      },
+    },
+    [ 5 ] = {
+      orientation = 3,
+      occupied = false,
+      pos = {
+        y = 68,
+        x = 2219,
+        z = -2653,
       },
     },
   },

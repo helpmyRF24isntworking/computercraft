@@ -51,6 +51,7 @@ function NetworkNode:new(protocol,isHost,skipLookup)
 	o.streamlist = List:new()
 	o.streams = {}
 	o.host = nil
+	o.differentHost = nil
 	o.events = List:new()
 	o.messages = List:new()
 	
@@ -112,6 +113,8 @@ function NetworkNode:hostProtocol()
 		local host = self:lookup(self.protocol,"host",1)
 		if host then 
 			print("protocol already hosted by", host, self.protocol)
+			self.differentHost = host
+			-- still open channel? yes
 		end
 		bluenet.openChannel(self.modem, default.channels.host)
 		-- TODO: notify protocol members so they can set their host if its nil
@@ -120,7 +123,9 @@ end
 
 function NetworkNode:unhostProtocol()
 	-- host and unhost is not really protocol specific
-	bluenet.closeChannel(self.modem, default.channels.host)
+	self.isHost = false
+	-- !!! other protocols might still be hosted though
+	bluenet.closeChannel(self.modem, default.channels.host) 
 end
 
 function NetworkNode:setProtocol(protocol)
@@ -193,6 +198,11 @@ function NetworkNode:beforeReceive(msg)
 		os.reboot()
 	elseif msg.data[1] == "SHUTDOWN" then
 		os.shutdown()
+	elseif msg.data[1] == "NEW_HOST" then
+		self.host = msg.data[2]
+		print("new host set to", self.host, self.protocol)
+		self:answer(msg, {"NEW_HOST_OK"})
+		return true
 	end
 	return nil
 end
@@ -433,7 +443,7 @@ function NetworkNode:listenForAnswer(forMsg,waitTime)
 		if self.onNoAnswer then
 			self.onNoAnswer(forMsg)
 		else
-			print("no answer", forMsg.id, forMsg.data[1])
+			print("no answer", forMsg.id, forMsg.data[1], forMsg.protocol)
 		end
 	end
 	return msg, forMsg

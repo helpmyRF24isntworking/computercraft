@@ -16,7 +16,7 @@ local function catchEvents()
 end
 
 
-while global.running do
+while global.running and global.displaying do
 	--local start = os.epoch("local")
 	monitor:checkEvents()
 	--local t1 = os.epoch("local")-start
@@ -37,7 +37,7 @@ while global.running do
 	sleep(0.05)
 end
 
-print("display stopped, how?")
+print("display stopped, how?", global.running)
 --if pocket then
 --	-- if on pocket, pull events
 --	parallel.waitForAny(

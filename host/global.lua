@@ -1,5 +1,9 @@
 
 running = true
+sending = true -- send 
+displaying = true -- display
+receiving = true -- receive
+processOnlyNodeUpdate = false -- process
 monitor = {}
 display = {}
 node = nil

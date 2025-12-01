@@ -7,8 +7,6 @@ local HostDisplay = require("classHostDisplay")
 require("classChunkyMap")
 require("classTaskGroup")
 
-
-
 local function initNode()
 	global.node = NetworkNode:new("miner",true)
 end
@@ -55,8 +53,6 @@ end
 -- quick boot
 parallel.waitForAll(initNode,initStream,initUpdate)
 
-
-
 initPosition()
 global.map = ChunkyMap:new(false)
 global.map:setMaxChunks(2048) --256 for operational use
@@ -64,10 +60,9 @@ global.map:setLifeTime(-1)
 global.map:load()
 global.loadTurtles()
 global.loadStations()
-loadGroups()
 global.loadAlerts()
+loadGroups()
 
-if not pocket then -- pocket uses shellDisplay
-	global.monitor = Monitor:new()
-	global.display = HostDisplay:new(1,1,global.monitor:getWidth(),global.monitor:getHeight())
-end
+--global.monitor = Monitor:new(term.current())
+--global.display = HostDisplay:new(1,1,global.monitor:getWidth(),global.monitor:getHeight())
+

@@ -22,7 +22,7 @@ local pullEventRaw = os.pullEventRaw
 local type = type
 --local tmr = os.startTimer(updateRate)
 
-while global.running do
+while global.running and global.receiving do
 	--local event = {os.pullEventRaw()}
 	
 	-- !! none of the functions called here can use os.pullEvent !!
