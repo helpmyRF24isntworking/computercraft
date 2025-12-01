@@ -46,7 +46,7 @@ nodeUpdate.onRequestAnswer = function(forMsg)
 		local requestedFile = forMsg.data[2]
 		local requestedModified = requestedFile.modified
 		local fileName = requestedFile.fileName
-		local timeRead = os.epoch("local")
+		local timeRead = osEpoch("utc")
 		print("----sending", fileName .."----")	
 		if not files[fileName] then
 		
@@ -97,7 +97,7 @@ nodeUpdate.onRequestAnswer = function(forMsg)
 		local foldersToSend = {}
 		local missingFolders = {}
 		
-		local timeRead = os.epoch("local")
+		local timeRead = osEpoch("utc")
 		
 		for _,folderName in ipairs(folderNames) do
 		
@@ -120,10 +120,11 @@ nodeUpdate.onRequestAnswer = function(forMsg)
 						
 						local existingFile = existingFiles and existingFiles[fileName]
 						if not existingFile or modified > existingFile.modified then 
-							print("add read", fileName, modified, existingFile and existingFile.modified)
+							-- print("add read", fileName, modified, existingFile and existingFile.modified)
 							filesToSend[fileName] = folders[folderName][fileName]
 						end
-						
+
+						if osEpoch("utc") - timeRead > 1000 then timeRead = osEpoch("utc"); sleep(0) end
 					end
 				else
 					filesToSend = nil
@@ -153,7 +154,8 @@ nodeUpdate.onRequestAnswer = function(forMsg)
 							print("add chg", fileName, modified, existingFile and existingFile.modified)
 							filesToSend[fileName] = folder[fileName]
 						end
-						
+
+						if osEpoch("utc") - timeRead > 1000 then timeRead = osEpoch("utc"); sleep(0) end
 					end
 					-- !! does not detect if files which exist in cache have been deleted
 				else
@@ -188,7 +190,7 @@ nodeUpdate.onRequestAnswer = function(forMsg)
 			nodeUpdate:answer(forMsg, { "FOLDERS_MISSING", missingFolders })
 		end
 		
-		local timeFolders = os.epoch("local")-timeRead
+		local timeFolders = osEpoch("utc")-timeRead
 		print(timeFolders, forMsg.sender, "FOLDERS")	
 		if timeFolders > 50 then 
 			sleep(0)
@@ -202,7 +204,7 @@ nodeUpdate.onRequestAnswer = function(forMsg)
 		-- prepare for host transfer
 
 		global.sending = false 			-- stop sending to turtles
-		global.processOnlyUpdate = true -- stop processing other messages
+		global.processOnlyNodeUpdate = true -- stop processing other messages
 
 		-- save all current data to disk
 		global.map:save()
@@ -242,8 +244,9 @@ nodeUpdate.onRequestAnswer = function(forMsg)
 
 	elseif forMsg.data[1] == "HOST_TRANSFER_FAILED" then
 		-- resume normal operations
+		print("HOST_TRANSFER_FAILED")
 		global.sending = true
-		global.processOnlyUpdate = false
+		global.processOnlyNodeUpdate = false
 		
 		-- maybe reboot to clear all the received messages in meantime?
 		-- also reclaim all the turtles, so they know this is still host

@@ -1,4 +1,6 @@
 
+local osEpoch = os.epoch
+
 local function importFile(fileName, fileData)
 
 	if fs.exists(fileName) then 
@@ -18,12 +20,20 @@ local function handleAnswer(msg,forMsg)
 			print(i, "RECEIVED",msg.data[2].name)
 			importFile(msg.data[2].name, msg.data[2].data)
 		elseif msg.data[1] == "FOLDERS" then
-			
+			local start = osEpoch("utc")
 			for folderName, folder in pairs(msg.data[2]) do
+                if fs.isDir(folderName) then
+                    fs.delete(folderName)
+                end
 				for fileName,file in pairs(folder) do
                     importFile(folderName.."/"..fileName, file.data)
                     i = i + 1
                     print(i, "RECEIVED", folderName.."/"..fileName)
+                    if osEpoch("utc") - start > 1000 then
+                        print("IMPORTED", i, "FILES")
+                        start = osEpoch("utc")
+                        sleep(0)
+                    end
 				end
 			end
 		else
