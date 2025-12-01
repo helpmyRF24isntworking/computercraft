@@ -45,6 +45,7 @@ local allFolders = {
 			"classHostDisplay.lua",
 			"classLabel.lua",
 			"classMapDisplay.lua",
+			"classChoiceSelector.lua",
 
 		}
 	},
@@ -59,14 +60,12 @@ local allFolders = {
 			"main.lua",
 			"receive.lua",
 			"send.lua",
+			"hostTransfer.lua",
 		}
 	},
 	["pocket"] = { 
 		name = "pocket",
 		files = {
-			"startup.lua",
-			"update.lua",
-			"initialize.lua",
 			"shellDisplay.lua",
 		}
 	},

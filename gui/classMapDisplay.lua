@@ -279,6 +279,15 @@ function MapDisplay:checkUpdates()
 				end
 				
 			end
+		elseif pocket then 
+			local x,y,z = gps.locate()
+			if x and y and z then
+				x, y, z = math.floor(x), math.floor(y), math.floor(z)
+				if self.mapMidX ~= x or self.mapMidY ~= y or self.mapMidZ ~= z then
+					self:setMid(x,y,z)
+					redraw = true
+				end
+			end
 		end
 		
 		redraw = true
