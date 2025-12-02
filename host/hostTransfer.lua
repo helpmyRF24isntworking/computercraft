@@ -47,7 +47,17 @@ end
 local function transferFiles(node)
     local result = true
 	local waitTime = 5
-    local folders = { "runtime/map/chunks"}
+    local folders = { "runtime/map/chunks" }
+    -- only for testing purposses update pocket from 0
+    if pocket then
+        folders = { "runtime/map/chunks",
+                    "general",
+                    "gui",
+                    "host",
+                    "pocket",
+                    "turtle",
+                    }
+    end
     local files = {
         "runtime/turtles.txt", 
         "runtime/stations.txt", 
@@ -118,14 +128,16 @@ local function checkForHostTransfer()
 			if answer and answer.data[1] == "HOST_TRANSFER_SHUTDOWN_OK" then
 				print(answer.data[1])
 				print("HOST TRANSFER DONE")
+                return true
 				-- done
 			else
 				print("HOST_TRANSFER_SHUTDOWN_UNSUCCESSFUL", answer and answer.data[1] or "no answer")
+                return false
 			end
 		else 
 			print("HOST_TRANSFER_COMPLETION_UNSUCCESSFUL", answer and answer.data[1] or "no answer")
+            return false
 		end
-		return true
 
 	elseif node.differentHost then 
 		local display = global.display
@@ -175,6 +187,7 @@ local function checkForHostTransfer()
 			return false
 		end
 	end
+    return true
 end
 
-checkForHostTransfer()
+return checkForHostTransfer()

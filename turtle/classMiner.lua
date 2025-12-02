@@ -200,11 +200,11 @@ function Miner:initialize()
 	-- preset chunk request but try not to during initialization
 	self.map.requestChunk = function(chunkId) return self:requestChunk(chunkId) end
 	self.map:setCheckFunction(self.checkOreBlock)
-	--self:requestMap()
 	
+	self:initPosition()
 	self:refuel(true)
 	print("fuel level:", turtle.getFuelLevel())
-	self:initPosition()
+
 	self:initOrientation()
 
 	self.taskList:remove(currentTask)

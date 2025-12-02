@@ -52,6 +52,7 @@ function MapDisplay:new(x,y,width,height,map)
 	self.displayChunkCircle = true
 	self.focusId = nil
 	self.focusPos = nil
+	self.focusPocket = pocket and true or false
 	
 	o:initialize()
 	
@@ -85,7 +86,8 @@ function MapDisplay:initialize()
 	self.btnTurtles = CheckBox:new(1,self.height-2,"turtles",self.displayTurtles,nil,nil,self.backgroundColor)
 	self.btnHome = CheckBox:new(1,self.height-1,"home",self.displayHome,nil,nil,self.backgroundColor)
 	self.btnCircle = CheckBox:new(1,self.height, "128/256 circles",self.displayChunkCircle,nil,nil,self.backgroundColor)
-	
+	self.btnFocusPocket = CheckBox:new(1,self.height-3, "live pos",self.focusPocket,nil,nil,self.backgroundColor)
+
 	-- self == MapDisplay not button!
 	self.btnLeft.click = function()
 		self:scrollLeft()
@@ -123,6 +125,10 @@ function MapDisplay:initialize()
 		self.displayChunkCircle = self.btnCircle.active
 		self:redraw()
 	end
+	self.btnFocusPocket.click = function()
+		self.focusPocket = self.btnFocusPocket.active
+		self:redraw()
+	end
 
 	
 	-- self:addObject(self.btnClose)
@@ -142,6 +148,7 @@ function MapDisplay:initialize()
 	self:addObject(self.btnTurtles)
 	self:addObject(self.btnHome)
 	self:addObject(self.btnCircle)
+	if pocket then self:addObject(self.btnFocusPocket) end
 	
 end
 
@@ -181,6 +188,8 @@ function MapDisplay:onResize()
 	self.btnTurtles:setPos(1,self.height-2)
 	self.btnHome:setPos(1,self.height-1)
 	self.btnCircle:setPos(1,self.height)
+	self.btnFocusPocket:setPos(1,self.height-3)
+	
 end
 function MapDisplay:onRemove(parent)
 	self.focusId = nil
@@ -265,7 +274,14 @@ function MapDisplay:setFocus(id)
 end
 
 function MapDisplay:checkUpdates()
-	
+	local x,y,z
+	if gps and pocket then 
+		x, y, z = gps.locate()
+		if x and y and z then
+			x, y, z = math.floor(x), math.floor(y), math.floor(z)
+			global.pos = vector.new(x,y,z)
+		end
+	end
 	if self.parent and self.visible then
 		local redraw = false
 		if self.focusId then
@@ -279,14 +295,10 @@ function MapDisplay:checkUpdates()
 				end
 				
 			end
-		elseif pocket then 
-			local x,y,z = gps.locate()
-			if x and y and z then
-				x, y, z = math.floor(x), math.floor(y), math.floor(z)
-				if self.mapMidX ~= x or self.mapMidY ~= y or self.mapMidZ ~= z then
-					self:setMid(x,y,z)
-					redraw = true
-				end
+		elseif pocket and self.focusPocket then 
+			if self.mapMidX ~= x or self.mapMidY ~= y or self.mapMidZ ~= z then
+				self:setMid(x,y,z)
+				redraw = true
 			end
 		end
 		

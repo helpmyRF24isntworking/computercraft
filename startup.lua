@@ -72,8 +72,9 @@ os.loadAPI("/runtime/bluenet.lua")
 
 shell.run("runtime/initialize.lua")
 
+local tabGui 
 if pocket then
-	local tabGui = shell.openTab("runtime/shellDisplay.lua")
+	tabGui = shell.openTab("runtime/shellDisplay.lua")
 	multishell.setTitle(tabGui, "GUI")
 end
 
@@ -88,5 +89,8 @@ shell.openTab("runtime/send.lua")
 
 -- can only be done once receiving is running
 -- make its own file: 
-shell.run("runtime/hostTransfer.lua")
-
+-- shell.run("runtime/hostTransfer.lua")
+local transferOk = dofile("runtime/hostTransfer.lua")
+if pocket and transferOk and tabGui then
+	shell.switchTab(tabGui)
+end

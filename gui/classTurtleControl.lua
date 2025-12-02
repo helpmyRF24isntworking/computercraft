@@ -280,6 +280,7 @@ function TurtleControl:refresh()
 		self.lblFuel:setTextColor(self.fuelColor)
 		self.lblFuel:setText("fuel      " .. self.data.fuelLevel)
 		self.lblEmptySlots:setText("slots     " .. self.data.emptySlots.."/16")
+
 		-- 1 tick = 3600 ms
 		-- 1 day = 24000 ticks
 		-- 1 real second = 72000 ms
