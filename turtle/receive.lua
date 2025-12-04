@@ -4,6 +4,7 @@ local nodeStream = global.nodeStream
 local tasks = global.tasks
 local miner = global.miner
 local nodeRefuel = global.nodeRefuel
+local nodeStorage = global.nodeStorage
 local config = config
 
 local bluenet = require("bluenet")
@@ -165,10 +166,12 @@ while true do
 				--and ( not msg.data or msg.data[1] ~= "STREAM_OK" ) then
 				nodeStream:handleMessage(msg)
 				
-			elseif protocol == "miner" or protocol == "chunk" then
+			elseif protocol == "miner" or protocol == "chunk" then -- chunk optional
 				node:handleMessage(msg)
 			elseif protocol == "refuel" then
 				nodeRefuel:handleMessage(msg)
+			elseif protocol == "storage" then
+				nodeStorage:handleMessage(msg) -- maybe remove nodeStorage 
 			end
 	elseif event == "terminate" then 
 		error("Terminated",0)

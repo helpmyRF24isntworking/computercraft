@@ -2437,3 +2437,102 @@ function Miner:followPath(path,safe)
 	return result
 	
 end
+
+
+
+--############################################################## STORAGE related functions
+
+function Miner.getWiredNetworkName()
+	local name = nil
+	for _, side in ipairs(redstone.getSides()) do
+		local mainType, subType = peripheral.getType(side)
+		if mainType == "modem" and peripheral.call(side, "isWireless") == false then 
+			name = peripheral.call(side, "getNameLocal")
+			if name then break end
+		end
+	end
+	return name
+end
+
+function Miner:pickupAndDeliver(reservation, dropOffPos, requester, requestingInv)
+
+	-- TODO: make this a checkpointed task
+
+	local pos = reservation.pos
+	if self:navigateToPos(pos.x, pos.y, pos.z) then 
+
+		-- TODO: extract items directly into turtle inventory
+		local networkName = Miner.getWiredNetworkName()
+		-- zayum, node in storage protocol does not run on turtle
+		-- having two nodes running the same protocol on one computer is probably a bad idea
+		-- -> turtle has to run storage protocol, can do so temporarily though
+		-- but pickupanddeliver will probably be received on the "miner" protocol
+
+		local answer = self.node:send(reservation.provider, {"PICKUP_ITEMS", { reservationId = reservation.id, turtleName = networkName }}, true, true, default.waitTime)
+		if answer and answer.data[1] == "ITEMS_EXTRACTED" then 
+			local data = answer.data[2]
+			local gotItems = false
+			if data.extractedToTurtle then
+				gotItems = true
+			else
+				-- TODO: rewrite or delete this shit, just an idea for the turtle to suck up items i guess
+				local pickupInv
+				for _,inv in ipairs(peripheral.getNames()) do
+					local mainType, subType = peripheral.getType(inv)
+					if subType == "inventory" then
+						pickupInv = peripheral.wrap(inv)
+						break
+					end
+				end
+				if not pickupInv then 
+					print("no inventory found for pickup ... ") 
+					return
+				else
+					-- pickup items
+					
+					local itemName, count = data.name, data.count
+					local remaining = count
+
+					for slot = 1, pickupInv.size() do
+						local slotData = pickupInv.getItemDetail(slot)
+						if slotData and slotData.name == itemName then
+							local toMove = math.min(slotData.count, remaining)
+							-- bullshit ai generated code ...
+							local moved = pickupInv.pushItems(self.Inventory, slot, toMove)
+							if moved and moved > 0 then
+								print(string.format("Turtle picked up %d of %s from pickup inventory", moved, itemName))
+								remaining = remaining - moved
+								if remaining <= 0 then
+									break
+								end
+							end
+						end
+					end
+					if remaining > 0 then 
+						print("Turtle could not pick up all items, remaining:", remaining)
+					end
+				end
+			end
+
+			if gotItems then
+				-- deliver items to requesting storage
+				if self:navigateToPos(dropOffPos.x, dropOffPos.y, dropOffPos.z) then 
+					-- drop items into inv 
+					
+					local answer = self.node:send(requester, {"ITEMS_DELIVERED", 
+						{ reservationId = reservation.id, itemName = itemName, count = count - remaining, requestingInv = requestingInv, provider = reservation.provider }},
+						true, true, default.waitTime)
+					if answer and answer.data[1] == "DELIVERY_CONFIRMED" then
+						print("delivery confirmed by requester")
+					else
+						print("no delivery confirmation from requester")
+						-- perhaps ping requester again if this happens often
+					end
+					self:returnHome()
+				else
+
+				end
+			end
+		end
+	end
+end

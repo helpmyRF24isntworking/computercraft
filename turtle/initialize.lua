@@ -25,9 +25,12 @@ end
 local function initRefuel()
 	global.nodeRefuel = NetworkNode:new("refuel", false, true)
 end
+local function initStorage()
+	global.nodeStorage = NetworkNode:new("storage",false, true)
+end
 
 createLabel()
-parallel.waitForAll(initNode,initStream, initRefuel)
+parallel.waitForAll(initNode,initStream, initRefuel, initStorage)
 
 if not global.node.host then
 	error(global.node.host, 0)

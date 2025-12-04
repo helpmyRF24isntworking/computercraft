@@ -15,7 +15,7 @@ local default = {
 		broadcast = 65401, 
 		repeater = 65402,
 		host = 65403,
-		refuel = 65404,		
+		refuel = 65404,
 	}
 }
 bluenet.default = default
@@ -39,7 +39,8 @@ local idAsChannel = bluenet.idAsChannel
 
 function bluenet.findModem()
 	for _,modem in ipairs(peripheral.getNames()) do
-		if peripheral.getType(modem) == "modem" then
+		local modemType, subType = peripheral.getType(modem)
+		if modemType == "modem" and peripheral.call(modem, "isWireless") then
 			return modem
 		end
 	end

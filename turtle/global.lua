@@ -8,6 +8,7 @@ err = nil
 node = nil
 nodeStream = nil
 nodeRefuel = nil
+nodeStorage = nil
 
 handleError = function(err,status)
 	if not status then
