@@ -12,6 +12,7 @@ local ownChannel = bluenet.ownChannel
 local channelBroadcast = bluenet.default.channels.broadcast
 local channelHost = bluenet.default.channels.host
 local channelRefuel = bluenet.default.channels.refuel
+local channelStorage = bluenet.default.channels.storage
 local computerId = os.getComputerID()
 local osEpoch = os.epoch
 
@@ -104,7 +105,33 @@ end
 
 -- ################ end refueling logic
 
+nodeStorage.onReceive = function(msg)
+	if msg.data[1] == "GET_TURTLE_STATE" then 
+		-- dont even respond if miner is not initialized
+		if miner and miner.pos then 
+			local state = {}
+			state.id = computerId
+			state.label = os.getComputerLabel() or computerId
 
+			state.pos = miner.pos
+			state.orientation = miner.orientation
+			state.stuck = miner.stuck -- can be nil
+			
+			state.fuelLevel = miner:getFuelLevel()
+			state.emptySlots = miner:getEmptySlots()
+
+			if miner.taskList.first then
+				state.task = miner.taskList.first[1]
+				state.lastTask = miner.taskList.last[1]
+			end
+			nodeStorage:send(msg.sender, {"TURTLE_STATE", state })
+		end
+	elseif msg.data[1] == "DO" then 
+		-- e.g. pickupanddeliver items
+		table.insert(tasks, msg.data)
+		--nodeStorage:answer(forMsg, {"DO_ACK"}) -- oder so
+	end
+end
 
 nodeStream.onStreamMessage = function(msg,previous) 
 	-- reboot is handled in NetworkNode
@@ -158,7 +185,8 @@ while true do
 		type(msg) == "table"
 		and ( type(msg.recipient) == "number" and msg.recipient
 		and ( msg.recipient == computerId or msg.recipient == channelBroadcast
-			or msg.recipient == channelHost or msg.recipient == channelRefuel ) )
+			or msg.recipient == channelHost or msg.recipient == channelRefuel
+			or msg.recipient == channelStorage ) )
 		then
 			msg.distance = p5
 			local protocol = msg.protocol
@@ -171,7 +199,7 @@ while true do
 			elseif protocol == "refuel" then
 				nodeRefuel:handleMessage(msg)
 			elseif protocol == "storage" then
-				nodeStorage:handleMessage(msg) -- maybe remove nodeStorage 
+				nodeStorage:handleMessage(msg)
 			end
 	elseif event == "terminate" then 
 		error("Terminated",0)

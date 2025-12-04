@@ -16,6 +16,7 @@ local default = {
 		repeater = 65402,
 		host = 65403,
 		refuel = 65404,
+		storage = 65405,
 	}
 }
 bluenet.default = default
@@ -194,7 +195,9 @@ function bluenet.receive(protocol, waitTime)
 			and ( msg.recipient == computerId 
 				or msg.recipient == default.channels.broadcast 
 				or msg.recipient == default.channels.host 
-				or msg.recipient == default.channels.refuel ) )
+				or msg.recipient == default.channels.refuel 
+				or msg.recipient == default.channels.storage ) )
+				-- WHY EVEN CHECK THE CHANNEL? only those channels are opened anyways so we wont receive any other
 			and ( protocol == nil or protocol == msg.protocol )
 			-- just to make sure its a bluenet message
 			then

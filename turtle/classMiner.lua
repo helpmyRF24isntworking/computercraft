@@ -178,6 +178,7 @@ function Miner:new()
 	o.orientation = 0
 	o.node = global.node
 	o.nodeRefuel = global.nodeRefuel
+	o.nodeStorage = global.nodeStorage
 	o.pos = vector.new(0,70,0)
 	o.gettingFuel = false
 	o.initializing = true
@@ -2453,29 +2454,39 @@ function Miner.getWiredNetworkName()
 	end
 	return name
 end
+local getWiredNetworkName = Miner.getWiredNetworkName
 
-function Miner:pickupAndDeliver(reservation, dropOffPos, requester, requestingInv)
+function Miner:pickupAndDeliverItems(reservation, dropOffPos, requester, requestingInv)
 
 	-- TODO: make this a checkpointed task
 
 	local pos = reservation.pos
 	if self:navigateToPos(pos.x, pos.y, pos.z) then 
 
-		-- TODO: extract items directly into turtle inventory
-		local networkName = Miner.getWiredNetworkName()
+		
+		local networkName
+		for i = 1, 5 do
+			sleep(0.05) -- give storage node time to register turtle presence
+			networkName = Miner.getWiredNetworkName()
+			if networkName then break end
+		end
 		-- zayum, node in storage protocol does not run on turtle
 		-- having two nodes running the same protocol on one computer is probably a bad idea
 		-- -> turtle has to run storage protocol, can do so temporarily though
 		-- but pickupanddeliver will probably be received on the "miner" protocol
+		print("networkName:", networkName)
 
-		local answer = self.node:send(reservation.provider, {"PICKUP_ITEMS", { reservationId = reservation.id, turtleName = networkName }}, true, true, default.waitTime)
+
+		local answer = self.nodeStorage:send(reservation.provider, 
+			{"PICKUP_ITEMS", { reservationId = reservation.id, turtleName = networkName }}, true, true, default.waitTime)
 		if answer and answer.data[1] == "ITEMS_EXTRACTED" then 
 			local data = answer.data[2]
+			print("extracted", data.name, data.count, data.extractedToTurtle)
 			local gotItems = false
 			if data.extractedToTurtle then
 				gotItems = true
 			else
-				-- TODO: rewrite or delete this shit, just an idea for the turtle to suck up items i guess
+			--[[ -- TODO: rewrite or delete this shit, just an idea for the turtle to suck up items i guess
 				local pickupInv
 				for _,inv in ipairs(peripheral.getNames()) do
 					local mainType, subType = peripheral.getType(inv)
@@ -2511,21 +2522,32 @@ function Miner:pickupAndDeliver(reservation, dropOffPos, requester, requestingIn
 					if remaining > 0 then 
 						print("Turtle could not pick up all items, remaining:", remaining)
 					end
-				end
+				end ]]
 			end
 
 			if gotItems then
 				-- deliver items to requesting storage
 				if self:navigateToPos(dropOffPos.x, dropOffPos.y, dropOffPos.z) then 
 					-- drop items into inv 
-					
-					local answer = self.node:send(requester, {"ITEMS_DELIVERED", 
-						{ reservationId = reservation.id, itemName = itemName, count = count - remaining, requestingInv = requestingInv, provider = reservation.provider }},
+					networkName = nil
+					for i = 1, 5 do
+						sleep(0.05) 
+						networkName = Miner.getWiredNetworkName()
+						if networkName then break end
+					end
+					print("networkName", networkName)
+
+					-- turtle.getItemDetail(i) is instant
+
+					print("delivered", data.name, data.count, "to", requester)
+					local answer = self.nodeStorage:send(requester, {"ITEMS_DELIVERED", 
+						{ reservation = reservation, requestingInv = networkName or requestingInv }},
 						true, true, default.waitTime)
 					if answer and answer.data[1] == "DELIVERY_CONFIRMED" then
-						print("delivery confirmed by requester")
+						print("delivery confirmed by requester", requester)
 					else
-						print("no delivery confirmation from requester")
+						if answer then print(answer.data[1]) end
+						print("no delivery confirmation from requester", requester)
 						-- perhaps ping requester again if this happens often
 					end
 					self:returnHome()

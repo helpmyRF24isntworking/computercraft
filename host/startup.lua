@@ -84,12 +84,7 @@ shell.openTab("runtime/main.lua")
 shell.openTab("runtime/receive.lua")
 shell.openTab("runtime/send.lua")
 
-
---shell.run("runtime/testMonitor")
-
 -- can only be done once receiving is running
--- make its own file: 
--- shell.run("runtime/hostTransfer.lua")
 local transferOk = dofile("runtime/hostTransfer.lua")
 if pocket and transferOk and tabGui then
 	shell.switchTab(tabGui)

@@ -17,6 +17,7 @@ local default = {
 		repeater = 65402,
 		host = 65403,
 		refuel = 65404,
+		storage = 65405,
 		max = 65400
 	}
 }
@@ -78,7 +79,8 @@ function NetworkNode:idAsChannel(id)
 	local id = id or self.id
 	if id ~= default.channels.broadcast 
 		and id ~= default.channels.host 
-		and id ~= default.channels.refuel then
+		and id ~= default.channels.refuel 
+		and id ~= default.channels.storage then
 		return id % default.channels.max
 	else
 		return id
@@ -478,6 +480,7 @@ function NetworkNode:answer(forMsg,data)
 	
 	
 	--bluenet.resetTimer()
+
 	local recipient = self:idAsChannel(msg.recipient)
 	
 	--print("answering",msg.sender,msg.recipient, recipient ,msg.id,msg.protocol)
