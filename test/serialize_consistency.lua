@@ -34,6 +34,7 @@ end
 function compare_results()
     -- for each file in path compare results of serialize/unserialize and binarize/unbinarize
     local files = fs.list(path)
+    local binaryBytes, serializedBytes = 0, 0
     for _, file in ipairs(files) do
         print("Comparing file:", file)
         local f = fs.open(path .. "/" .. file, "r")
@@ -44,12 +45,18 @@ function compare_results()
         local binaryChunk = binarize(unserializedChunk)
         local unbinarizedChunk = unbinarize(binaryChunk)
         
+        binaryBytes = binaryBytes + #binaryChunk
+        serializedBytes = serializedBytes + #serializedChunk
+
         if not compareChunks(unserializedChunk, unbinarizedChunk or {}) then
             print("Mismatch in file: " .. file)
             return false
         end
         os.pullEvent(os.queueEvent("yield"))
     end
+    print("Total binary bytes:", binaryBytes)
+    print("Total serialized bytes:", serializedBytes)
+    print("Binary is " .. (serializedBytes / binaryBytes) .. " times smaller than serialized.")
     return true
 end
 
