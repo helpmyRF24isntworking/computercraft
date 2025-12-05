@@ -11,11 +11,11 @@ storage.requestingPos = storage.providerPos
 storage:getInventories()
 storage:indexInventories()
 
-storage:pingTurtles()
-local availableTurtles = storage:getNearestAvailableTurtles()
+--storage:pingTurtles()
+--local availableTurtles = storage:getNearestAvailableTurtles()
 
-for i, turtle in ipairs(availableTurtles) do
-    print("Available turtle:", turtle.id, "Distance:", turtle.dist)
-end
+--for i, turtle in ipairs(availableTurtles) do
+--    print("Available turtle:", turtle.id, "Distance:", turtle.dist)
+--end
 
-storage:requestReserveItems("minecraft:cobblestone", 20)
+-- global.storage:requestReserveItems("minecraft:cobblestone", 200)

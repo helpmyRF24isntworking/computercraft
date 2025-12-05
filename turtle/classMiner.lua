@@ -2456,8 +2456,29 @@ function Miner.getWiredNetworkName()
 end
 local getWiredNetworkName = Miner.getWiredNetworkName
 
-function Miner:pickupAndDeliverItems(reservation, dropOffPos, requester, requestingInv)
+function Miner:getTurtleInventoryList()
+	-- turtle.getItemDetail(i) is instant
+	-- scan inventory for storage related tasks
+	local invList = {}
+	local hasFuel = false 
+	for i = 1,default.inventorySize do
+		local data = turtle.getItemDetail(i)
+		if data and data.name then
+			if not hasFuel and fuelItems[data.name] then
+				hasFuel = true --keep the fuel
+				invList[i] = { name = data.name, count = data.count, protected = true }
+			else
+				invList[i] = { name = data.name, count = data.count, protected = false }
+			end
+		else
+			invList[i] = { count = 0 }
+		end
+	end
+	return invList
+end
 
+function Miner:pickupAndDeliverItems(reservation, dropOffPos, requester, requestingInv)
+	local currentTask = self:addCheckTask({debug.getinfo(1, "n").name})
 	-- TODO: make this a checkpointed task
 
 	local pos = reservation.pos
@@ -2476,7 +2497,8 @@ function Miner:pickupAndDeliverItems(reservation, dropOffPos, requester, request
 		-- but pickupanddeliver will probably be received on the "miner" protocol
 		print("networkName:", networkName)
 
-
+		local invListBefore = self:getTurtleInventoryList()
+	
 		local answer = self.nodeStorage:send(reservation.provider, 
 			{"PICKUP_ITEMS", { reservationId = reservation.id, turtleName = networkName }}, true, true, default.waitTime)
 		if answer and answer.data[1] == "ITEMS_EXTRACTED" then 
@@ -2525,6 +2547,43 @@ function Miner:pickupAndDeliverItems(reservation, dropOffPos, requester, request
 				end ]]
 			end
 
+
+			local invListAfter = self:getTurtleInventoryList()
+
+			local invList = {}
+			-- build new inventory list with difference in items
+			for i = 1, default.inventorySize do 
+				local before = invListBefore[i]
+				local after = invListAfter[i]
+				if before.name == after.name then
+					if before.count == after.count then 
+						before.protected = true
+						invList[i] = before
+					elseif before.count > after.count then
+						-- items removed -- should never happen -- condenseInventory might play a role though
+						print("ITEMS REMOVED ON PICKUP?", before.name, before.count - after.count)
+						invList[i] = { name = before.name, count = 0, protected = true }
+					else
+						-- items added
+						invList[i] = { name = after.name, count = after.count - before.count, protected = false }
+					end
+				else
+					if not before.name and after.name then
+						-- new items
+						invList[i] = { name = after.name, count = after.count, protected = false }
+					elseif before.name and not after.name then
+						-- items removed -- should never happen -- condenseInventory might play a role though
+						print("STACK REMOVED ON PICKUP?", before.name, before.count)
+						invList[i] = { name = before.name, count = 0, protected = true }
+					else
+						-- changed items -- should never happen
+						print("STACK CHANGED ON PICKUP?", before.name, "to", after.name)
+						invList[i] = { name = after.name, count = after.count, protected = true }
+					end
+				end
+			end
+			
+
 			if gotItems then
 				-- deliver items to requesting storage
 				if self:navigateToPos(dropOffPos.x, dropOffPos.y, dropOffPos.z) then 
@@ -2537,11 +2596,11 @@ function Miner:pickupAndDeliverItems(reservation, dropOffPos, requester, request
 					end
 					print("networkName", networkName)
 
-					-- turtle.getItemDetail(i) is instant
 
+					-- if this fails use, Miner:transferItems() and dump items into a chest
 					print("delivered", data.name, data.count, "to", requester)
 					local answer = self.nodeStorage:send(requester, {"ITEMS_DELIVERED", 
-						{ reservation = reservation, requestingInv = networkName or requestingInv }},
+						{ reservation = reservation, requestingInv = networkName or requestingInv, invList = invList }},
 						true, true, default.waitTime)
 					if answer and answer.data[1] == "DELIVERY_CONFIRMED" then
 						print("delivery confirmed by requester", requester)
@@ -2557,4 +2616,6 @@ function Miner:pickupAndDeliverItems(reservation, dropOffPos, requester, request
 			end
 		end
 	end
+	self.taskList:remove(currentTask)
+	
 end

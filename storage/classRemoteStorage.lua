@@ -103,12 +103,29 @@ end
 function RemoteStorage:handleItemsDelivered(msg)
     local data = msg.data[2]
     local res = data.reservation
-    local itemname, count, resId, providerPos, provider = res.itemName, res.reserved, res.id, res.pos, res.provider
+    local itemName, count, resId, providerPos, provider = res.itemName, res.reserved, res.id, res.pos, res.provider
 
-    print("received res", resId, ":", count, itemname, "from", provider, "at", providerPos, "in", data.requestingInv)
+    print("received res", resId, ":", count, itemName, "from", provider, "at", providerPos, "in", data.requestingInv)
 
     --reservationId = reservation.id, itemName = itemName, count = count - remaining, provider = reservation.provider 
-    self:input(data.requestingInv) -- make sure turtle is not sucked dry lmao
+
+    local turtleName = msg.data[2].requestingInv
+    local ok = false
+    if turtleName then 
+        local present = peripheral.isPresent(turtleName)
+        if present then 
+            local tid = peripheralCall(turtleName, "getID")
+            if tid and tid == msg.sender then 
+                ok = true
+            end
+        end
+    end
+    if not ok then 
+        print("pickup items: turtle identity could not be verified", msg.sender, turtleName)
+        return
+    end
+
+    self:input(data.requestingInv, data.invList) -- make sure turtle is not sucked dry lmao
     self.node:answer(msg, {"DELIVERY_CONFIRMED"})
 end
 

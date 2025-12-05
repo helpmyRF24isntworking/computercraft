@@ -122,7 +122,7 @@ function ItemStorage:extractReservation(reservation, toInv, toSlot)
         local moved = peripheralCall(invName, "pushItems", toInv, slot, count, toSlot)
         if moved and moved > 0 then
             extracted = extracted + moved
-            print(string.format("Extracted %d items from %s (slot %d) as part of reservation", moved, invName, slot))
+            print(string.format("Extracted %d items from %s (slot %d) reserv", moved, invName, slot))
         else
             print("No items were extracted from:", invName, "slot:", slot)
         end
@@ -194,103 +194,113 @@ function ItemStorage:extract(itemName, count, toInv, toSlot, reservation)
     return extracted
 end
 
-function ItemStorage:input(fromInv)
-    -- 
-    local list = peripheralCall(fromInv, "list")
+function ItemStorage:input(fromInv, invList)
+    -- invList optional
+    local list
+    if invList then
+        list = invList
+    else
+        list = peripheralCall(fromInv, "list")
+    end
     local inventories = self.inventories
     local index = self.index
     local itemDetails = self.itemDetails
     for srcSlot, item in pairs(list) do
         local name = item.name
         local remaining = item.count
-        local idxEntry = index[name]
-        if idxEntry then
-            for invName, invCount in pairs(idxEntry) do
-                if invName ~= fromInv then 
-                    local inv = inventories[invName]
-                    for toSlot = 1, #inv do
-                        local slot = inv[toSlot]
-                        local slotCount = slot.count
-                        if slot.name == name then 
-                            if slotCount < default.stackSize then 
-                                -- perhaps single stack or 16 stack item
-                                -- itemdetail relevant, store in idxentry though
-                                local itemDetail = itemDetails[name]
-                                if not itemDetail then 
-                                    
-                                    itemDetail = peripheralCall(invName, "getItemDetail", toSlot) -- 1 tick
-                                    itemDetails[name] = itemDetail
-                                end
-                                local space = itemDetail.maxCount - slotCount
-                                if space > 0 then 
-                                    local toMove = math.min(space, remaining)
-                                    local moved = peripheralCall(fromInv, "pushItems", invName, srcSlot, toMove, toSlot )
-                                    if moved and moved > 0 then 
-                                        slotCount = slotCount + moved
-                                        remaining = remaining - moved
-                                        invCount = invCount + moved
-                                    else
-                                        print("failed to move", name, "from", fromInv, "to", invName, "slot", toSlot)
+        if not item.protected then
+            local idxEntry = index[name]
+            if idxEntry then
+                for invName, invCount in pairs(idxEntry) do
+                    if invName ~= fromInv then 
+                        local inv = inventories[invName]
+                        for toSlot = 1, #inv do
+                            local slot = inv[toSlot]
+                            local slotCount = slot.count
+                            if slot.name == name then 
+                                if slotCount < default.stackSize then 
+                                    -- perhaps single stack or 16 stack item
+                                    -- itemdetail relevant, store in idxentry though
+                                    local itemDetail = itemDetails[name]
+                                    if not itemDetail then 
+                                        
+                                        itemDetail = peripheralCall(invName, "getItemDetail", toSlot) -- 1 tick
+                                        itemDetails[name] = itemDetail
                                     end
+                                    local space = itemDetail.maxCount - slotCount
+                                    if space > 0 then 
+                                        local toMove = math.min(space, remaining)
+                                        --local moved = peripheralCall(fromInv, "pushItems", invName, srcSlot, toMove, toSlot )
+                                        local moved = peripheralCall(invName, "pullItems", fromInv, srcSlot, toMove, toSlot )
+                                        if moved and moved > 0 then 
+                                            slotCount = slotCount + moved
+                                            remaining = remaining - moved
+                                            invCount = invCount + moved
+                                        else
+                                            print("failed to move", name, "from", fromInv, "to", invName, "slot", toSlot)
+                                        end
+                                    end
+                                    slot.count = slotCount
                                 end
-                                slot.count = slotCount
+                            elseif slotCount == 0 then 
+                                -- empty slot in same inventory can be used
+                                --local moved = peripheralCall(fromInv, "pushItems", invName, srcSlot, remaining, toSlot)
+                                local moved = peripheralCall(invName, "pullItems", fromInv, srcSlot, remaining, toSlot )
+                                if moved and moved > 0 then 
+                                    slot.name = name
+                                    slot.count = moved
+                                    remaining = 0
+                                    invCount = invCount + moved
+                                else
+                                    print("failed to move", name, "from", fromInv, "to", invName, "slot", toSlot)
+                                end
                             end
-                        elseif slotCount == 0 then 
-                            -- empty slot in same inventory can be used
-                            local moved = peripheralCall(fromInv, "pushItems", invName, srcSlot, remaining, toSlot)
-                            if moved and moved > 0 then 
-                                slot.name = name
-                                slot.count = moved
-                                remaining = 0
-                                invCount = invCount + moved
-                            else
-                                print("failed to move", name, "from", fromInv, "to", invName, "slot", toSlot)
+                            if remaining == 0 then break end
+                        end
+                    end
+                    if invCount == 0 then -- shouldnt happen since we add items
+                        idxEntry[invName] = nil
+                    else
+                        idxEntry[invName] = invCount
+                    end
+                    if remaining == 0 then break end
+                end
+                --idxEntry[fromInv] = ( idxEntry[fromInv] or 0 ) + ( item.count - remaining )
+            end
+
+            if remaining > 0 then
+                idxEntry = idxEntry or {}
+
+                -- unable to store all items together, find any empty inventory slot to store in
+                for invName, slots in pairs(inventories) do
+                    if invName ~= fromInv and not idxEntry[invName] then 
+                        for toSlot = 1, #slots do
+                            local slot = slots[toSlot]
+                            if slot.count == 0 then
+                                --local moved = peripheralCall(fromInv, "pushItems", invName, srcSlot, remaining, toSlot )
+                                local moved = peripheralCall(invName, "pullItems", fromInv, srcSlot, remaining, toSlot )
+                                if moved and moved > 0 then 
+                                    slot.name = name
+                                    slot.count = moved
+                                    remaining = 0
+                                    idxEntry[invName] = moved
+                                    break
+                                else
+                                    print("failed to move", name, "from", fromInv, "to", invName, "slot", toSlot)
+                                end
                             end
                         end
                         if remaining == 0 then break end
                     end
                 end
-                if invCount == 0 then -- shouldnt happen since we add items
-                    idxEntry[invName] = nil
-                else
-                    idxEntry[invName] = invCount
-                end
-                if remaining == 0 then break end
-            end
-            --idxEntry[fromInv] = ( idxEntry[fromInv] or 0 ) + ( item.count - remaining )
-        end
-
-        if remaining > 0 then
-            idxEntry = idxEntry or {}
-
-            -- unable to store all items together, find any empty inventory slot to store in
-            for invName, slots in pairs(inventories) do
-                if invName ~= fromInv and not idxEntry[invName] then 
-                    for toSlot = 1, #slots do
-                        local slot = slots[toSlot]
-                        if slot.count == 0 then
-                            local moved = peripheralCall(fromInv, "pushItems", invName, srcSlot, remaining, toSlot )
-                            if moved and moved > 0 then 
-                                slot.name = name
-                                slot.count = moved
-                                remaining = 0
-                                idxEntry[invName] = moved
-                                break
-                            else
-                                print("failed to move", name, "from", fromInv, "to", invName, "slot", toSlot)
-                            end
-                        end
-                    end
-                    if remaining == 0 then break end
+                if remaining == 0 then
+                    index[name] = idxEntry
                 end
             end
-            if remaining == 0 then
-                index[name] = idxEntry
-            end
-        end
 
-        if remaining > 0 then 
-            print("unable to store all of item:", name, "remaining:", remaining)
+            if remaining > 0 then 
+                print("unable to store all of item:", name, "remaining:", remaining)
+            end
         end
     end
 
