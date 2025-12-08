@@ -6,7 +6,7 @@ local HostDisplay = require("classHostDisplay")
 --require("classMap")
 require("classChunkyMap")
 require("classTaskGroup")
-
+local RemoteStorage = require("classRemoteStorage")
 
 
 local function initNode()
@@ -17,6 +17,9 @@ local function initStream()
 end
 local function initUpdate()
 	global.nodeUpdate = NetworkNode:new("update",true)
+end
+local function initStorage()
+	global.storage = RemoteStorage:new()
 end
 
 local function initPosition()
@@ -53,7 +56,7 @@ local function loadGroups(fileName)
 end
 
 -- quick boot
-parallel.waitForAll(initNode,initStream,initUpdate)
+parallel.waitForAll(initNode,initStream,initUpdate,initStorage)
 
 
 

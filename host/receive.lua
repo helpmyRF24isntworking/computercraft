@@ -11,6 +11,7 @@ local monitor = global.monitor
 local node = global.node
 local nodeStream = global.nodeStream
 local nodeUpdate = global.nodeUpdate
+local nodeStorage = global.storage.node
 
 global.timerCount = 0
 global.eventCount = 0
@@ -55,6 +56,8 @@ while global.running and global.receiving do
 				-- would be nice but seems to lead to problems
 				node:handleMessage(msg)
 				--node:addMessage(msg)
+			elseif protocol == "storage" then 
+				nodeStorage:addMessage(msg)
 			end
 			
 	elseif event == "timer" then

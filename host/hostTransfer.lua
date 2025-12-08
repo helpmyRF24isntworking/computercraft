@@ -56,6 +56,7 @@ local function transferFiles(node)
                     "host",
                     "pocket",
                     "turtle",
+					"storage",
                     }
     end
     local files = {

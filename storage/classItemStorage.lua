@@ -22,14 +22,14 @@ function ItemStorage:new()
 	o.inventories = {}
     o.index = {}
     o.itemDetails = {}
-    o.peripheralHub = nil
+    o.peripheralHubs = {}
 
 	o:initialize()
 	return o
 end
 
 function ItemStorage:initialize()
-    self.peripheralHub = self.findWiredModem()
+    self.peripheralHubs = self.findWiredModems()
 end
 
 function ItemStorage.findWiredModem()
@@ -42,17 +42,31 @@ function ItemStorage.findWiredModem()
     return nil
 end
 
+function ItemStorage.findWiredModems()
+    local sides = {}
+    for _,side in ipairs(redstone.getSides()) do
+        local mainType, subType = peripheral.getType(side)
+        if mainType == "modem" and ( subType == "peripheral_hub" or peripheral.call(side, "isWireless") == false ) then
+            sides[#sides+1] = side
+        end
+    end
+    return sides
+end
+
 function ItemStorage:getInventories()
-    local connected = peripheralCall(self.peripheralHub, "getNamesRemote")
     local inventories = self.inventories
-    for _,name in ipairs(connected) do
-        local mainType, subType = peripheralCall(self.peripheralHub, "getTypeRemote", name) -- 0 ticks
-        if subType == "inventory" then 
-            local size = peripheralCall(name, "size") -- 1 tick
-            local slots = {}
-            for k = 1, size do slots[k] = { count = 0 } end
-            inventories[name] = slots
-            print("Found inventory:", name)
+    for _, peripheralHub in ipairs(self.peripheralHubs) do
+        local connected = peripheralCall(peripheralHub, "getNamesRemote")
+        
+        for _,name in ipairs(connected) do
+            local mainType, subType = peripheralCall(peripheralHub, "getTypeRemote", name) -- 0 ticks
+            if subType == "inventory" then 
+                local size = peripheralCall(name, "size") -- 1 tick
+                local slots = {}
+                for k = 1, size do slots[k] = { count = 0 } end
+                inventories[name] = slots
+                print("Found inventory:", name)
+            end
         end
     end
 end
@@ -65,12 +79,10 @@ end
 function ItemStorage:indexInventories()
     local index = {}
     local inventories = self.inventories
-    for invName, inventory in pairs(inventories) do
+    for invName, slots in pairs(inventories) do
 
-        local size = peripheralCall(invName, "size") -- 1 tick
+        local size = #slots
         local list = peripheralCall(invName, "list") -- 1 tick
-        local slots = {}
-        for k = 1, size do slots[k] = { count = 0 } end
         for slot, item in pairs(list) do
             local name = item.name
             local idxEntry = index[name]
@@ -83,9 +95,8 @@ function ItemStorage:indexInventories()
             slots[slot] = item
             
         end
-        inventories[invName] = slots
 
-        print("Inventory", invName, "size", size)
+        print("indexed", invName, "size", size)
     end
     self.index = index
 end
@@ -97,6 +108,40 @@ function ItemStorage:printIndex()
             print( string.format("%s(%d) ", invName, count) )
         end
 
+    end
+end
+
+
+
+function ItemStorage:countItem(itemName, sources)
+    -- perhaps change the way index works to store total counts
+    local total = 0
+    local sources = sources or self.index[itemName]
+    if sources then
+        for invName, count in pairs(sources) do
+            total = total + count
+        end
+    end
+    return total
+end
+
+function ItemStorage:getItemList()
+    local itCt = 0
+    local itemList = {}
+    for itemName, sources in pairs(self.index) do
+        local count = self:countItem(itemName, sources)
+        itCt = itCt + 1
+        itemList[itCt] = { name = itemName, count = count }
+    end
+    return itemList
+end
+
+function ItemStorage:printItems()
+    local items = self:getItemList()
+    table.sort(items, function(a,b) return a.count > b.count end )
+    for i = 1, #items do
+        local item = items[i]
+        print( item.name .. ": " .. item.count )
     end
 end
 

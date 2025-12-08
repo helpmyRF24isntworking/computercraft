@@ -2444,15 +2444,17 @@ end
 --############################################################## STORAGE related functions
 
 function Miner.getWiredNetworkName()
-	local name = nil
-	for _, side in ipairs(redstone.getSides()) do
-		local mainType, subType = peripheral.getType(side)
-		if mainType == "modem" and peripheral.call(side, "isWireless") == false then 
-			name = peripheral.call(side, "getNameLocal")
-			if name then break end
+	for i = 1, 5 do
+		turtle.detect() -- instead of sleep
+		for _, side in ipairs(redstone.getSides()) do
+			local mainType, subType = peripheral.getType(side)
+			if mainType == "modem" and peripheral.call(side, "isWireless") == false then 
+				local name = peripheral.call(side, "getNameLocal")
+				if name then return name end
+			end
 		end
 	end
-	return name
+	return nil
 end
 local getWiredNetworkName = Miner.getWiredNetworkName
 
@@ -2485,16 +2487,7 @@ function Miner:pickupAndDeliverItems(reservation, dropOffPos, requester, request
 	if self:navigateToPos(pos.x, pos.y, pos.z) then 
 
 		
-		local networkName
-		for i = 1, 5 do
-			sleep(0.05) -- give storage node time to register turtle presence
-			networkName = Miner.getWiredNetworkName()
-			if networkName then break end
-		end
-		-- zayum, node in storage protocol does not run on turtle
-		-- having two nodes running the same protocol on one computer is probably a bad idea
-		-- -> turtle has to run storage protocol, can do so temporarily though
-		-- but pickupanddeliver will probably be received on the "miner" protocol
+		local networkName = Miner.getWiredNetworkName()
 		print("networkName:", networkName)
 
 		local invListBefore = self:getTurtleInventoryList()
@@ -2588,20 +2581,22 @@ function Miner:pickupAndDeliverItems(reservation, dropOffPos, requester, request
 				-- deliver items to requesting storage
 				if self:navigateToPos(dropOffPos.x, dropOffPos.y, dropOffPos.z) then 
 					-- drop items into inv 
-					networkName = nil
-					for i = 1, 5 do
-						sleep(0.05) 
+
+					local waitTime = default.waitTime
+					if requestingInv == "player" then 
+						waitTime = 60*2
+						networkName = nil -- "player"
+					else 
 						networkName = Miner.getWiredNetworkName()
-						if networkName then break end
+						print("networkName", networkName)
 					end
-					print("networkName", networkName)
 
 
 					-- if this fails use, Miner:transferItems() and dump items into a chest
-					print("delivered", data.name, data.count, "to", requester)
+					print("delivered", data.name, data.count, "to", requester, "inv", networkName or requestingInv)
 					local answer = self.nodeStorage:send(requester, {"ITEMS_DELIVERED", 
 						{ reservation = reservation, requestingInv = networkName or requestingInv, invList = invList }},
-						true, true, default.waitTime)
+						true, true, waitTime)
 					if answer and answer.data[1] == "DELIVERY_CONFIRMED" then
 						print("delivery confirmed by requester", requester)
 					else

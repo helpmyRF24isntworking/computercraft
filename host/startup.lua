@@ -5,6 +5,7 @@ local folders = {
 "general",
 "gui",
 "host",
+"storage",
 }
 if pocket then
 	table.insert(folders, "pocket")

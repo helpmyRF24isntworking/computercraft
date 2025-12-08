@@ -1,11 +1,11 @@
 stations = {
   refuelQueue = {
+    maxDistance = 8,
     origin = {
       y = 72,
       x = 2221,
       z = -2653,
     },
-    maxDistance = 8,
   },
   refuel = {
     {

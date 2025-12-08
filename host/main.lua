@@ -4,6 +4,7 @@ local global = global
 local node = global.node
 local nodeStream = global.nodeStream
 local nodeUpdate = global.nodeUpdate
+local nodeStorage = global.storage.node
 
 local map = global.map
 local turtles = global.turtles
@@ -573,6 +574,7 @@ while global.running do
 	if global.processOnlyNodeUpdate then
 		nodeUpdate:checkMessages()
 	else
+		nodeStorage:checkMessages()
 		--local s = os.epoch("local")
 		node:checkMessages()
 		--print(os.epoch("local")-s,"events")

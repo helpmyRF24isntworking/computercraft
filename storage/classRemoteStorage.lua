@@ -5,6 +5,7 @@ local bluenet = require("bluenet")
 
 local default = {
     waitTime = 3,
+    configFile = "/runtime/storage_config.txt",
 }
 local storageChannel = bluenet.default.channels.storage
 
@@ -72,12 +73,15 @@ function RemoteStorage:initialize()
             local data = msg.data[2]
             if msg.data[1] == "AVAILABLE_ITEMS" then
                 self:handleAvailableResponse(msg, data.name, data.available)
-
+            elseif msg.data[1] == "ITEM_LIST" then
+                self:handleItemListResponse(msg)
             elseif msg.data[1] == "TURTLE_STATE" then 
                 print(msg.data[1], "from", msg.sender, "distance", msg.distance)
                 self.turtles[msg.sender] = msg.data[2]
             elseif msg.data[1] == "REQUEST_ITEMS" then
                 self:onRequestItems(msg.sender, data.name, data.count)
+            elseif msg.data[1] == "REQUEST_ITEM_LIST" then
+                self:onRequestItemList(msg.sender)
             else
                 print("other", msg.data[1], "sender", msg.sender)
             end
@@ -92,11 +96,76 @@ function RemoteStorage:initialize()
         end
     end
 
-    -- super
-    self:getInventories()
-    self:indexInventories()
+    self:loadConfig()
+
+    if not pocket then
+        -- super
+        self:getInventories()
+        self:indexInventories()
+    end
 
 end
+
+function RemoteStorage:loadConfig(fileName)
+
+    -- ItemStorage.loadConfig(self) -- either overwrite or build on super
+
+    if not fileName then fileName = default.configFile end
+    local file = fs.open(fileName, "r")
+    if file then 
+        local content = file.readAll()
+        file.close()
+        local config = textutils.unserialize(content)
+        if config then 
+            if config.providerPos then 
+            self.providerPos = vector.new(config.providerPos.x, config.providerPos.y, config.providerPos.z)
+            else
+                print("no providerPos in config")
+            end
+            if config.requestingPos then
+            self.requestingPos = vector.new(config.requestingPos.x, config.requestingPos.y, config.requestingPos.z)
+            else
+                print("no requestingPos in config")
+            end
+            self.providerInventory = config.providerInventory
+            self.requestingInventory = config.requestingInventory
+        end
+    else
+        print("could not load storage config from", fileName)
+    end
+end
+
+function RemoteStorage:saveConfig(fileName)
+    if not fileName then fileName = default.configFile end
+    local file = fs.open(fileName, "w")
+    if file then 
+        if not self.providerPos or not self.requestingPos then
+            print("cannot save config, positions not set")
+            return
+        end
+        local config = {
+            providerPos = vector.new(self.providerPos.x, self.providerPos.y, self.providerPos.z),
+            requestingPos = vector.new(self.requestingPos.x, self.requestingPos.y, self.requestingPos.z),
+            providerInventory = self.providerInventory,
+            requestingInventory = self.requestingInventory,
+        }
+        local content = textutils.serialize(config)
+        file.write(content)
+        file.close()
+    else
+        print("could not save storage config to", fileName)
+    end
+end
+
+function RemoteStorage:setProviderPos(x,y,z)
+    self.providerPos = vector.new(x,y,z)
+    self:saveConfig()
+end
+function RemoteStorage:setRequestingPos(x,y,z)
+    self.requestingPos = vector.new(x,y,z)
+    self:saveConfig()
+end
+
 
 -- #####################   view of requiring items
 
@@ -109,23 +178,29 @@ function RemoteStorage:handleItemsDelivered(msg)
 
     --reservationId = reservation.id, itemName = itemName, count = count - remaining, provider = reservation.provider 
 
-    local turtleName = msg.data[2].requestingInv
-    local ok = false
-    if turtleName then 
-        local present = peripheral.isPresent(turtleName)
-        if present then 
-            local tid = peripheralCall(turtleName, "getID")
-            if tid and tid == msg.sender then 
-                ok = true
+    if data.requestingInv == "player" then 
+        sleep(60*2-1) -- dont confirm automatically, player has to pick them up
+        -- use inventory_change events?
+    else
+        local turtleName = data.requestingInv
+        local ok = false
+        if turtleName then 
+            local present = peripheral.isPresent(turtleName)
+            if present then 
+                local tid = peripheralCall(turtleName, "getID")
+                if tid and tid == msg.sender then 
+                    ok = true
+                    print(turtleName, "verified, id:", tid)
+                end
             end
         end
-    end
-    if not ok then 
-        print("pickup items: turtle identity could not be verified", msg.sender, turtleName)
-        return
+        if not ok then 
+            print("pickup items: turtle identity could not be verified", msg.sender, turtleName)
+            return
+        end
+        self:input(data.requestingInv, data.invList) -- make sure turtle is not sucked dry lmao
     end
 
-    self:input(data.requestingInv, data.invList) -- make sure turtle is not sucked dry lmao
     self.node:answer(msg, {"DELIVERY_CONFIRMED"})
 end
 
@@ -141,6 +216,85 @@ function RemoteStorage:handleAvailableResponse(msg, itemName, available)
     end
 end
 
+function RemoteStorage:printProviderIndex()
+    local itCt = 0
+    for itemName, providers in pairs(self.providerIndex) do
+        local total = 0
+        for provider, count in pairs(providers) do
+            total = total + count
+        end
+        write(itemName .. ": " .. total .. " | ")
+        for provider, count in pairs(providers) do
+            write("  " .. provider .. ": " .. count)
+        end
+        print()
+    end
+    return itemList
+end
+
+function RemoteStorage:getAccumulatedItemList()
+    -- list all items from all providers
+    local itCt = 0
+    local itemList = {}
+    local tempList = {}
+
+    -- have to combine own item index with provider index 
+    local ownItems = self:getItemList()
+    for i = 1, #ownItems do
+        local item = ownItems[i]
+        tempList[item.name] = item.count
+    end
+
+    for itemName, providers in pairs(self.providerIndex) do
+        local total = tempList[itemName] or 0
+        for provider, count in pairs(providers) do
+            total = total + count
+        end
+        tempList[itemName] = nil
+
+        itCt = itCt + 1
+        itemList[itCt] = { name = itemName, count = total }
+    end
+
+    -- add items that are only in own storage
+    for itemName, count in pairs(tempList) do
+        itCt = itCt + 1
+        itemList[itCt] = { name = itemName, count = count }
+    end
+
+    return itemList
+end
+
+function RemoteStorage:printAccumulatedItemList()
+    local items = self:getAccumulatedItemList()
+    table.sort(items, function(a,b) return a.count > b.count end )
+    for i = 1, #items do
+        local item = items[i]
+        print( item.name .. ": " .. item.count )
+    end
+end
+
+function RemoteStorage:requestItemList()
+    self.node:send( storageChannel, {"REQUEST_ITEM_LIST"})
+    sleep(0.5)
+end
+
+function RemoteStorage:handleItemListResponse(msg)
+    print("received item list from", msg.sender)
+    local provIdx = self.providerIndex
+    local provider = msg.sender
+    local itemList = msg.data[2]
+    for i = 1, #itemList do
+        local item = itemList[i]
+        local idx = provIdx[item.name]
+        if not idx then 
+            idx = {[provider] = item.count}
+            provIdx[item.name] = idx
+        else
+            idx[provider] = item.count
+        end
+    end
+end
 
 
 function RemoteStorage:pingTurtles()
@@ -150,11 +304,12 @@ function RemoteStorage:pingTurtles()
     return self.turtles
 end
 
-function RemoteStorage:getNearestAvailableTurtles()
+function RemoteStorage:getNearestAvailableTurtles(pos)
+    if not pos then pos = self.providerPos end
     local availableTurtles = {}
     for id, state in pairs(self.turtles) do
-        if state.task == nil and not state.stuck then 
-            local diff = self.providerPos - vector.new(state.pos.x, state.pos.y, state.pos.z)
+        if state.task == nil and not state.stuck and not state.alreadySent then 
+            local diff = pos - vector.new(state.pos.x, state.pos.y, state.pos.z)
             local dist = diff:length()
             -- local dist = msg.distance
             availableTurtles[#availableTurtles+1] = { id = id, dist = dist }
@@ -164,7 +319,37 @@ function RemoteStorage:getNearestAvailableTurtles()
     return availableTurtles
 end
 
-function RemoteStorage:requestReserveItems(itemName, count)
+function RemoteStorage:requestDelivery(itemName, count, toPlayer)
+    local requestingPos = self.requestingPos
+    local requestingInv = self.requestingInventory
+
+    if toPlayer then
+        requestingInv = "player"
+        if not pocket then
+            print("toPlayer; NOT A POCKET COMPUTER")
+            return
+        end
+        requestingPos = nil
+        local x,y,z
+        if gps and pocket then 
+            x, y, z = gps.locate()
+            if x and y and z then
+                x, y, z = math.floor(x), math.floor(y), math.floor(z)
+                requestingPos = vector.new(x, y, z)
+            end
+        end
+        if not requestingPos then
+            print("toPlayer; NO GPS POSITION AVAILABLE")
+            return
+        end
+        print("DELIVERY TO PLAYER", requestingPos)
+    end
+
+    self:requestReserveItems(itemName, count, requestingPos, requestingInv)
+end
+
+
+function RemoteStorage:requestReserveItems(itemName, count, requestingPos, requestingInv)
     -- broadcast to all storage providers? kind of weird, no?
     -- try ringlike topology, where message is passed along until someone can provide it?
 
@@ -182,6 +367,9 @@ function RemoteStorage:requestReserveItems(itemName, count)
             if answer and answer.data[1] == "ITEMS_RESERVED" then
                 local data = answer.data[2]
                 data.provider = provider
+                if data.pos then 
+                    data.pos = vector.new(data.pos.x, data.pos.y, data.pos.z)
+                end
                 reservations[#reservations+1] = data
                 remaining = remaining - data.reserved
                 print("reserved", data.reserved, "of", itemName, "from", provider)
@@ -213,7 +401,6 @@ function RemoteStorage:requestReserveItems(itemName, count)
         return nil
     end
     self:pingTurtles()
-    local availableTurtles = self:getNearestAvailableTurtles()
 
     -- todo: max items a turtle can carry = 15*stackSize
     -- 1 slot reserved for fuel
@@ -223,23 +410,24 @@ function RemoteStorage:requestReserveItems(itemName, count)
     -- -> Travelling Salesman Problem
     -- for now, one provider per turtle trip
 
-    local ck = 1
     local turtles = self.turtles
     for i = 1, #reservations do 
         local res = reservations[i]
-        for k = ck, #availableTurtles do
+        -- not neares turtle to current/requesting position but pickup/provider position
+        local availableTurtles = self:getNearestAvailableTurtles(res.pos)
+        for k = 1, #availableTurtles do
             local id, dist = availableTurtles[k].id, availableTurtles[k].dist
             print("transport request to turtle", id, "for reservation", res.id, "from provider", res.provider)
             local answer = self.node:send(id, {"DO", "pickupAndDeliverItems", 
-                { res, self.requestingPos, self.node.id, self.requestingInventory }},
+                { res, requestingPos, self.node.id, requestingInv }},
                 true, true, default.waitTime)
 
             --local answer = self.node:send(id, {"TRANSPORT_REQUEST", 
             --    { reservation = res, dropOffPos = self.requestingPos, requestingInv = self.requestingInventory, requester = self.node.id }},
             --    true, true, default.waitTime)
             if answer and answer.data[1] == "RECEIVED" then --"TRANSPORT_ACCEPTED" then 
+                turtles[id].alreadySent = true
                 print("transport accepted by turtle", id)
-                ck = k + 1
                 break
             end
         end
@@ -295,17 +483,17 @@ function RemoteStorage:sendCancelReservation(provider, reservationId)
     
 end
 
+
 -- #####################   view of providing items
 
-function RemoteStorage:onRequestItems(requester, itemName, count)
 
-    local sources = self.index[itemName]
-    local available = 0
-    if sources then
-        for _, qty in pairs(sources) do
-            available = available + qty
-        end
-    end
+function RemoteStorage:onRequestItemList(requester)
+    local itemList = self:getItemList()
+    self.node:send(requester, {"ITEM_LIST", itemList})
+end
+
+function RemoteStorage:onRequestItems(requester, itemName)
+    local available = self:countItem(itemName)
     self.node:send(requester, {"AVAILABLE_ITEMS", { name = itemName, available = available}})
 end
 

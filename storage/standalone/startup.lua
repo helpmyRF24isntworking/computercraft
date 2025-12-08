@@ -1,14 +1,17 @@
 -- startup file for standalone storage computer
 
-os.loadAPI("/runtime/global.lua")
+if rednet then	
+	os.loadAPI("/runtime/bluenet.lua")
+	shell.run("/runtime/update.lua")
+
+	shell.run("runtime/killRednet.lua")
+	return
+end
 
 -- add runtime as default environment
 package.path = package.path ..";../runtime/?.lua"
 
-if rednet then	
-	shell.run("runtime/killRednet.lua")
-	return
-end
+
 
 os.loadAPI("/runtime/global.lua")
 os.loadAPI("/runtime/bluenet.lua")
