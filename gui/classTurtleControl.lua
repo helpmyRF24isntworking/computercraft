@@ -213,7 +213,6 @@ function TurtleControl:initialize()
 	self.frmId = Frame:new(self.data.id .. " - " .. self.data.label ,1,1,self.width,self.height,default.borderColor)
 	self.btnCollapse = Button:new("-",1,1,3,1)
 	-- row 1 - 16
-	print(self.data.pos, self.data.pos.x, self.data.pos.y)
 	self.lblX = Label:new("X  " .. self.data.pos.x,3,3)
 	self.lblY = Label:new("Y  " .. self.data.pos.y,3,4)
 	self.lblZ = Label:new("Z  " .. self.data.pos.z,3,5)

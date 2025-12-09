@@ -13,6 +13,7 @@ local MapDisplay = require("classMapDisplay")
 local TurtleControl = require("classTurtleControl")
 local TaskGroupSelector = require("classTaskGroupSelector")
 local TaskGroupControl = require("classTaskGroupControl")
+local StorageDisplay = require("classStorageDisplay")
 
 local default = {
 	colors = {
@@ -44,6 +45,7 @@ function HostDisplay:loadGlobals()
 		self.pos = global.pos
 		self.taskGroups = global.taskGroups
 		self.alerts = global.alerts
+		self.storage = global.storage
 	else
 		print("GLOBALS NOT AVAILABLE")
 	end
@@ -78,6 +80,7 @@ function HostDisplay:initialize()
 	self.winMain.mp5 = Label:new("\159", sx+3, sy+1, colors.green, colors.blue)
 	self.winMain.mp6 = Label:new("\154\158\141\151", sx, sy+2, colors.green, colors.blue)
 	self.winMain.btnGroups = Button:new("Groups", sx+6, sy, 10, 3)
+	self.winMain.btnStorage = Button:new("Storage", sx+17, sy, 10, 3)
 	
 	local sx, sy = 2, sy+4
 	self.winMain.btnTurtles = Button:new("Turtles", sx, sy, 10, 3)
@@ -112,6 +115,7 @@ function HostDisplay:initialize()
 	self.winMain.btnHome.click = function() return self:globalCallHome() end
 	self.winMain.btnDumpItems.click = function() return self:globalDumpItems() end
 	self.winMain.btnRefuel.click = function() return self:globalGetFuel() end
+	self.winMain.btnStorage.click = function() return self:displayStorage() end
 
 
 
@@ -126,6 +130,7 @@ function HostDisplay:initialize()
 	self.winMain:addObject(self.winMain.mp5)
 	self.winMain:addObject(self.winMain.mp6)
 	self.winMain:addObject(self.winMain.btnGroups)
+	self.winMain:addObject(self.winMain.btnStorage)
 	self.winMain:addObject(self.winMain.btnTurtles)
 	self.winMain:addObject(self.winMain.lblRow1)
 	self.winMain:addObject(self.winMain.lblRow2)
@@ -220,6 +225,9 @@ function HostDisplay:initialize()
 	self.winSettings:addObject(self.winSettings.lblMsgCountVal)
 	
 	-- init hidden windows
+	self.storageDisplay = StorageDisplay:new(1,1,self:getWidth(),self:getHeight(),self.storage)
+	self.storageDisplay:setHostDisplay(self)
+
 	self.mapDisplay = MapDisplay:new(4,4,32,16)
 	self.winTurtles = Window:new()
 	self.winGroups = Window:new()
@@ -280,6 +288,7 @@ end
 
 function HostDisplay:refresh()
 	self.mapDisplay:checkUpdates()
+	self.storageDisplay:checkUpdates()
 	self:updateTurtles()
 	self:updateGroups()
 	self:updateTime()
@@ -394,6 +403,13 @@ end
 function HostDisplay:displayMap()
 	self:addObject(self.mapDisplay)
 	self.mapDisplay:fillParent()
+	self:redraw()
+	return true
+end
+function HostDisplay:displayStorage()
+	self:addObject(self.storageDisplay)
+	self.storageDisplay:fillParent()
+	-- initially empty
 	self:redraw()
 	return true
 end

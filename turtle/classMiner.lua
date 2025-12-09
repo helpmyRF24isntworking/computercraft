@@ -2594,11 +2594,27 @@ function Miner:pickupAndDeliverItems(reservation, dropOffPos, requester, request
 
 					-- if this fails use, Miner:transferItems() and dump items into a chest
 					print("delivered", data.name, data.count, "to", requester, "inv", networkName or requestingInv)
-					local answer = self.nodeStorage:send(requester, {"ITEMS_DELIVERED", 
+					local answer, manualConfirmation
+					local requestConfirmation = function() 
+						answer = self.nodeStorage:send(requester, {"ITEMS_DELIVERED", 
 						{ reservation = reservation, requestingInv = networkName or requestingInv, invList = invList }},
 						true, true, waitTime)
+					end
+
+					parallel.waitForAny( 
+						requestConfirmation, 
+						function()
+							shell.switchTab(multishell.getCurrent())
+							print("---------------------------\n     ITEMS DELIVERED\nPRESS ENTER TO CONFIRM\n---------------------------")
+							--os.pullEvent("key")
+							local confirmed = read()
+							manualConfirmation = true
+						end
+					)
 					if answer and answer.data[1] == "DELIVERY_CONFIRMED" then
 						print("delivery confirmed by requester", requester)
+					elseif manualConfirmation then 
+						print("manual delivery confirmation")
 					else
 						if answer then print(answer.data[1]) end
 						print("no delivery confirmation from requester", requester)

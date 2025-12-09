@@ -1,0 +1,351 @@
+-- expandable container like ItemControl for items in storage
+-- collapsed: itemname, count, locally stored if applicable (not pocket), request button
+-- expanded: per provider list of counts and locations with map button
+-- request button to get items delivered 
+--      either to current position if pocket or to move between storages
+-- too late to do ts now
+
+local Button = require("classButton")
+local Label = require("classLabel")
+local Window = require("classWindow")
+local Frame = require("classFrame")
+
+local default = {
+	colors = {
+		background = colors.black,
+		border = colors.gray,
+		good = colors.green,
+		okay = colors.orange,
+		bad = colors.red,
+		neutral = colors.white,
+	},
+	expanded = {
+		width = 50,
+		height = 7,
+	},
+	collapsed = {
+		width = 50,
+		height = 1,
+	},
+}
+
+local ItemControl = Window:new()
+
+function ItemControl:new(x,y,data,storage)
+	local o = o or Window:new(x,y,default.collapsed.width,default.collapsed.height) or {}
+	setmetatable(o,self)
+	self.__index = self
+	
+	o.backgroundColor = default.colors.background
+	o.borderColor = default.colors.background
+	
+    o.storage = storage or nil
+	o.data = data
+	o.mapDisplay = nil -- needed to enable the map button
+	o.hostDisplay = nil
+	o.collapsed = true
+	o.win = nil
+    o.expandedHeight = default.expanded.height
+    o.elements = {}
+
+	o:initialize()
+
+	o:setData(data)
+	
+	return o
+end
+
+function ItemControl:setNode(node)
+	self.node = node
+end
+
+function ItemControl:setData(data)
+	if data then
+		self.data = data
+	else
+		--pseudo data
+		self.data = {} -- itemName, total
+	end
+end
+function ItemControl:setHostDisplay(hostDisplay)
+	self.hostDisplay = hostDisplay
+	if self.hostDisplay then
+		self.mapDisplay = self.hostDisplay:getMapDisplay()
+	end
+end
+function ItemControl:collapse()
+	if not self.collapsed then
+		self.collapsed = true
+		self:removeObject(self.win)
+		self:addObject(self.winSimple)
+		self.win = self.winSimple
+		self:setHeight(default.collapsed.height)
+	end
+	return true
+end
+function ItemControl:expand()
+	if self.collapsed then 
+		self.collapsed = false
+		self:removeObject(self.win)
+		self:addObject(self.winDetail)
+		self.win = self.winDetail
+		self:setHeight(self.expandedHeight)
+	end
+	return true
+end
+
+
+
+function ItemControl:openMap(pos)
+	if self.hostDisplay and self.mapDisplay then
+		self.mapDisplay:setMapMid(pos) -- vector.new(pos.x, pos.z, pos.y)
+		self.hostDisplay:displayMap()
+	end
+end
+
+
+function ItemControl:onResize() -- super override
+	Window.onResize(self) -- super
+	
+	self.win:fillParent()
+	self.frmName:setWidth(self.width)
+	self.frmName:setHeight(self.height)
+	
+end
+
+function ItemControl:redraw() -- super override
+	self:refresh()
+	
+	Window.redraw(self) -- super
+	
+	if not self.collapsed then
+		for i=3,5 do
+			self:setCursorPos(18,i)
+			--self:blit("|",colors.toBlit(colors.lightGray),colors.toBlit(self.backgroundColor))
+		end
+		for i=3,5 do
+			self:setCursorPos(34,i)
+			--self:blit("|",colors.toBlit(colors.lightGray),colors.toBlit(self.backgroundColor))
+		end
+	end
+end
+
+function ItemControl:initialize()
+	
+	self:removeObject(self.btnClose) -- close button not needed
+	
+	self.winDetail = Window:new()
+	self.winDetail:removeObject(self.winDetail.btnClose)
+	
+	self.winSimple = Window:new()
+	self.winSimple:removeObject(self.winSimple.btnClose)
+	
+	if self.collapsed then
+		self:addObject(self.winSimple)
+		self.win = self.winSimple
+	else 
+		self:addObject(self.winDetail)
+		self.win = self.winDetail
+	end
+	self.win:fillParent()
+	
+	-- simple
+	self.btnExpand = Button:new("+",1,1,3,1)
+
+    local nameStr = string.gsub(self.data.itemName, "minecraft:", "")
+	self.winSimple.lblName = Label:new(nameStr,13,1)
+    local totalStr = string.format("%6d", self.data.total)
+	self.winSimple.lblTotal = Label:new(totalStr,5,1) -- 39
+    self.winSimple.btnRequest = Button:new("request",44,1,9,1)
+
+    self.winSimple.btnRequest.click = function() end
+	
+	self.btnExpand.click = function() return self:expand() end
+	
+	self.winSimple:addObject(self.btnExpand)
+	self.winSimple:addObject(self.winSimple.lblName)
+	self.winSimple:addObject(self.winSimple.lblTotal)
+	self.winSimple:addObject(self.winSimple.btnRequest)
+	
+	
+	-- detail
+	self.frmName = Frame:new(self.data.itemName ,1,1,self.width,self.height,default.borderColor)
+	self.btnCollapse = Button:new("-",1,1,3,1)
+	-- row 1 - 16
+
+    
+
+
+	-- row 20 - 
+
+    local elements = {}
+    local total = 0
+
+    local x, y = 3, 4 
+    local offsetX1, offsetX2 = 17, 36
+
+    self.lblProviderHd = Label:new("provider",x,3)
+    self.lblCountHd = Label:new("count",x+offsetX1,3)
+    self.btnDetails = Button:new("print details",x+offsetX2-6,3,15,1)
+
+    if self.storage and self.storage.index then 
+        local count = self.storage:countItem(self.data.itemName)
+        if count > 0 then 
+            elements["lblSelf"] = Label:new("self", x, y)
+            elements["lblCountSelf"] = Label:new(count, x + offsetX1, y)
+            elements["btnExtract"] = Button:new("extract", x + offsetX2, y, 9, 1)
+            elements["btnExtract"].click = function() 
+                if self.storage then 
+                    -- self.storage:extract() -- but where to
+                end
+            end
+            y = y + 1
+            total = total + count
+        end
+    end
+
+    if self.storage and self.storage.providerIndex then 
+        local providers = self.storage.providerIndex[self.data.itemName]
+        if providers then 
+            for provider, count in pairs(providers) do
+                elements["lbl"..provider] = Label:new(provider, x, y)
+                elements["lblCount"..provider] = Label:new(count, x + offsetX1, y)
+                elements["btnMap"..provider] = Button:new("map", x + offsetX2-6, y, 5, 1)
+                elements["btnMap"..provider].click = function() 
+                    -- self:openMap(nil) -- TODO: get provider position
+                end
+                elements["btnRequest"..provider] = Button:new("request", x + offsetX2, y, 9, 1)
+                elements["btnRequest"..provider].click = function() 
+                    if self.storage then 
+                        -- self.storage:requestDelivery() -- direct request to specified provider, not general
+                    end
+                end
+                y = y + 1
+                total = total + count
+            end
+        end
+    end
+
+    if total > 0 then 
+        elements["lblTotal"] = Label:new("total"..string.rep("\175",offsetX1-5), x, y)
+        elements["lblCountTotal"] = Label:new(total, x + offsetX1, y)
+        elements["btnRequestTotal"] = Button:new("request any", x + offsetX2-6, y, 15, 1)
+        elements["btnRequestTotal"].click = function() 
+            if self.storage then 
+                --self:setCursorPos(x + offsetX2+10, y)
+                --self:write("amount:")
+                --local amount = read() -- does not work, runs in display, not in the actual gui term
+                --print(amount)
+                self.storage:requestDelivery(self.data.itemName, 64, pocket and true) -- TODO: prompt for count
+            end
+        end
+    end
+
+    self.btnCollapse.click = function() return self:collapse() end
+    
+
+    self.winDetail:addObject(self.frmName) -- add frame first to be in background ...
+    self.winDetail:addObject(self.lblProviderHd)
+    self.winDetail:addObject(self.lblCountHd)
+    self.winDetail:addObject(self.btnDetails)
+
+    self.elements = elements
+    for descr, elem in pairs(elements) do
+        print(descr, elem)
+        self.winDetail:addObject(elem)
+    end
+
+	self.winDetail:addObject(self.btnCollapse)
+
+    self.expandedHeight = y + 2
+	
+	self.winSimple.btnRequest.visible = self.data.total > 0
+end
+
+
+function ItemControl:refresh()
+
+	if self.collapsed then
+        local totalStr = string.format("%6d", self.data.total)
+		self.winSimple.lblTotal:setText(totalStr)
+        self.winSimple.btnRequest.visible = self.data.total > 0
+	else
+
+        local total = 0
+        local x, y = 3, 4
+        local offsetX1, offsetX2 = 17, 36
+        local elements = self.elements
+
+        if self.storage and self.storage.index then 
+            local count = self.storage:countItem(self.data.itemName)
+            if count > 0 then 
+                if not elements["lblSelf"] then
+                    -- ADD NEW ELEMENT
+                else
+                    elements["lblCountSelf"]:setText(count)
+                end
+                y = y + 1
+                total = total + count
+            else
+                if elements["lblSelf"] then
+                    elements["lblSelf"].removed = true
+                    elements["lblCountSelf"].removed = true
+                    elements["btnExtract"].removed = true
+                end
+            end
+        end
+
+        if self.storage and self.storage.providerIndex then 
+            local providers = self.storage.providerIndex[self.data.itemName]
+            if providers then 
+                for provider, count in pairs(providers) do
+                    -- ADD NEW ONES IF NEEDED AND REMOVE OLD ONES
+                    if count > 0 then 
+                        elements["lblCount"..provider]:setText(count)
+
+                        elements["lbl"..provider]:setPos(x, y)
+                        elements["lblCount"..provider]:setPos(x + offsetX1, y)
+                        elements["btnMap"..provider]:setPos(x + offsetX2-6, y)
+                        elements["btnRequest"..provider]:setPos(x + offsetX2, y)
+                        y = y + 1
+                        total = total + count
+                    else
+                        elements["lbl"..provider].removed = true
+                        elements["lblCount"..provider].removed = true
+                        elements["btnMap"..provider].removed = true
+                        elements["btnRequest"..provider].removed = true
+                    end
+                end
+            end
+        end
+
+        if total > 0 then 
+            elements["lblCountTotal"]:setText(total)
+
+            elements["lblTotal"]:setPos(x, y)
+            elements["lblCountTotal"]:setPos(x + offsetX1, y)
+            elements["btnRequestTotal"]:setPos(x + offsetX2-6, y)
+        else
+            elements["lblTotal"].removed = true
+            elements["lblCountTotal"].removed = true
+            elements["btnRequestTotal"].removed = true
+        end
+
+        for descr, elem in pairs(elements) do
+            if elem.removed then
+                print("removing", descr, elem)
+                self.winDetail:removeObject(elem)
+            elseif elem.added then 
+                self.winDetail:addObject(elem)
+            end
+        end
+
+        self.expandedHeight = y + 2
+        if self:getHeight() ~= self.expandedHeight then
+            self:setHeight(self.expandedHeight)
+        end
+        
+	end
+end
+
+return ItemControl

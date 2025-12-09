@@ -179,8 +179,10 @@ function RemoteStorage:handleItemsDelivered(msg)
     --reservationId = reservation.id, itemName = itemName, count = count - remaining, provider = reservation.provider 
 
     if data.requestingInv == "player" then 
-        sleep(60*2-1) -- dont confirm automatically, player has to pick them up
+        --sleep(60*2-1) -- dont confirm automatically, player has to pick them up
+        -- NO SLEEPING, this locks the main thread
         -- use inventory_change events?
+        -- use manual confirmation or gui prompt to send answer
     else
         local turtleName = data.requestingInv
         local ok = false
@@ -199,9 +201,8 @@ function RemoteStorage:handleItemsDelivered(msg)
             return
         end
         self:input(data.requestingInv, data.invList) -- make sure turtle is not sucked dry lmao
-    end
-
-    self.node:answer(msg, {"DELIVERY_CONFIRMED"})
+        self.node:answer(msg, {"DELIVERY_CONFIRMED"})
+    end   
 end
 
 function RemoteStorage:handleAvailableResponse(msg, itemName, available)
@@ -300,7 +301,7 @@ end
 function RemoteStorage:pingTurtles()
     self.turtles = {}
     self.node:broadcast( {"GET_TURTLE_STATE"}, false )
-    sleep(1) -- wait for answers to arrive
+    sleep(0.5) -- wait for answers to arrive
     return self.turtles
 end
 
@@ -359,7 +360,7 @@ function RemoteStorage:requestReserveItems(itemName, count, requestingPos, reque
     local reservations = {}
     local msg = self.node:send( storageChannel, {"REQUEST_ITEMS", { name = itemName, count = count }})
     print(msg.data[1], msg.sender, msg.recipient)
-    sleep(1) -- wait for answers to arrive
+    sleep(0.5) -- wait for answers to arrive
     for provider, available in pairs(self.providerIndex[itemName] or {}) do
         print("provider", provider, "has", available, "of", itemName)
         if available > 0 then 
