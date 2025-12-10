@@ -5,7 +5,9 @@ local bluenet = require("bluenet")
 
 local default = {
     waitTime = 3,
+    shortWaitTime = 0.5,
     configFile = "/runtime/storage_config.txt",
+    priorityProtocol = "storage_priority",
 }
 local storageChannel = bluenet.default.channels.storage
 
@@ -31,6 +33,7 @@ function RemoteStorage:new(node)
 
 	o.inventories = {}
 
+    o.providers = {}
     o.providerInventory = nil -- perhaps multiple inventories?
     o.providerPos = nil
     o.providerIndex = {}
@@ -39,6 +42,9 @@ function RemoteStorage:new(node)
 
     o.requestingInventory = nil
     o.requestingPos = nil
+
+    o.pendingItemListRequests = {}
+    o.pendingAvailableRequests = {}
 
 	o:initialize()
 	return o
@@ -54,44 +60,54 @@ function RemoteStorage:initialize()
     bluenet.openChannel(bluenet.modem, bluenet.default.channels.storage)
 
     if self.node then 
-        self.node.onRequestAnswer = function(forMsg)
-            local data = forMsg.data[2]
-            if forMsg.data[1] == "RESERVE_ITEMS" then
-                self:onReserveItems(forMsg, data.name, data.count)
-            elseif forMsg.data[1] == "PICKUP_ITEMS" then
-                self:onPickupItems(forMsg, data.reservationId)
-            elseif forMsg.data[1] == "CANCEL_RESERVATION" then
-                self:onCancelReservation(forMsg, data.reservationId)
-            elseif forMsg.data[1] == "ITEMS_DELIVERED" then 
-                self:handleItemsDelivered(forMsg)
-            else
-                print("unknown request", forMsg.data[1], "from", forMsg.sender)
-            end
-        end
+        self.node.onRequestAnswer = function(forMsg) end -- dummy overwrite
 
         self.node.onReceive = function(msg)
             local data = msg.data[2]
+            print(msg.data[1], "sender", msg.sender)
             if msg.data[1] == "AVAILABLE_ITEMS" then
-                self:handleAvailableResponse(msg, data.name, data.available)
+                self:handleAvailableResponse(msg)
             elseif msg.data[1] == "ITEM_LIST" then
                 self:handleItemListResponse(msg)
             elseif msg.data[1] == "TURTLE_STATE" then 
                 print(msg.data[1], "from", msg.sender, "distance", msg.distance)
                 self.turtles[msg.sender] = msg.data[2]
-            elseif msg.data[1] == "REQUEST_ITEMS" then
-                self:onRequestItems(msg.sender, data.name, data.count)
+            elseif msg.data[1] == "REQUEST_AVAILABLE_ITEMS" then
+                self:onRequestAvailableItems(msg)
             elseif msg.data[1] == "REQUEST_ITEM_LIST" then
-                self:onRequestItemList(msg.sender)
+                self:onRequestItemList(msg)
+            elseif msg.data[1] == "REQUEST_PROVIDER_STATE" then 
+                self:onRequestProviderState(msg)
+            elseif msg.data[1] == "PROVIDER_STATE" then 
+                self:handleProviderStateResponse(msg)
+            elseif msg.data[1] == "RESERVE_ITEMS" then
+                self:onReserveItems(msg, data.name, data.count)
+            elseif msg.data[1] == "PICKUP_ITEMS" then
+                self:onPickupItems(msg, data.reservationId)
+            elseif msg.data[1] == "CANCEL_RESERVATION" then
+                self:onCancelReservation(msg, data.reservationId)
+            elseif msg.data[1] == "ITEMS_DELIVERED" then 
+                self:handleItemsDelivered(msg)
             else
                 print("other", msg.data[1], "sender", msg.sender)
             end
         end
 
         self.node.onAnswer = function(msg, forMsg)
-            if msg.data[1] == "ITEMS_RESERVED" then 
+            if msg.data[1] == "ITEM_LIST" then 
+                self:handleItemListResponse(msg,forMsg)
+            elseif msg.data[1] == "AVAILABLE_ITEMS" then 
+                self:handleAvailableResponse(msg,forMsg)
             
             elseif msg.data[1] == "RESERVATION_CANCELLED" then 
             
+            end
+        end
+        self.node.onNoAnswer = function(forMsg)
+            if forMsg.data[1] == "REQUEST_ITEM_LIST" then 
+                self:handleNoItemListResponse(forMsg)
+            elseif forMsg.data[1] == "REQUEST_AVAILABLE_ITEMS" then 
+                self:handleNoAvailableResponse(forMsg)
             end
         end
     end
@@ -104,6 +120,7 @@ function RemoteStorage:initialize()
         self:indexInventories()
     end
 
+    self:pingStorageProviders()
 end
 
 function RemoteStorage:loadConfig(fileName)
@@ -176,10 +193,7 @@ function RemoteStorage:handleItemsDelivered(msg)
 
     print("received res", resId, ":", count, itemName, "from", provider, "at", providerPos, "in", data.requestingInv)
 
-    --reservationId = reservation.id, itemName = itemName, count = count - remaining, provider = reservation.provider 
-
     if data.requestingInv == "player" then 
-        --sleep(60*2-1) -- dont confirm automatically, player has to pick them up
         -- NO SLEEPING, this locks the main thread
         -- use inventory_change events?
         -- use manual confirmation or gui prompt to send answer
@@ -200,25 +214,15 @@ function RemoteStorage:handleItemsDelivered(msg)
             print("pickup items: turtle identity could not be verified", msg.sender, turtleName)
             return
         end
-        self:input(data.requestingInv, data.invList) -- make sure turtle is not sucked dry lmao
+        self:input(data.requestingInv, data.invList)
         self.node:answer(msg, {"DELIVERY_CONFIRMED"})
     end   
 end
 
-function RemoteStorage:handleAvailableResponse(msg, itemName, available)
-    local provider = msg.sender
-    -- remember which providers have which items
-    local idx = self.providerIndex[itemName]
-    if not idx then
-        idx = {[provider] = available}
-        self.providerIndex[itemName] = idx
-    else
-        idx[provider] = available
-    end
-end
 
 function RemoteStorage:printProviderIndex()
     local itCt = 0
+    -- explicitly remember that a provider has 0 of some item?
     for itemName, providers in pairs(self.providerIndex) do
         local total = 0
         for provider, count in pairs(providers) do
@@ -253,8 +257,10 @@ function RemoteStorage:getAccumulatedItemList()
         end
         tempList[itemName] = nil
 
-        itCt = itCt + 1
-        itemList[itCt] = { name = itemName, count = total }
+        if total > 0 then 
+            itCt = itCt + 1
+            itemList[itCt] = { name = itemName, count = total }
+        end
     end
 
     -- add items that are only in own storage
@@ -275,13 +281,62 @@ function RemoteStorage:printAccumulatedItemList()
     end
 end
 
-function RemoteStorage:requestItemList()
-    self.node:send( storageChannel, {"REQUEST_ITEM_LIST"})
-    sleep(0.5)
+function RemoteStorage:requestItemList(awaitResponses)
+    -- try requesting from known providers first
+    local providerCt = 0
+    local start = os.epoch("utc")
+    local requestToken = math.random(1,2147483647)
+    self.itemListRequestToken = requestToken
+    local pendingItemListRequests = self.pendingItemListRequests
+    for provider, state in pairs(self.providers) do
+        -- instead of asking each provider synchronously, send all requests and wait for answers
+        local msg = self.node:send( provider, {"REQUEST_ITEM_LIST"}, 
+            true, false, default.shortWaitTime, default.priorityProtocol)
+        pendingItemListRequests[provider] = msg.id
+        providerCt = providerCt + 1
+    end
+    if providerCt == 0 then 
+        -- broadcast request
+        self.itemListRequestToken = nil
+        self:pingStorageProviders()
+        self.node:send( storageChannel, {"REQUEST_ITEM_LIST"})
+    elseif awaitResponses then
+        while true do
+            local event, token = os.pullEventRaw("item_list_ready")
+            if token == requestToken then break end
+        end
+    end
+    print("item list request:", os.epoch("utc") - start, "ms, from", providerCt, "providers")
 end
 
-function RemoteStorage:handleItemListResponse(msg)
-    print("received item list from", msg.sender)
+function RemoteStorage:removeProvider(provider)
+    -- provider not responding, has to be pinged again
+    self.providers[provider] = nil
+    -- remove entries from index
+    for itemName, providers in pairs(self.providerIndex) do
+        providers[provider] = nil
+    end
+end
+
+function RemoteStorage:onAllItemListsReceived()
+    local token = self.itemListRequestToken
+    if token then 
+        self.itemListRequestToken = nil
+        os.queueEvent("item_list_ready", token) -- queued in receive/main thread
+    end
+end
+
+function RemoteStorage:handleNoItemListResponse(forMsg)
+    local provider = forMsg.recipient
+    print("no item list response from", provider)
+    self:removeProvider(provider)
+    local pending = self.pendingItemListRequests
+    pending[provider] = nil
+    for k,v in pairs(pending) do return end -- still pending requests
+    self:onAllItemListsReceived()
+end
+
+function RemoteStorage:handleItemListResponse(msg, forMsg)
     local provIdx = self.providerIndex
     local provider = msg.sender
     local itemList = msg.data[2]
@@ -295,13 +350,31 @@ function RemoteStorage:handleItemListResponse(msg)
             idx[provider] = item.count
         end
     end
+    if forMsg then 
+        local pending = self.pendingItemListRequests
+        pending[provider] = nil
+        for k,v in pairs(pending) do return end -- still pending requests
+        self:onAllItemListsReceived()
+    end
 end
 
+
+function RemoteStorage:pingStorageProviders()
+    -- also broadcast your own state
+    local state = self:getState()
+    self.node:send( storageChannel, {"REQUEST_PROVIDER_STATE", state}, 
+                    false, false, nil, default.priorityProtocol )
+end
+
+function RemoteStorage:handleProviderStateResponse(msg)
+    local state = msg.data[2]
+    self.providers[msg.sender] = state
+end
 
 function RemoteStorage:pingTurtles()
     self.turtles = {}
     self.node:broadcast( {"GET_TURTLE_STATE"}, false )
-    sleep(0.5) -- wait for answers to arrive
+    sleep(default.shortWaitTime) -- wait for answers to arrive
     return self.turtles
 end
 
@@ -350,6 +423,81 @@ function RemoteStorage:requestDelivery(itemName, count, toPlayer)
 end
 
 
+
+
+function RemoteStorage:requestAvailableItems(itemName, count)
+    local providerCt = 0
+    local start = os.epoch("utc")
+    local pending = self.pendingAvailableRequests
+    
+    local requestToken = math.random(1,2147483647)
+    self.availableRequestToken = requestToken
+    
+    for provider, state in pairs(self.providers) do
+        local msg = self.node:send( provider, {"REQUEST_AVAILABLE_ITEMS", { name = itemName, count = count }}, 
+                    true, false, default.shortWaitTime, default.priorityProtocol)
+        pending[provider] = msg.id
+        providerCt = providerCt + 1
+    end
+    
+    if providerCt == 0 then 
+        self.availableRequestToken = nil
+        self:pingStorageProviders()
+        self.node:send( storageChannel, {"REQUEST_AVAILABLE_ITEMS", { name = itemName, count = count }})
+    else
+        print("waiting for allAvailableReceived...")
+        while true do
+            local event, token = os.pullEventRaw("available_ready")
+            if token == requestToken then break end
+        end
+    end
+    
+    print("available items request:", os.epoch("utc") - start, "ms, from", providerCt, "providers")
+end
+
+function RemoteStorage:onAllAvailableReceived()
+    local token = self.availableRequestToken
+    if token then
+        self.availableRequestToken = nil
+        os.queueEvent("available_ready", token) -- queued in receive/main thread
+    end
+end
+
+function RemoteStorage:handleNoAvailableResponse(forMsg)
+    local provider = forMsg.recipient
+    print("no available items response from", provider)
+    self:removeProvider(provider)
+    local pending = self.pendingAvailableRequests
+    pending[provider] = nil
+    for k,v in pairs(pending) do return end -- still pending requests
+    self:onAllAvailableReceived()
+end
+
+
+function RemoteStorage:handleAvailableResponse(msg, forMsg)
+    local provider = msg.sender
+    local data = msg.data[2]
+    local itemName, available = data.name, data.available
+    -- remember which providers have which items
+    local idx = self.providerIndex[itemName]
+    if not idx then
+        idx = {[provider] = available}
+        self.providerIndex[itemName] = idx
+    else
+        idx[provider] = available
+    end
+
+    if forMsg then 
+        local pending = self.pendingAvailableRequests
+        pending[provider] = nil
+        for k,v in pairs(pending) do return end -- still pending requests
+        self:onAllAvailableReceived()
+    end
+end
+
+
+
+
 function RemoteStorage:requestReserveItems(itemName, count, requestingPos, requestingInv)
     -- broadcast to all storage providers? kind of weird, no?
     -- try ringlike topology, where message is passed along until someone can provide it?
@@ -358,9 +506,8 @@ function RemoteStorage:requestReserveItems(itemName, count, requestingPos, reque
 
     local remaining = count
     local reservations = {}
-    local msg = self.node:send( storageChannel, {"REQUEST_ITEMS", { name = itemName, count = count }})
-    print(msg.data[1], msg.sender, msg.recipient)
-    sleep(0.5) -- wait for answers to arrive
+    self:requestAvailableItems(itemName, count)
+
     for provider, available in pairs(self.providerIndex[itemName] or {}) do
         print("provider", provider, "has", available, "of", itemName)
         if available > 0 then 
@@ -487,15 +634,41 @@ end
 
 -- #####################   view of providing items
 
-
-function RemoteStorage:onRequestItemList(requester)
-    local itemList = self:getItemList()
-    self.node:send(requester, {"ITEM_LIST", itemList})
+function RemoteStorage:getState()
+    return {
+        label = os.getComputerLabel() or self.node.id,
+        pos = global.pos,
+        providerPos = self.providerPos,
+        providerInventory = self.providerInventory,
+    }
 end
 
-function RemoteStorage:onRequestItems(requester, itemName)
+function RemoteStorage:onRequestProviderState(msg)
+    self:handleProviderStateResponse(msg) -- update own state of requester
+    local state = self:getState()
+    self.node:send(msg.sender, {"PROVIDER_STATE", state})
+end
+
+function RemoteStorage:onRequestItemList(msg)
+    local itemList = self:getItemList()
+    if msg.answer then 
+        -- direct request
+        self.node:answer(msg, {"ITEM_LIST", itemList})
+    else
+        -- broadcasted request
+        self.node:send(msg.sender, {"ITEM_LIST", itemList})
+    end
+end
+
+function RemoteStorage:onRequestAvailableItems(msg)
+    local data = msg.data[2]
+    local itemName = data.name
     local available = self:countItem(itemName)
-    self.node:send(requester, {"AVAILABLE_ITEMS", { name = itemName, available = available}})
+    if msg.answer then 
+        self.node:answer(msg, {"AVAILABLE_ITEMS", { name = itemName, available = available}})
+    else
+        self.node:send(msg.sender, {"AVAILABLE_ITEMS", { name = itemName, available = available}})
+    end
 end
 
 function RemoteStorage:onReserveItems(msg, itemName, count)

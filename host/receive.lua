@@ -3,6 +3,7 @@ local bluenet = require("bluenet")
 local ownChannel = bluenet.ownChannel
 local channelBroadcast = bluenet.default.channels.broadcast
 local channelHost = bluenet.default.channels.host
+local channelStorage = bluenet.default.channels.storage
 local computerId = os.getComputerID()
 
 local global = global
@@ -35,7 +36,7 @@ while global.running and global.receiving do
 		and type(msg) == "table" 
 		and ( type(msg.recipient) == "number" and msg.recipient
 		and ( msg.recipient == computerId or msg.recipient == channelBroadcast
-			or msg.recipient == channelHost) )
+			or msg.recipient == channelHost or msg.recipient == channelStorage) )
 			-- just to make sure its a bluenet message
 		then
 			-- event, modem, channel, replyChannel, message, distance
@@ -58,6 +59,8 @@ while global.running and global.receiving do
 				--node:addMessage(msg)
 			elseif protocol == "storage" then 
 				nodeStorage:addMessage(msg)
+			elseif protocol == "storage_priority" then
+				nodeStorage:handleMessage(msg)
 			end
 			
 	elseif event == "timer" then

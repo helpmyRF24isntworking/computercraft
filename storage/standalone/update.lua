@@ -6,6 +6,7 @@ local waitTime = 5
 folders = {
 "general",
 "storage",
+"storage/standalone",
 }
 
 files = {

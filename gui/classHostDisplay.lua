@@ -409,7 +409,7 @@ end
 function HostDisplay:displayStorage()
 	self:addObject(self.storageDisplay)
 	self.storageDisplay:fillParent()
-	-- initially empty
+	self.storageDisplay:refresh()
 	self:redraw()
 	return true
 end

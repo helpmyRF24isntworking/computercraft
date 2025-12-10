@@ -105,6 +105,12 @@ function Window:calculateMid()
 	self.midX = self.x + self.midWidth
 	self.midY = self.y + self.midHeight
 end
+function Window:getX()
+	return self.x
+end
+function Window:getY()
+	return self.y
+end
 function Window:setX(x)
 	self.x = x
 	self:onResize()
@@ -280,6 +286,14 @@ end
 function Window:restoreColor()
     self:restoreBackgroundColor()
     self:restoreTextColor()
+end
+
+function Window:getTerm()
+	return self.parent:getTerm()
+end
+
+function Window:getRealPos(x,y)
+	return self.parent:getRealPos(self.x-1+x, self.y-1+y)
 end
 
 function Window:update()

@@ -30,6 +30,9 @@ while global.running do
 			if protocol == "storage" then
 				print("received", msg.data[1], msg.sender)
 				nodeStorage:addMessage(msg)
+			elseif protocol == "storage_priority" then
+				print("priority", msg.data[1], msg.sender)
+				nodeStorage:handleMessage(msg)
 			end
 			
 	elseif event == "terminate" then 

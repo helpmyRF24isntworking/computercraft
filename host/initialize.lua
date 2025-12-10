@@ -56,7 +56,7 @@ local function loadGroups(fileName)
 end
 
 -- quick boot
-parallel.waitForAll(initNode,initStream,initUpdate,initStorage)
+parallel.waitForAll(initNode,initStream,initUpdate)
 
 
 
@@ -70,7 +70,11 @@ global.loadStations()
 loadGroups()
 global.loadAlerts()
 
+initStorage() -- init after loading the rest but before display
+
 if not pocket then -- pocket uses shellDisplay
 	global.monitor = Monitor:new()
 	global.display = HostDisplay:new(1,1,global.monitor:getWidth(),global.monitor:getHeight())
 end
+
+

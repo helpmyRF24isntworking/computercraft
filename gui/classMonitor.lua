@@ -216,6 +216,14 @@ function Monitor:redraw()
     end
 end
 
+function Monitor:getTerm()
+	return self.term
+end
+
+function Monitor:getRealPos(x,y)
+	return  x, y
+end
+
 function Monitor:getObjectByPos(x,y)
     local node = self.objects.first
     while node do

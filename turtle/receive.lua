@@ -198,7 +198,7 @@ while true do
 				node:handleMessage(msg)
 			elseif protocol == "refuel" then
 				nodeRefuel:handleMessage(msg)
-			elseif protocol == "storage" then
+			elseif protocol == "storage" or protocol == "storage_priority" then
 				nodeStorage:handleMessage(msg)
 			end
 	elseif event == "terminate" then 

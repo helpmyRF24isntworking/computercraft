@@ -105,6 +105,7 @@ end
 
 
 function ItemControl:onResize() -- super override
+
 	Window.onResize(self) -- super
 	
 	self.win:fillParent()
@@ -191,35 +192,19 @@ function ItemControl:initialize()
     if self.storage and self.storage.index then 
         local count = self.storage:countItem(self.data.itemName)
         if count > 0 then 
-            elements["lblSelf"] = Label:new("self", x, y)
-            elements["lblCountSelf"] = Label:new(count, x + offsetX1, y)
-            elements["btnExtract"] = Button:new("extract", x + offsetX2, y, 9, 1)
-            elements["btnExtract"].click = function() 
-                if self.storage then 
-                    -- self.storage:extract() -- but where to
-                end
-            end
+            self:createElements(elements, "self", count, nil, x, y, offsetX1, offsetX2)
             y = y + 1
             total = total + count
         end
     end
 
     if self.storage and self.storage.providerIndex then 
+        local providerStates = self.storage.providers or {}
         local providers = self.storage.providerIndex[self.data.itemName]
         if providers then 
             for provider, count in pairs(providers) do
-                elements["lbl"..provider] = Label:new(provider, x, y)
-                elements["lblCount"..provider] = Label:new(count, x + offsetX1, y)
-                elements["btnMap"..provider] = Button:new("map", x + offsetX2-6, y, 5, 1)
-                elements["btnMap"..provider].click = function() 
-                    -- self:openMap(nil) -- TODO: get provider position
-                end
-                elements["btnRequest"..provider] = Button:new("request", x + offsetX2, y, 9, 1)
-                elements["btnRequest"..provider].click = function() 
-                    if self.storage then 
-                        -- self.storage:requestDelivery() -- direct request to specified provider, not general
-                    end
-                end
+                local state = providerStates[provider]
+                self:createElements(elements, provider, count, state, x, y, offsetX1, offsetX2)
                 y = y + 1
                 total = total + count
             end
@@ -227,18 +212,7 @@ function ItemControl:initialize()
     end
 
     if total > 0 then 
-        elements["lblTotal"] = Label:new("total"..string.rep("\175",offsetX1-5), x, y)
-        elements["lblCountTotal"] = Label:new(total, x + offsetX1, y)
-        elements["btnRequestTotal"] = Button:new("request any", x + offsetX2-6, y, 15, 1)
-        elements["btnRequestTotal"].click = function() 
-            if self.storage then 
-                --self:setCursorPos(x + offsetX2+10, y)
-                --self:write("amount:")
-                --local amount = read() -- does not work, runs in display, not in the actual gui term
-                --print(amount)
-                self.storage:requestDelivery(self.data.itemName, 64, pocket and true) -- TODO: prompt for count
-            end
-        end
+        self:createElements(elements, "total", total, nil, x, y, offsetX1, offsetX2)
     end
 
     self.btnCollapse.click = function() return self:collapse() end
@@ -250,9 +224,11 @@ function ItemControl:initialize()
     self.winDetail:addObject(self.btnDetails)
 
     self.elements = elements
-    for descr, elem in pairs(elements) do
-        print(descr, elem)
-        self.winDetail:addObject(elem)
+    for provider, provElements in pairs(elements) do
+        for descr, elem in pairs(provElements) do
+            self.winDetail:addObject(elem)
+            elem.added = nil
+        end
     end
 
 	self.winDetail:addObject(self.btnCollapse)
@@ -262,6 +238,73 @@ function ItemControl:initialize()
 	self.winSimple.btnRequest.visible = self.data.total > 0
 end
 
+function ItemControl:createElements(elements, provider, count, state, x, y, offsetX1, offsetX2)
+    -- helper for adding elements in the expanded view
+    local newElements = {}
+    if provider == "self" then
+        newElements["lblSelf"] = Label:new("self", x, y)
+        newElements["lblCountSelf"] = Label:new(count, x + offsetX1, y)
+        newElements["btnExtract"] = Button:new("extract", x + offsetX2, y, 9, 1)
+        newElements["btnExtract"].click = function() 
+            if self.storage then 
+                -- self.storage:extract() -- but where to
+            end
+        end
+    elseif provider == "total" then 
+        newElements["lblTotal"] = Label:new("total"..string.rep("\175",offsetX1-5), x, y)
+        newElements["lblCountTotal"] = Label:new(total, x + offsetX1, y)
+        newElements["btnRequestTotal"] = Button:new("request any", x + offsetX2-6, y, 15, 1)
+        newElements["btnRequestTotal"].click = function() 
+            if self.storage then 
+                
+                
+                --self:setCursorPos(x + offsetX2+10, y)
+                --self:write("amount:")
+                --self:update()
+                -- only works on pocket, obviously
+                local rx, ry = self:getRealPos(x + offsetX2+10, y)
+                local curTerm = self:getTerm()
+                curTerm.setCursorPos(rx, ry)
+                curTerm.write("amount: ")
+                os.queueEvent("input_request")
+                local event, input = os.pullEventRaw("input_response")
+                if event == "terminate" then return end
+                local amount = tonumber(input)
+
+
+                --local old = term.redirect(self:getTerm()) -- not working :(
+                print("requested amount:", amount)
+                
+                --local amount = read() -- does not work, runs in display, not in the actual gui term
+                --print(amount)
+                --self.storage:requestDelivery(self.data.itemName, 64, pocket and true) -- TODO: prompt for count
+            end
+        end
+    else
+        local strProvider = provider
+        if state then 
+            if state.label and tostring(state.label) ~= tostring(provider) then 
+                strProvider = provider .. "-" .. state.label
+            end
+        end
+        newElements["lbl"..provider] = Label:new(strProvider, x, y)
+        newElements["lblCount"..provider] = Label:new(count, x + offsetX1, y)
+        newElements["btnMap"..provider] = Button:new("map", x + offsetX2-6, y, 5, 1)
+        newElements["btnMap"..provider].click = function() 
+            -- self:openMap(nil) -- TODO: get provider position
+        end
+        newElements["btnRequest"..provider] = Button:new("request", x + offsetX2, y, 9, 1)
+        newElements["btnRequest"..provider].click = function() 
+            if self.storage then 
+                -- self.storage:requestDelivery() -- direct request to specified provider, not general
+            end
+        end
+    end
+    for descr, elem in pairs(newElements) do
+        elem.added = true
+    end
+    elements[provider] = newElements
+end
 
 function ItemControl:refresh()
 
@@ -275,22 +318,24 @@ function ItemControl:refresh()
         local x, y = 3, 4
         local offsetX1, offsetX2 = 17, 36
         local elements = self.elements
+        local providerStates = self.storage.providers or {}
 
         if self.storage and self.storage.index then 
+            local providerElements = elements["self"] or {}
             local count = self.storage:countItem(self.data.itemName)
             if count > 0 then 
-                if not elements["lblSelf"] then
-                    -- ADD NEW ELEMENT
+                if not providerElements["lblSelf"] then
+                    self:createElements(elements, "self", count, nil, x, y, offsetX1, offsetX2)
                 else
-                    elements["lblCountSelf"]:setText(count)
+                    providerElements["lblCountSelf"]:setText(count)
                 end
                 y = y + 1
                 total = total + count
             else
-                if elements["lblSelf"] then
-                    elements["lblSelf"].removed = true
-                    elements["lblCountSelf"].removed = true
-                    elements["btnExtract"].removed = true
+                if providerElements["lblSelf"] then
+                    providerElements["lblSelf"].removed = true
+                    providerElements["lblCountSelf"].removed = true
+                    providerElements["btnExtract"].removed = true
                 end
             end
         end
@@ -299,47 +344,73 @@ function ItemControl:refresh()
             local providers = self.storage.providerIndex[self.data.itemName]
             if providers then 
                 for provider, count in pairs(providers) do
-                    -- ADD NEW ONES IF NEEDED AND REMOVE OLD ONES
+                    local providerElements = elements[provider] or {}
                     if count > 0 then 
-                        elements["lblCount"..provider]:setText(count)
+                        if not providerElements["lbl"..provider] then
+                            local state = providerStates[provider]
+                            self:createElements(elements, provider, count, state, x, y, offsetX1, offsetX2)
+                        else
+                            providerElements["lblCount"..provider]:setText(count)
 
-                        elements["lbl"..provider]:setPos(x, y)
-                        elements["lblCount"..provider]:setPos(x + offsetX1, y)
-                        elements["btnMap"..provider]:setPos(x + offsetX2-6, y)
-                        elements["btnRequest"..provider]:setPos(x + offsetX2, y)
+                            providerElements["lbl"..provider]:setPos(x, y)
+                            providerElements["lblCount"..provider]:setPos(x + offsetX1, y)
+                            providerElements["btnMap"..provider]:setPos(x + offsetX2-6, y)
+                            providerElements["btnRequest"..provider]:setPos(x + offsetX2, y)
+                        end
                         y = y + 1
                         total = total + count
                     else
-                        elements["lbl"..provider].removed = true
-                        elements["lblCount"..provider].removed = true
-                        elements["btnMap"..provider].removed = true
-                        elements["btnRequest"..provider].removed = true
+                        -- requestAvailableItems sets index to 0, not nil 
+                        if providerElements["lbl"..provider] then
+                            providerElements["lbl"..provider].removed = true
+                            providerElements["lblCount"..provider].removed = true
+                            providerElements["btnMap"..provider].removed = true
+                            providerElements["btnRequest"..provider].removed = true
+                        end
                     end
+                    -- TODO: provider elements not removed if not in providerIndex any longer
                 end
             end
         end
 
+        local providerElements = elements["total"] or {}
         if total > 0 then 
-            elements["lblCountTotal"]:setText(total)
+            if not providerElements["lblTotal"] then
+                self:createElements(elements, "total", total, nil, x, y, offsetX1, offsetX2)
+            else
+                providerElements["lblCountTotal"]:setText(total)
 
-            elements["lblTotal"]:setPos(x, y)
-            elements["lblCountTotal"]:setPos(x + offsetX1, y)
-            elements["btnRequestTotal"]:setPos(x + offsetX2-6, y)
+                providerElements["lblTotal"]:setPos(x, y)
+                providerElements["lblCountTotal"]:setPos(x + offsetX1, y)
+                providerElements["btnRequestTotal"]:setPos(x + offsetX2-6, y)
+            end            
         else
-            elements["lblTotal"].removed = true
-            elements["lblCountTotal"].removed = true
-            elements["btnRequestTotal"].removed = true
-        end
-
-        for descr, elem in pairs(elements) do
-            if elem.removed then
-                print("removing", descr, elem)
-                self.winDetail:removeObject(elem)
-            elseif elem.added then 
-                self.winDetail:addObject(elem)
+            if providerElements["lblTotal"] then
+                providerElements["lblTotal"].removed = true
+                providerElements["lblCountTotal"].removed = true
+                providerElements["btnRequestTotal"].removed = true
             end
         end
 
+        -- alternatively instead of removing offline providers, gray them out
+
+        for provider, providerElements in pairs(elements) do
+            local state = providerStates[provider]
+            local remove = ( not state and provider ~= "self" and provider ~= "total")
+            for descr, elem in pairs(providerElements) do
+                if elem.removed or remove then
+                    print("removing", descr, elem)
+                    self.winDetail:removeObject(elem)
+                    providerElements[descr] = nil
+                elseif elem.added then
+                    print("adding", descr, elem)
+                    self.winDetail:addObject(elem)
+                    elem.added = nil
+                end
+            end
+        end
+
+        
         self.expandedHeight = y + 2
         if self:getHeight() ~= self.expandedHeight then
             self:setHeight(self.expandedHeight)

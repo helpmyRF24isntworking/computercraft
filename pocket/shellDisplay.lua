@@ -9,8 +9,13 @@ global.display = HostDisplay:new(1,1,global.monitor:getWidth(),global.monitor:ge
 local monitor = global.monitor
 
 while global.running do
-	local event, p1, p2, p3, msg, p5 = os.pullEvent("mouse_up")
-	if event == "mouse_up" or event == "mouse_click" or event == "monitor_resize" then
+	local event, p1, p2, p3, msg, p5 = os.pullEventRaw()
+	if event == "mouse_up" then -- or event == "mouse_click" or event == "monitor_resize" then
 		monitor:addEvent({event,p1,p2,p3,msg,p5})
+	elseif event == "input_request" then 
+		local input = read()
+		os.queueEvent("input_response", input)
+	elseif event == "terminate" then 
+		error("Terminated",0)
 	end
 end

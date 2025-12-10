@@ -54,7 +54,7 @@ function StorageDisplay:setStorage(storage)
 end
 
 function StorageDisplay:onAdd()
-    self.storage:requestItemList()
+    self.storage:requestItemList(true)
 end
 
 function StorageDisplay:checkUpdates()
@@ -96,22 +96,26 @@ function StorageDisplay:refresh()
                 if prvHeight > 3 and itemControl:getHeight() > 3 then 
                     y = y - 1
                 end
-                itemControl:setY(y)
+                if itemControl:getY() ~= y then
+                    itemControl:setY(y)
+                end
                 itemControl:setData(data)
             end
             prvHeight = itemControl:getHeight()
-            y = y + prvHeight -- !! after initialize the size might not be correct yet
-
+            y = y + prvHeight
+            itemControl.refreshed = true
         end
 
-                -- remove controls for items no longer present
-				--[[if turtleControls[id] then
-					self.winTurtles:removeObject(turtleControls[id])
-					turtleControls[id] = nil
-					self.winTurtles.turtleCt = self.winTurtles.turtleCt - 1
-				end]]
+        for itemName, itemControl in pairs(itemControls) do
+            if not itemControl.refreshed then
+                self:removeObject(itemControl)
+                itemControls[itemName] = nil
+                self.itemCt = self.itemCt - 1
+            else
+                itemControl.refreshed = nil
+            end
+        end
 
-        -- self:redraw()
     end
 end
 
