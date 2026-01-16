@@ -7,8 +7,9 @@
 
 local Button = require("classButton")
 local Label = require("classLabel")
-local Window = require("classWindow")
+local BasicWindow = require("classBasicWindow")
 local Frame = require("classFrame")
+local NumberInput = require("classNumberInput")
 
 local default = {
 	colors = {
@@ -29,10 +30,10 @@ local default = {
 	},
 }
 
-local ItemControl = Window:new()
+local ItemControl = BasicWindow:new()
 
 function ItemControl:new(x,y,data,storage)
-	local o = o or Window:new(x,y,default.collapsed.width,default.collapsed.height) or {}
+	local o = o or BasicWindow:new(x,y,default.collapsed.width,default.collapsed.height) or {}
 	setmetatable(o,self)
 	self.__index = self
 	
@@ -106,7 +107,7 @@ end
 
 function ItemControl:onResize() -- super override
 
-	Window.onResize(self) -- super
+	BasicWindow.onResize(self) -- super
 	
 	self.win:fillParent()
 	self.frmName:setWidth(self.width)
@@ -117,7 +118,7 @@ end
 function ItemControl:redraw() -- super override
 	self:refresh()
 	
-	Window.redraw(self) -- super
+	BasicWindow.redraw(self) -- super
 	
 	if not self.collapsed then
 		for i=3,5 do
@@ -133,13 +134,8 @@ end
 
 function ItemControl:initialize()
 	
-	self:removeObject(self.btnClose) -- close button not needed
-	
-	self.winDetail = Window:new()
-	self.winDetail:removeObject(self.winDetail.btnClose)
-	
-	self.winSimple = Window:new()
-	self.winSimple:removeObject(self.winSimple.btnClose)
+	self.winDetail = BasicWindow:new()
+	self.winSimple = BasicWindow:new()
 	
 	if self.collapsed then
 		self:addObject(self.winSimple)
@@ -256,28 +252,34 @@ function ItemControl:createElements(elements, provider, count, state, x, y, offs
         newElements["btnRequestTotal"] = Button:new("request any", x + offsetX2-6, y, 15, 1)
         newElements["btnRequestTotal"].click = function() 
             if self.storage then 
-                
-                
-                --self:setCursorPos(x + offsetX2+10, y)
-                --self:write("amount:")
-                --self:update()
-                -- only works on pocket, obviously
-                local rx, ry = self:getRealPos(x + offsetX2+10, y)
-                local curTerm = self:getTerm()
-                curTerm.setCursorPos(rx, ry)
-                curTerm.write("amount: ")
-                os.queueEvent("input_request")
-                local event, input = os.pullEventRaw("input_response")
-                if event == "terminate" then return end
-                local amount = tonumber(input)
+                local amount
 
+                local requestDelivery = function(amount)
+                    print("requested amount:", amount)
+                    self.storage:requestDelivery(self.data.itemName, amount, pocket and true)
+                end
 
-                --local old = term.redirect(self:getTerm()) -- not working :(
-                print("requested amount:", amount)
-                
-                --local amount = read() -- does not work, runs in display, not in the actual gui term
-                --print(amount)
-                --self.storage:requestDelivery(self.data.itemName, 64, pocket and true) -- TODO: prompt for count
+                if pocket then 
+                    -- use keyboard input for amount
+                    local rx, ry = self:getRealPos(x + offsetX2+10, y)
+                    local curTerm = self:getTerm()
+                    curTerm.setCursorPos(rx, ry)
+                    curTerm.write("amount: ")
+                    os.queueEvent("input_request", math.random(1,1000)) -- caught in shellDisplay.lua
+                    local event, token, input = os.pullEventRaw("input_response")
+                    if event == "terminate" then return end
+                    amount = tonumber(input) or 0
+
+                    requestDelivery(amount)
+                else
+                    -- use a touch gui prompt for amount
+                    local inputWin = NumberInput:new(10,5,"Item Amount")
+                    self.parent:addObject(inputWin)
+                    inputWin:center()
+                    inputWin.onNumberEntered = requestDelivery
+
+                end
+
             end
         end
     else

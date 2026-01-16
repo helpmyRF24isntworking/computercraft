@@ -20,8 +20,9 @@ function ChoiceSelector:new(x,y,width,height,choices)
 	setmetatable(o, self)
 	self.__index = self
 	
-	o.backgroundColor = default.colors.background
-	o.borderColor = default.colors.border
+	o:setBackgroundColor(default.colors.background)
+	o:setBorderColor(default.colors.border)
+
 	o.choice = nil
 	o.choices = {}
 	o.longestChoice = 0
@@ -34,6 +35,7 @@ function ChoiceSelector:initialize(choices)
 	if choices and #choices > 0 then
 		self:addChoices(choices)
 	end
+	print(self.borderColor, self.innerWin.borderColor)
 end
 
 function ChoiceSelector:addChoice(text)

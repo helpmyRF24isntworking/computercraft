@@ -30,8 +30,8 @@ function TaskGroupSelector:new(x,y,turtles,node,taskGroups)
 	setmetatable(o, self)
 	self.__index = self
 	
-	o.backgroundColor = default.colors.background
-	o.borderColor = default.colors.border
+	o:setBackgroundColor(default.colors.background)
+	o:setBorderColor(default.colors.border)
 	
 	o.turtles = turtles or nil
 	o.node = node or nil
@@ -100,9 +100,9 @@ function TaskGroupSelector:initialize()
 	self.btnStartTasks.click = function() self:startTasks() end
 	self.btnStartTasks:setEnabled(false)
 	
-	self:removeObject(self.btnClose)
+	--self:removeObject(self.btnClose)
 	self:addObject(self.frm)
-	self:addObject(self.btnClose)
+	--self:addObject(self.btnClose)
 	
 	
 	self:addObject(self.lblXStart)
@@ -241,6 +241,12 @@ function TaskGroupSelector:openMap()
 		self.hostDisplay:displayMap()
 	end
 end
+function TaskGroupSelector:closeMap()
+	if self.hostDisplay and self.mapDisplay then
+		self.hostDisplay:closeMap()
+	end
+end
+
 
 function TaskGroupSelector:selectPosition()
 	self.position = nil
@@ -283,7 +289,7 @@ function TaskGroupSelector:onAreaSelected(x, y, z)
 	
 	if #self.positions == 2 then
 		-- area selected
-		self.mapDisplay:close()
+		self:closeMap()
 		self:refresh()
 		self:redraw()
 	end
@@ -298,7 +304,7 @@ function TaskGroupSelector:onPositionSelected(x,y,z)
 	end
 	
 	self:close()
-	self.mapDisplay:close()
+	self:closeMap()
 end
 	
 function TaskGroupSelector:selectTask()

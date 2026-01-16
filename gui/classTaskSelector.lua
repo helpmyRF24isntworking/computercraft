@@ -21,8 +21,9 @@ function TaskSelector:new(x,y,width,height)
 	setmetatable(o, self)
 	self.__index = self
 	
-	o.backgroundColor = default.colors.background
-	o.borderColor = default.colors.border
+	o:setBackgroundColor(default.colors.background)
+	o:setBorderColor(default.colors.border)
+
 	o.node = node or nil
 	o.mapDisplay = mapDisplay or nil 
 	o.taskName = nil
@@ -64,6 +65,11 @@ end
 function TaskSelector:openMap()
 	if self.hostDisplay and self.mapDisplay then
 		self.hostDisplay:displayMap()
+	end
+end
+function TaskSelector:closeMap()
+	if self.hostDisplay and self.mapDisplay then
+		self.hostDisplay:closeMap()
 	end
 end
 
@@ -118,7 +124,7 @@ function TaskSelector:onAreaSelected(x, y, z)
 		-- area selected
 		self.node:send(self.data.id, {"DO", self.taskName, {self.positions[1] ,self.positions[2]}}) 
 		self:close()
-		self.mapDisplay:close()
+		self:closeMap()
 	end
 end
 
@@ -131,7 +137,7 @@ function TaskSelector:onPositionSelected(x,y,z)
 	end
 
 	self:close()
-	self.mapDisplay:close()
+	self:closeMap()
 end
 	
 function TaskSelector:navigateToPos()

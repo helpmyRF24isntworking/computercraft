@@ -1,7 +1,7 @@
 
 local Button = require("classButton")
 local Label = require("classLabel")
-local Window = require("classWindow")
+local BasicWindow = require("classBasicWindow")
 local Frame = require("classFrame")
 local TaskSelector = require("classTaskSelector")
 
@@ -18,15 +18,15 @@ local default = {
 	height = 7,
 }
 
-local TaskGroupControl = Window:new()
+local TaskGroupControl = BasicWindow:new()
 
 function TaskGroupControl:new(x,y,taskGroup,node,taskGroups)
-	local o = o or Window:new(x,y,default.width,default.height) or {}
+	local o = o or BasicWindow:new(x,y,default.width,default.height) or {}
 	setmetatable(o,self)
 	self.__index = self
 	
-	o.backgroundColor = default.colors.background
-	o.borderColor = default.colors.border
+	o:setBackgroundColor(default.colors.background)
+	o:setBorderColor(default.colors.border)
 	
 	o.node = node or nil 
 	o.taskGroup = taskGroup or nil
@@ -137,7 +137,7 @@ function TaskGroupControl:callHome()
 end
 
 function TaskGroupControl:onResize() -- super override
-	Window.onResize(self) -- super
+	BasicWindow.onResize(self) -- super
 	
 	self.frmId:setWidth(self.width)
 end
@@ -145,7 +145,7 @@ end
 function TaskGroupControl:redraw() -- super override
 	self:refresh()
 	
-	Window.redraw(self) -- super
+	BasicWindow.redraw(self) -- super
 	
 	for i=3,5 do
 		self:setCursorPos(19,i)
@@ -159,7 +159,6 @@ end
 
 function TaskGroupControl:initialize()
 	
-	self:removeObject(self.btnClose) -- close button not needed
 	self.frmId = Frame:new(string.sub(self.taskGroup.id,1,4),1,1,self.width,self.height,self.borderColor)
 	
 	-- row 1 - 16

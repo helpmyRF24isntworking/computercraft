@@ -13,8 +13,9 @@ while global.running do
 	if event == "mouse_up" then -- or event == "mouse_click" or event == "monitor_resize" then
 		monitor:addEvent({event,p1,p2,p3,msg,p5})
 	elseif event == "input_request" then 
+		local token = p1
 		local input = read()
-		os.queueEvent("input_response", input)
+		os.queueEvent("input_response", token, input)
 	elseif event == "terminate" then 
 		error("Terminated",0)
 	end

@@ -1,7 +1,7 @@
 
 local Button = require("classButton")
 local Label = require("classLabel")
-local Window = require("classWindow")
+local BasicWindow = require("classBasicWindow")
 local Frame = require("classFrame")
 local TaskSelector = require("classTaskSelector")
 
@@ -24,15 +24,15 @@ local default = {
 	},
 }
 
-local TurtleControl = Window:new()
+local TurtleControl = BasicWindow:new()
 
 function TurtleControl:new(x,y,data,node)
-	local o = o or Window:new(x,y,default.collapsed.width,default.collapsed.height) or {}
+	local o = o or BasicWindow:new(x,y,default.collapsed.width,default.collapsed.height) or {}
 	setmetatable(o,self)
 	self.__index = self
 	
-	o.backgroundColor = default.colors.background
-	o.borderColor = default.colors.background
+	o:setBackgroundColor(default.colors.background)
+	o:setBorderColor(default.colors.border)
 	
 	o.node = node or nil 
 	o.data = data
@@ -149,7 +149,7 @@ function TurtleControl:callHome()
 end
 
 function TurtleControl:onResize() -- super override
-	Window.onResize(self) -- super
+	BasicWindow.onResize(self) -- super
 	
 	self.win:fillParent()
 	self.frmId:setWidth(self.width)
@@ -160,7 +160,7 @@ end
 function TurtleControl:redraw() -- super override
 	self:refresh()
 	
-	Window.redraw(self) -- super
+	BasicWindow.redraw(self) -- super
 	
 	if not self.collapsed then
 		for i=3,5 do
@@ -176,13 +176,10 @@ end
 
 function TurtleControl:initialize()
 	
-	self:removeObject(self.btnClose) -- close button not needed
+	-- self:removeObject(self.btnClose) -- close button not needed
 	
-	self.winDetail = Window:new()
-	self.winDetail:removeObject(self.winDetail.btnClose)
-	
-	self.winSimple = Window:new()
-	self.winSimple:removeObject(self.winSimple.btnClose)
+	self.winDetail = BasicWindow:new()
+	self.winSimple = BasicWindow:new()
 	
 	if self.collapsed then
 		self:addObject(self.winSimple)
@@ -210,7 +207,7 @@ function TurtleControl:initialize()
 	
 	
 	-- detail
-	self.frmId = Frame:new(self.data.id .. " - " .. self.data.label ,1,1,self.width,self.height,default.borderColor)
+	self.frmId = Frame:new(self.data.id .. " - " .. self.data.label ,1,1,self.width,self.height,self.borderColor)
 	self.btnCollapse = Button:new("-",1,1,3,1)
 	-- row 1 - 16
 	self.lblX = Label:new("X  " .. self.data.pos.x,3,3)
@@ -256,6 +253,7 @@ function TurtleControl:initialize()
 	self.winDetail:addObject(self.btnDeleteTurtle)
 	
 	self.btnDeleteTurtle.visible = self.data.online
+
 end
 
 function TurtleControl:refreshPos()

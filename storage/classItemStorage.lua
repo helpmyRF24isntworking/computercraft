@@ -112,7 +112,6 @@ function ItemStorage:printIndex()
 end
 
 
-
 function ItemStorage:countItem(itemName, sources)
     -- perhaps change the way index works to store total counts
     local total = 0
@@ -142,6 +141,13 @@ function ItemStorage:printItems()
     for i = 1, #items do
         local item = items[i]
         print( item.name .. ": " .. item.count )
+    end
+end
+
+function ItemStorage:printReservation(reservation)
+    for i = 1, #reservation do
+        local res = reservation[i]
+        print( string.format(" %d: %s - %s (slot %d) x %d", i, res.itemName, res.invName, res.slot, res.count) )
     end
 end
 
@@ -228,6 +234,7 @@ function ItemStorage:extract(itemName, count, toInv, toSlot, reservation)
                 end
             end           
         end
+        if remaining <= 0 or toMove <= 0 then break end
     end
 
     local extracted = count - remaining

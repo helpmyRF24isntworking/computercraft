@@ -397,6 +397,8 @@ function RemoteStorage:requestDelivery(itemName, count, toPlayer)
     local requestingPos = self.requestingPos
     local requestingInv = self.requestingInventory
 
+    if not count or count <= 0 then return end
+
     if toPlayer then
         requestingInv = "player"
         if not pocket then
@@ -679,6 +681,8 @@ function RemoteStorage:onReserveItems(msg, itemName, count)
     local id = os.epoch("utc") .. math.random(1000,9999)
     self.reservations[id] = reservation
 
+    --self:printReservation(reservation)
+
     self.node:answer(msg, {"ITEMS_RESERVED", { name = itemName, reserved = reserved, id = id, pos = self.providerPos}})
    
 end
@@ -706,6 +710,7 @@ function RemoteStorage:onPickupItems(msg, reservationId)
     local reservation = self.reservations[reservationId]
     local itemName = reservation[1].itemName
     local extracted = self:extractReservation(reservation, toInv)
+    print("extracted", extracted, "of", itemName, "for reservation", reservationId, "to", toInv)
     self.node:answer(msg, {"ITEMS_EXTRACTED", { name = itemName, count = extracted, extractedToTurtle = ok}})
     if extracted then self.reservations[reservationId] = nil end
 end

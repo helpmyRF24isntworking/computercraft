@@ -9,11 +9,13 @@ local Label = require("classLabel")
 --require("classNetworkNode")
 local CheckBox = require("classCheckBox")
 local Window = require("classWindow")
+local BasicWindow = require("classBasicWindow")
 local MapDisplay = require("classMapDisplay")
 local TurtleControl = require("classTurtleControl")
 local TaskGroupSelector = require("classTaskGroupSelector")
 local TaskGroupControl = require("classTaskGroupControl")
 local StorageDisplay = require("classStorageDisplay")
+local ScrollBar = require("classScrollBar")
 
 local default = {
 	colors = {
@@ -22,10 +24,10 @@ local default = {
 }
 local global = global
 
-local HostDisplay = Window:new()
+local HostDisplay = BasicWindow:new()
 
 function HostDisplay:new(x,y,width,height)
-	local o = o or Window:new(x,y,width,height)
+	local o = o or BasicWindow:new(x,y,width,height)
 	setmetatable(o,self)
 	self.__index = self
 	
@@ -58,7 +60,7 @@ function HostDisplay:initialize()
 	self.winMain = Window:new(1,1)
 	self:addObject(self.winMain)
 	self.winMain:fillParent()
-	self.winMain:clearObjects()
+	self.winMain:removeCloseButton()
 	
 	-- add main window objects
 	--self.winMain.btnGlobalRebootSlow = Button:new("REBOOT SLW", self:getWidth()-9,10,11,3)
@@ -154,7 +156,7 @@ function HostDisplay:initialize()
 	--self.winMain:addObject(self.winMain.btnGlobalRebootSlow)
 	--self.winMain:addObject(self.winMain.btnGlobalShutdown)
 	
-	self.winData = Window:new(2,11,self:getWidth()-2,6)
+	self.winData = BasicWindow:new(2,11,self:getWidth()-2,6)
 	self.winMain:addObject(self.winData)
 
 	self.winData.frm = Frame:new("general", 1, 1, 55, 6)
@@ -187,7 +189,8 @@ function HostDisplay:initialize()
 	self.winData.chkSlowReboot.click = function()
 		self.doSlowReboot = self.winData.chkSlowReboot.active
 	end
-	
+
+
 	self.winData:addObject(self.winData.btnPrintStatus)
 	self.winData:addObject(self.winData.btnPrintEvents)
 	self.winData:addObject(self.winData.btnPrintSend)
@@ -196,8 +199,7 @@ function HostDisplay:initialize()
 	self.winData:addObject(self.winData.chkSlowReboot)
 
 	-- settings subwindow for main display
-	self.winSettings = Window:new(12,18,30,1)
-	self.winSettings:removeObject(self.winSettings.btnClose)
+	self.winSettings = BasicWindow:new(12,18,30,1)
 	self.winMain:addObject(self.winSettings)
 
 	self.winSettings.lblMsgDelay = Label:new("message interval", 1,1)
@@ -228,7 +230,9 @@ function HostDisplay:initialize()
 	self.storageDisplay = StorageDisplay:new(1,1,self:getWidth(),self:getHeight(),self.storage)
 	self.storageDisplay:setHostDisplay(self)
 
+	self.winMap = Window:new()
 	self.mapDisplay = MapDisplay:new(4,4,32,16)
+	self.winMap:setInnerWindow(self.mapDisplay)
 	self.winTurtles = Window:new()
 	self.winGroups = Window:new()
 	
@@ -244,6 +248,7 @@ function HostDisplay:initialize()
 		active = false,
 		stuck = false,
 	}
+	
 	
 	self.winTurtles.chkFilterOnline = CheckBox:new(14,1,"online",self.winTurtles.filter.online)
 	self.winTurtles.chkFilterActive = CheckBox:new(27,1,"active",self.winTurtles.filter.active)
@@ -268,6 +273,7 @@ function HostDisplay:initialize()
 	self.winTurtles:addObject(self.winTurtles.chkFilterOnline)
 	self.winTurtles:addObject(self.winTurtles.chkFilterActive)
 	self.winTurtles:addObject(self.winTurtles.chkFilterStuck)
+	self.winTurtles:addScrollbar(true)
 	
 	-- init groups window
 	self.winGroups.lblName = Label:new("Task Groups",1,1)
@@ -283,11 +289,11 @@ function HostDisplay:initialize()
 	-- self:redraw()
 
 
-
 end 
 
 function HostDisplay:refresh()
 	self.mapDisplay:checkUpdates()
+	-- self.winMap:redraw()
 	self.storageDisplay:checkUpdates()
 	self:updateTurtles()
 	self:updateGroups()
@@ -401,10 +407,16 @@ function HostDisplay:getMapDisplay()
 	return self.mapDisplay
 end
 function HostDisplay:displayMap()
-	self:addObject(self.mapDisplay)
-	self.mapDisplay:fillParent()
+
+	self:addObject(self.winMap)
+	--self:addObject(self.mapDisplay)
+	self.winMap:fillParent()
+	
 	self:redraw()
 	return true
+end
+function HostDisplay:closeMap()
+	self.winMap:close()
 end
 function HostDisplay:displayStorage()
 	self:addObject(self.storageDisplay)

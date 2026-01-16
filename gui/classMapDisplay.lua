@@ -2,7 +2,7 @@
 local Button = require("classButton")
 local CheckBox = require("classCheckBox")
 require("classList")
-local Window = require("classWindow")
+local BasicWindow = require("classBasicWindow")
 local Label = require("classLabel")
 
 local default = {
@@ -28,10 +28,10 @@ local randCount = #randomChars
 
 -- TODO: https://github.com/9551-Dev/pixelbox_lite
 
-local MapDisplay = Window:new()
+local MapDisplay = BasicWindow:new()
 
 function MapDisplay:new(x,y,width,height,map)
-	local o = o or Window:new(x,y,width,height) or {}
+	local o = o or BasicWindow:new(x,y,width,height) or {}
 	setmetatable(o, self)
 	self.__index = self
 	
@@ -152,11 +152,11 @@ function MapDisplay:initialize()
 	
 end
 
-function MapDisplay:handleClick(x,y)
+function MapDisplay:handleClick(x,y) -- super override 
 	-- doesnt work because the elements speak to the monitor directly
 	local o = self:getObjectByPos(x,y)
-	x = x - self.x + 1
-	y = y - self.y + 1
+	x = x - self.x + self.scrollX
+	y = y - self.y + self.scrollY
 	if o and o.handleClick then
 		o:handleClick(x,y)
 	elseif not o and self.visible then
@@ -172,7 +172,7 @@ function MapDisplay:handleClick(x,y)
 	end
 end
 function MapDisplay:onResize()
-	Window.onResize(self) -- super
+	BasicWindow.onResize(self) -- super
 	
 	--self:calculateMapMid()
 	self:setMid(self.mapMidX, self.mapMidY, self.mapMidZ)

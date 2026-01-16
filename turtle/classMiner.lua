@@ -2491,9 +2491,11 @@ function Miner:pickupAndDeliverItems(reservation, dropOffPos, requester, request
 		print("networkName:", networkName)
 
 		local invListBefore = self:getTurtleInventoryList()
+
+		local waitTime = 10 -- extracting can take some time
 	
 		local answer = self.nodeStorage:send(reservation.provider, 
-			{"PICKUP_ITEMS", { reservationId = reservation.id, turtleName = networkName }}, true, true, default.waitTime)
+			{"PICKUP_ITEMS", { reservationId = reservation.id, turtleName = networkName }}, true, true, waitTime)
 		if answer and answer.data[1] == "ITEMS_EXTRACTED" then 
 			local data = answer.data[2]
 			print("extracted", data.name, data.count, data.extractedToTurtle)
@@ -2625,6 +2627,8 @@ function Miner:pickupAndDeliverItems(reservation, dropOffPos, requester, request
 
 				end
 			end
+		else
+			print(answer and answer.data[1] or "NO ANSWER FROM PROVIDER")
 		end
 	end
 	self.taskList:remove(currentTask)

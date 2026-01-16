@@ -156,6 +156,11 @@ function Monitor:updateSize()
     self.width, self.height = self.term.getSize()
 end
 
+function Monitor:getSize()
+	self:updateSize()
+	return self.width, self.height
+end
+
 function Monitor:getWidth()
     self:updateSize()
     return self.width
@@ -470,12 +475,15 @@ function Monitor:drawBox(x,y,width,height,color, boderWidth, backgroundColor)
 	local startX = min(x,self.width)
 	local maxX = x+width-1
 	local endX = min(maxX, self.width)
+	local sy = y < 1 and 1 or y
+
+	local frame = self.frame
 	
 	if false then
 		local color = toBlit(color)
 		local ly = y-1
-		for cy=y,min(height+ly,self.height) do
-			local line = self.frame[cy]
+		for cy=sy,min(height+ly,self.height) do
+			local line = frame[cy]
 			if cy-y == 0 or cy-ly == height then
 				for ln=x, endX do
 					line.text[ln] = " "
@@ -497,8 +505,8 @@ function Monitor:drawBox(x,y,width,height,color, boderWidth, backgroundColor)
 	else
 		local color = toBlit(color)
 		local ly = y-1
-		for cy=y,min(height+ly,self.height) do
-			local line = self.frame[cy]
+		for cy=sy,min(height+ly,self.height) do
+			local line = frame[cy]
 			if cy-y == 0 or cy-ly == height then
 				for ln=x, endX do
 					if cy-y == 0 then
@@ -581,13 +589,17 @@ function Monitor:drawFilledBox(x,y,width,height,color)
 	-- end
 	
 	--if 1 == 1 then return nil end
+
+	-- print("drawFilledBox", x,y,width,height,color)
 	
 	local startX = min(x,self.width)
 	local maxX = x+width-1
 	local endX = min(maxX, self.width)
+	local sy = y < 1 and 1 or y
+	
 	
 	local color = toBlit(color)
-    for cy=y,min(height+y-1,self.height) do
+    for cy=sy,min(height+y-1,self.height) do
 		local line = self.frame[cy]
 		for ln=x,endX do
 			line.text[ln] = " "

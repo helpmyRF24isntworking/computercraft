@@ -53,6 +53,7 @@ function List:addLast(n)
 		n._prev, n._next = nil, nil
 	end
 	self.count = self.count + 1
+
 	return n
 end
 
@@ -112,7 +113,7 @@ function List:logError(reason, n)
 	f.write(text.." END")
 	f.write(reason .. " | " .. textutils.serialize(debug.traceback()))
 	f.close()
-	print(n._next, n._prev, n, self.first, self.last)
+	print("prv, n, nxt", n._prev, n, n._next, "first, last", self.first, self.last)
 	error(reason) --textutils.serialize(debug.traceback()))
 end
 
