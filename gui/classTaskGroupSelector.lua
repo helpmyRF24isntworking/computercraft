@@ -20,12 +20,13 @@ local default = {
 	yLevel =  {
 		top = 60,
 		bottom = -58,
-	}
+	},
+	slowstartDelay = 0.05,
 }
 
 local TaskGroupSelector = Window:new()
 
-function TaskGroupSelector:new(x,y,turtles,node,taskGroups)
+function TaskGroupSelector:new(x,y,turtles,node,taskGroups,slowStart)
 	local o = o or Window:new(x,y,width or default.width ,height or default.height ) or {}
 	setmetatable(o, self)
 	self.__index = self
@@ -39,6 +40,7 @@ function TaskGroupSelector:new(x,y,turtles,node,taskGroups)
 	o.positions = {}
 	o.taskGroup = nil
 	o.taskGroups = taskGroups
+	o.slowStart = slowStart
 	
 	o.taskName = "mineArea"
 	
@@ -209,6 +211,12 @@ function TaskGroupSelector:startTasks()
 			self.node:send(assignment.turtleId, {
 					"DO", self.taskName, 
 				{assignment.area.start ,assignment.area.finish}}) 
+
+			if self.slowStart then
+				sleep(default.slowStartDelay)
+				-- try to avoid overloading a lot of conflicting turtles at once
+				-- pathfinding leads to same paths being chosen and a lot of rerouting
+			end
 		end
 		self:close()
 	end

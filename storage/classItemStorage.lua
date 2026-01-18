@@ -3,6 +3,8 @@ local default = {
     stackSize = 64,
 }
 
+-- for inspiration: https://github.com/SquidDev-CC/artist
+
 local peripheralCall = peripheral.call
 
 ItemStorage = {}
@@ -234,7 +236,7 @@ function ItemStorage:extract(itemName, count, toInv, toSlot, reservation)
                 end
             end           
         end
-        if remaining <= 0 or toMove <= 0 then break end
+        if remaining <= 0 then break end
     end
 
     local extracted = count - remaining

@@ -163,11 +163,14 @@ function ScrollBar:redraw()
 		if barLength < 1 then barLength = 1 end
 		if barLength > innerLength then barLength = innerLength end
 
-		local barPos = math.floor((self.value / self.maxValue) * (innerLength - barLength) + 0.5) + 1
+		local barPos = math.floor((self.value / self.maxValue) * (innerLength - barLength)) + 1 -- + 0.5 in floor, but no
 		if barPos < 1 then 
 			barLength = barLength - (-1-barPos)
 			barPos = 1
 		end
+
+		--print("value", self.value, "max", self.maxValue, "barPos", barPos, "barLength", barLength)
+		--print("innerLength", innerLength, "self.length", self.length)
 
 		if barPos + barLength - 1 > self.length then 
 			barLength = self.length - barPos - 1

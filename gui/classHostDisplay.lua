@@ -33,6 +33,7 @@ function HostDisplay:new(x,y,width,height)
 	
 	o.backgroundColor = default.colors.background
 	o.doSlowReboot = false
+	o.doSlowStart = true
 
 	o:initialize()
 	
@@ -170,6 +171,7 @@ function HostDisplay:initialize()
 	self.winData.btnPrintSend = CheckBox:new(25,2, "print send", global.printSend)
 	self.winData.btnPrintSendTime = CheckBox:new(25,3, "print send time", global.printSendTime)
 	self.winData.chkSlowReboot = CheckBox:new(25,4, "slow reboot", self.doSlowReboot)
+	self.winData.chkSlowStart = CheckBox:new(25,5, "slow task start", self.doSlowStart)
 
 	self.winData.btnPrintStatus.click = function()
 		global.printStatus = self.winData.btnPrintStatus.active
@@ -189,7 +191,9 @@ function HostDisplay:initialize()
 	self.winData.chkSlowReboot.click = function()
 		self.doSlowReboot = self.winData.chkSlowReboot.active
 	end
-
+	self.winData.chkSlowStart.click = function()
+		self.doSlowStart = self.winData.chkSlowStart.active
+	end
 
 	self.winData:addObject(self.winData.btnPrintStatus)
 	self.winData:addObject(self.winData.btnPrintEvents)
@@ -197,7 +201,7 @@ function HostDisplay:initialize()
 	self.winData:addObject(self.winData.btnPrintMainTime)
 	self.winData:addObject(self.winData.btnPrintSendTime)
 	self.winData:addObject(self.winData.chkSlowReboot)
-
+	self.winData:addObject(self.winData.chkSlowStart)
 	-- settings subwindow for main display
 	self.winSettings = BasicWindow:new(12,18,30,1)
 	self.winMain:addObject(self.winSettings)
@@ -498,7 +502,7 @@ function HostDisplay:displayGroups()
 end
 function HostDisplay:addGroup()
 	self.winGroups.groupSelector = TaskGroupSelector:new(1,1,self.turtles,
-		self.node,self.taskGroups)
+		self.node,self.taskGroups, self.doSlowStart)
 	self.winGroups.groupSelector:setHostDisplay(self)
 	self.winGroups:addObject(self.winGroups.groupSelector)
 	self.winGroups.groupSelector:fillParent()

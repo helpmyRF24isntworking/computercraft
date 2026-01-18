@@ -28,7 +28,41 @@ local default = {
 		width = 50,
 		height = 1,
 	},
+    startXProviders = 14 + 6, -- 3 
+    startYProviders = 3,     -- 4
+    offsetX1 = - 8, -- 17
+    offsetX2 = 25, -- 36
 }
+
+local function formatNumber(num) 
+    return string.format("%6d", num)
+end
+
+
+-- general function to get number input from user
+-- TODO: move to utils
+local function getNumberInput(onNumberEnteredFunc, win, x, y)
+    if pocket then 
+        -- use keyboard input for amount
+        local rx, ry = win:getRealPos(x, y)
+        local curTerm = win:getTerm()
+        curTerm.setCursorPos(rx, ry)
+        curTerm.write("amount: ")
+        os.queueEvent("input_request", math.random(1,1000)) -- caught in shellDisplay.lua
+        local event, token, input = os.pullEventRaw("input_response")
+        if event == "terminate" then return end
+        local amount = tonumber(input) or 0
+
+        onNumberEnteredFunc(amount)
+    else
+        -- use a touch gui prompt for amount
+        local inputWin = NumberInput:new(10,5,"Item Amount")
+        win.parent:addObject(inputWin)
+        inputWin:center()
+        inputWin.onNumberEntered = onNumberEnteredFunc
+
+    end
+end
 
 local ItemControl = BasicWindow:new()
 
@@ -96,15 +130,6 @@ function ItemControl:expand()
 end
 
 
-
-function ItemControl:openMap(pos)
-	if self.hostDisplay and self.mapDisplay then
-		self.mapDisplay:setMapMid(pos) -- vector.new(pos.x, pos.z, pos.y)
-		self.hostDisplay:displayMap()
-	end
-end
-
-
 function ItemControl:onResize() -- super override
 
 	BasicWindow.onResize(self) -- super
@@ -151,7 +176,7 @@ function ItemControl:initialize()
 
     local nameStr = string.gsub(self.data.itemName, "minecraft:", "")
 	self.winSimple.lblName = Label:new(nameStr,13,1)
-    local totalStr = string.format("%6d", self.data.total)
+    local totalStr = formatNumber(self.data.total)
 	self.winSimple.lblTotal = Label:new(totalStr,5,1) -- 39
     self.winSimple.btnRequest = Button:new("request",44,1,9,1)
 
@@ -178,12 +203,17 @@ function ItemControl:initialize()
     local elements = {}
     local total = 0
 
-    local x, y = 3, 4 
-    local offsetX1, offsetX2 = 17, 36
+    local x, y = default.startXProviders, default.startYProviders
+    local offsetX1, offsetX2 = default.offsetX1, default.offsetX2
 
-    self.lblProviderHd = Label:new("provider",x,3)
+    self.lblProviderHd = Label:new("sources:",3,3)
     self.lblCountHd = Label:new("count",x+offsetX1,3)
     self.btnDetails = Button:new("print details",x+offsetX2-6,3,15,1)
+    self.btnDetails.click = function()
+        if self.storage then 
+            self.storage:printItemDetails(self.data.itemName)
+        end
+    end
 
     if self.storage and self.storage.index then 
         local count = self.storage:countItem(self.data.itemName)
@@ -207,6 +237,7 @@ function ItemControl:initialize()
         end
     end
 
+    y=y+1
     if total > 0 then 
         self:createElements(elements, "total", total, nil, x, y, offsetX1, offsetX2)
     end
@@ -237,9 +268,10 @@ end
 function ItemControl:createElements(elements, provider, count, state, x, y, offsetX1, offsetX2)
     -- helper for adding elements in the expanded view
     local newElements = {}
+    local ctStr = formatNumber(count)
     if provider == "self" then
         newElements["lblSelf"] = Label:new("self", x, y)
-        newElements["lblCountSelf"] = Label:new(count, x + offsetX1, y)
+        newElements["lblCountSelf"] = Label:new(ctStr, x + offsetX1, y)
         newElements["btnExtract"] = Button:new("extract", x + offsetX2, y, 9, 1)
         newElements["btnExtract"].click = function() 
             if self.storage then 
@@ -248,57 +280,49 @@ function ItemControl:createElements(elements, provider, count, state, x, y, offs
         end
     elseif provider == "total" then 
         newElements["lblTotal"] = Label:new("total"..string.rep("\175",offsetX1-5), x, y)
-        newElements["lblCountTotal"] = Label:new(total, x + offsetX1, y)
+        newElements["lblCountTotal"] = Label:new(ctStr, x + offsetX1, y)
         newElements["btnRequestTotal"] = Button:new("request any", x + offsetX2-6, y, 15, 1)
         newElements["btnRequestTotal"].click = function() 
             if self.storage then 
-                local amount
-
+                -- request from any provider
                 local requestDelivery = function(amount)
                     print("requested amount:", amount)
                     self.storage:requestDelivery(self.data.itemName, amount, pocket and true)
                 end
-
-                if pocket then 
-                    -- use keyboard input for amount
-                    local rx, ry = self:getRealPos(x + offsetX2+10, y)
-                    local curTerm = self:getTerm()
-                    curTerm.setCursorPos(rx, ry)
-                    curTerm.write("amount: ")
-                    os.queueEvent("input_request", math.random(1,1000)) -- caught in shellDisplay.lua
-                    local event, token, input = os.pullEventRaw("input_response")
-                    if event == "terminate" then return end
-                    amount = tonumber(input) or 0
-
-                    requestDelivery(amount)
-                else
-                    -- use a touch gui prompt for amount
-                    local inputWin = NumberInput:new(10,5,"Item Amount")
-                    self.parent:addObject(inputWin)
-                    inputWin:center()
-                    inputWin.onNumberEntered = requestDelivery
-
-                end
+                getNumberInput(requestDelivery, self, x + offsetX2+10, y)
 
             end
         end
     else
-        local strProvider = provider
+        local strProvider = "\"" .. provider .. "\""
         if state then 
             if state.label and tostring(state.label) ~= tostring(provider) then 
-                strProvider = provider .. "-" .. state.label
+                strProvider = strProvider .. " - " .. state.label
             end
         end
         newElements["lbl"..provider] = Label:new(strProvider, x, y)
-        newElements["lblCount"..provider] = Label:new(count, x + offsetX1, y)
+        newElements["lblCount"..provider] = Label:new(ctStr, x + offsetX1, y)
         newElements["btnMap"..provider] = Button:new("map", x + offsetX2-6, y, 5, 1)
-        newElements["btnMap"..provider].click = function() 
-            -- self:openMap(nil) -- TODO: get provider position
+        if state and state.pos then
+            newElements["btnMap"..provider].click = function() 
+                if state and state.pos then
+                    self:openMap(state.pos)
+                end
+            end
+        else
+            newElements["btnMap"..provider]:setEnabled(false)
         end
+
         newElements["btnRequest"..provider] = Button:new("request", x + offsetX2, y, 9, 1)
         newElements["btnRequest"..provider].click = function() 
             if self.storage then 
-                -- self.storage:requestDelivery() -- direct request to specified provider, not general
+                -- request from a specific provider
+                local requestDelivery = function(amount)
+                    print("requested amount:", amount, "from", provider)
+                    self.storage:requestDelivery(self.data.itemName, amount, pocket and true, provider)
+                end
+                getNumberInput(requestDelivery, self, x + offsetX2+10, y)
+
             end
         end
     end
@@ -308,17 +332,27 @@ function ItemControl:createElements(elements, provider, count, state, x, y, offs
     elements[provider] = newElements
 end
 
+function ItemControl:openMap(providerPos)
+    if self.hostDisplay and self.mapDisplay then
+        self.mapDisplay:setMid(providerPos.x, providerPos.y, providerPos.z)
+        self.hostDisplay:displayMap()
+    end
+end
+
+
 function ItemControl:refresh()
 
+
+
 	if self.collapsed then
-        local totalStr = string.format("%6d", self.data.total)
+        local totalStr = formatNumber(self.data.total)
 		self.winSimple.lblTotal:setText(totalStr)
         self.winSimple.btnRequest.visible = self.data.total > 0
 	else
 
         local total = 0
-        local x, y = 3, 4
-        local offsetX1, offsetX2 = 17, 36
+        local x, y = default.startXProviders, default.startYProviders
+        local offsetX1, offsetX2 = default.offsetX1, default.offsetX2
         local elements = self.elements
         local providerStates = self.storage.providers or {}
 
@@ -329,7 +363,7 @@ function ItemControl:refresh()
                 if not providerElements["lblSelf"] then
                     self:createElements(elements, "self", count, nil, x, y, offsetX1, offsetX2)
                 else
-                    providerElements["lblCountSelf"]:setText(count)
+                    providerElements["lblCountSelf"]:setText(formatNumber(count))
                 end
                 y = y + 1
                 total = total + count
@@ -352,7 +386,7 @@ function ItemControl:refresh()
                             local state = providerStates[provider]
                             self:createElements(elements, provider, count, state, x, y, offsetX1, offsetX2)
                         else
-                            providerElements["lblCount"..provider]:setText(count)
+                            providerElements["lblCount"..provider]:setText(formatNumber(count))
 
                             providerElements["lbl"..provider]:setPos(x, y)
                             providerElements["lblCount"..provider]:setPos(x + offsetX1, y)
@@ -375,12 +409,14 @@ function ItemControl:refresh()
             end
         end
 
+        y=y+1
+
         local providerElements = elements["total"] or {}
         if total > 0 then 
             if not providerElements["lblTotal"] then
                 self:createElements(elements, "total", total, nil, x, y, offsetX1, offsetX2)
             else
-                providerElements["lblCountTotal"]:setText(total)
+                providerElements["lblCountTotal"]:setText(formatNumber(total))
 
                 providerElements["lblTotal"]:setPos(x, y)
                 providerElements["lblCountTotal"]:setPos(x + offsetX1, y)

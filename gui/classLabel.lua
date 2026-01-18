@@ -11,6 +11,7 @@ function Label:new(text,x,y,textColor, backgroundColor)
 	self.__index = self
 	
 	o.backgroundColor = backgroundColor
+
 	o.text = tostring(text) or ""
 	o.x = x or 0
 	o.y = y or 0

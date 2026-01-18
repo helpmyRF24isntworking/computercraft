@@ -70,7 +70,7 @@ function RemoteStorage:initialize()
             elseif msg.data[1] == "ITEM_LIST" then
                 self:handleItemListResponse(msg)
             elseif msg.data[1] == "TURTLE_STATE" then 
-                print(msg.data[1], "from", msg.sender, "distance", msg.distance)
+                --print(msg.data[1], "from", msg.sender, "distance", msg.distance)
                 self.turtles[msg.sender] = msg.data[2]
             elseif msg.data[1] == "REQUEST_AVAILABLE_ITEMS" then
                 self:onRequestAvailableItems(msg)
@@ -393,7 +393,7 @@ function RemoteStorage:getNearestAvailableTurtles(pos)
     return availableTurtles
 end
 
-function RemoteStorage:requestDelivery(itemName, count, toPlayer)
+function RemoteStorage:requestDelivery(itemName, count, toPlayer, fromProvider)
     local requestingPos = self.requestingPos
     local requestingInv = self.requestingInventory
 
@@ -421,7 +421,14 @@ function RemoteStorage:requestDelivery(itemName, count, toPlayer)
         print("DELIVERY TO PLAYER", requestingPos)
     end
 
-    self:requestReserveItems(itemName, count, requestingPos, requestingInv)
+    if not requestingPos then
+        print("requestDelivery: pos not set", requestingPos, "inv", requestingInv)
+        return
+    end
+
+    local providerFilter = fromProvider and { [fromProvider] = true } or nil
+    return self:requestReserveItems(itemName, count, requestingPos, requestingInv, providerFilter)
+    
 end
 
 
@@ -500,7 +507,7 @@ end
 
 
 
-function RemoteStorage:requestReserveItems(itemName, count, requestingPos, requestingInv)
+function RemoteStorage:requestReserveItems(itemName, count, requestingPos, requestingInv, providerFilter)
     -- broadcast to all storage providers? kind of weird, no?
     -- try ringlike topology, where message is passed along until someone can provide it?
 
@@ -511,21 +518,25 @@ function RemoteStorage:requestReserveItems(itemName, count, requestingPos, reque
     self:requestAvailableItems(itemName, count)
 
     for provider, available in pairs(self.providerIndex[itemName] or {}) do
-        print("provider", provider, "has", available, "of", itemName)
-        if available > 0 then 
-            local answer = self.node:send(provider, {"RESERVE_ITEMS", { name = itemName, count = count }}, true, true, default.waitTime)
-            if answer and answer.data[1] == "ITEMS_RESERVED" then
-                local data = answer.data[2]
-                data.provider = provider
-                if data.pos then 
-                    data.pos = vector.new(data.pos.x, data.pos.y, data.pos.z)
-                end
-                reservations[#reservations+1] = data
-                remaining = remaining - data.reserved
-                print("reserved", data.reserved, "of", itemName, "from", provider)
-                if remaining <= 0 then
-                    -- all items reserved
-                    break
+        if providerFilter and not providerFilter[provider] then
+            print("skipping provider", provider, "not in filter")
+        else
+            print("provider", provider, "has", available, "of", itemName)
+            if available > 0 then 
+                local answer = self.node:send(provider, {"RESERVE_ITEMS", { name = itemName, count = count }}, true, true, default.waitTime)
+                if answer and answer.data[1] == "ITEMS_RESERVED" then
+                    local data = answer.data[2]
+                    data.provider = provider
+                    if data.pos then 
+                        data.pos = vector.new(data.pos.x, data.pos.y, data.pos.z)
+                    end
+                    reservations[#reservations+1] = data
+                    remaining = remaining - data.reserved
+                    print("reserved", data.reserved, "of", itemName, "from", provider)
+                    if remaining <= 0 then
+                        -- all items reserved
+                        break
+                    end
                 end
             end
         end

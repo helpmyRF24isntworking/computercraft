@@ -1266,13 +1266,13 @@ local checkSafe = Miner.checkSafe
 function Miner:inspect(safe)
 	-- WARNING: NOT safe does NOT update the Map if the block has been explored before
 	self:updateLookingAt()
-	local block 
+	local block, hasBlock, data
 	if not safe then 
 		block = self:getMapValue(self.lookingAt.x, self.lookingAt.y, self.lookingAt.z)
 	end
 	if block == nil then
 		-- never inspected before
-		local hasBlock, data = turtle.inspect()
+		hasBlock, data = turtle.inspect()
 		--block = hasBlock and ( nameToId[data.name] or data.name ) or 0
 		self:setMapValue(self.lookingAt.x,self.lookingAt.y,self.lookingAt.z,
 		( data and data.name ) or 0)
@@ -1280,46 +1280,47 @@ function Miner:inspect(safe)
 	elseif checkOreBlock(block) then
 		self.map:rememberOre(self.lookingAt.x,self.lookingAt.y,self.lookingAt.z, block)
 	end
-	return block
+	return block, data
 end
 
 function Miner:inspectUp(safe)
-	local block
+	local block, hasBlock, data
 	if not safe then
 		block = self:getMapValue(self.pos.x, self.pos.y+1, self.pos.z)
 	end
 	if block == nil then
-		local hasBlock, data = turtle.inspectUp()
+		hasBlock, data = turtle.inspectUp()
 		self:setMapValue(self.pos.x,self.pos.y+1,self.pos.z,
 		( data and data.name ) or 0)
 		block = data.name
 	elseif checkOreBlock(block) then
 		self.map:rememberOre(self.pos.x,self.pos.y+1,self.pos.z, block)
 	end
-	return block
+	return block, data
 end
 
 function Miner:inspectDown(safe)
-	local block
+	local block, hasBlock, data
 	if not safe then
 		block = self:getMapValue(self.pos.x, self.pos.y-1, self.pos.z)
 	end
 	if block == nil then
-		local hasBlock, data = turtle.inspectDown()
+		hasBlock, data = turtle.inspectDown()
 		self:setMapValue(self.pos.x,self.pos.y-1,self.pos.z,
 		( data and data.name ) or 0)
 		block = data.name
 	elseif checkOreBlock(block) then
 		self.map:rememberOre(self.pos.x,self.pos.y-1,self.pos.z, block)
 	end
-	return block
+	return block, data
 end
 function Miner:inspectLeft()
 	local block = self.pos + self.vectors[(orientation-1)%4]
 	local name = self:getMapValue(block.x, block.y, block.z)
+	local hasBlock, data
 	if name == nil then
 		self:turnTo((orientation-1)%4)
-		local hasBlock, data = turtle.inspect()
+		hasBlock, data = turtle.inspect()
 		self:setMapValue(block.x, block.y, block.z, 
 		( data and data.name ) or 0)
 		block = data.name
@@ -1327,14 +1328,15 @@ function Miner:inspectLeft()
 		self.map:rememberOre(block.x, block.y, block.z, name)
 		block = name
 	end
-	return block
+	return block, data
 end
 function Miner:inspectRight()
 	local block = self.pos + self.vectors[(orientation+1)%4]
 	local name = self:getMapValue(block.x, block.y, block.z)
+	local hasBlock, data
 	if name == nil then
 		self:turnTo((orientation+1)%4)
-		local hasBlock, data = turtle.inspect()
+		hasBlock, data = turtle.inspect()
 		self:setMapValue(block.x, block.y, block.z,
 		( data and data.name ) or 0)
 		block = data.name
@@ -1342,7 +1344,7 @@ function Miner:inspectRight()
 		self.map:rememberOre(block.x, block.y, block.z, name)
 		block = name
 	end
-	return block
+	return block, data
 end
 
 function Miner:inspectAll()
@@ -2633,4 +2635,348 @@ function Miner:pickupAndDeliverItems(reservation, dropOffPos, requester, request
 	end
 	self.taskList:remove(currentTask)
 	
+end
+
+
+
+
+
+
+
+--############################################################## TREE related functions
+
+local function checkAirBlock(data)
+	if data == 0 then 
+		return true
+	end
+	return false
+end
+
+local function checkLogBlock(data)
+	-- rewrite ts
+	if data and not checkAirBlock(data) and data.name == "minecraft:oak_log" then 
+		return true
+	end
+	return false
+end
+local function checkLeafBlock(data)
+	if data and not checkAirBlock(data) and data.tags and data.tags["minecraft:leaves"] then
+		return true
+	end
+	return false
+end
+
+
+local xyzToChunkId = ChunkyMap.xyzToChunkId
+local xyzToRelativeChunkId = ChunkyMap.xyzToRelativeChunkId
+local relativeIdToXYZ = ChunkyMap.relativeIdToXYZ
+local chunkIdToXYZ = ChunkyMap.chunkIdToXYZ
+
+-- local tree map
+-- perhaps also just create a new ChunkyMap for this tree?
+-- needs to support metadata for blocks though
+
+local function rememberLeaf(leaves, pos, name, data)
+	if name and name ~= 0 then print("rememberLeaf", pos, name, data and data.state and data.state.distance or "nil") end
+	local x,y,z = pos.x, pos.y, pos.z
+	local chunkId = xyzToChunkId(x,y,z)
+	if not leaves[chunkId] then
+		leaves[chunkId] = {}
+	end
+	leaves[chunkId][xyzToRelativeChunkId(x,y,z)] = data
+end
+
+local function getLeaf(leaves, pos)
+	--print("getLeaf", pos)
+	local x,y,z = pos.x, pos.y, pos.z
+	local chunkId = xyzToChunkId(x,y,z)
+	if leaves[chunkId] then
+		return leaves[chunkId][xyzToRelativeChunkId(x,y,z)]
+	end
+	return nil
+end
+
+local function forgetLeaf(leaves, pos)
+	local x,y,z = pos.x, pos.y, pos.z
+	local chunkId = xyzToChunkId(x,y,z)
+	if leaves[chunkId] then
+		leaves[chunkId][xyzToRelativeChunkId(x,y,z)] = 0 -- instead of nil to mark as air
+	end
+end
+
+local function findNextLeaf(leaves, pos, checkFunction, maxDistance)
+	-- find the nearest block
+	print("findNextLeaf from", pos)
+	if not maxDistance then maxDistance = 8 end
+	
+	local minDist = -1
+	local minX, minY, minZ, blockData
+	
+	local curX, curY, curZ = pos.x, pos.y, pos.z
+
+	local sqrt = math.sqrt
+	
+	for chunkId, chunk in pairs(leaves) do
+		for relativeId, data in pairs(chunk) do
+			if data and checkFunction(data) then
+				local rcx, rcy, rcz = relativeIdToXYZ(relativeId)
+				local x,y,z = chunkIdToXYZ(chunkId)
+				x = x + rcx
+				y = y + rcy
+				z = z + rcz
+				local dist = sqrt( ( x - curX )^2 + ( y - curY )^2 + ( z - curZ )^2 )
+				
+				if ( minDist < 0 or dist < minDist) and dist <= maxDistance and dist > 0 then 
+					minDist = dist
+					minX,minY,minZ = x,y,z
+					blockData = data
+				end
+			end
+		end
+	end
+
+	if minX and minY and minZ then
+		print("found next at", minX, minY, minZ, blockData and blockData.state and blockData.state.distance or "nil")
+		return vector.new(minX,minY,minZ), blockData
+	end
+end
+
+local function manhattanDistance(pos1, pos2)
+	return math.abs(pos1.x - pos2.x) + math.abs(pos1.y - pos2.y) + math.abs(pos1.z - pos2.z)
+end
+
+function Miner:mineLogs()
+	-- global.miner:navigateToPos(2229, 68, -2665); global.miner:turnTo(1); global.miner:mineLogs()
+
+	local currentTask = self:addCheckTask({debug.getinfo(1, "n").name})
+
+	local startPos = vector.new(self.pos.x, self.pos.y, self.pos.z)
+	local startOrientation = self.orientation
+	local block, data
+	local ct = 0
+	local isInTree, isInBranch = false, false
+
+	local branches = {} -- 0 is main trunk, 1..n are branches with possible sub-branches
+	
+	local leaves = {}
+
+	repeat
+	
+	-- keep track of the leaves?
+	-- only needed for oak trees ig 
+
+	-- TODO: prioritize logs over leaves with distance 1
+	-- remove bee nests minecraft:bee_nest
+	-- for branches, check the next air block as well
+
+	-- use depth first search to mine the tree branch by branch
+
+	
+
+	local inspectAll = function(leaves)
+		-- use a custom inspectAll function
+		local orientation = self.orientation
+		local hasBlock, blockName, data
+		local horizontalLogs, horizontalLeaves = {}, {}
+
+		if getLeaf(leaves, self.pos + vectorDown) == nil then 
+			blockName, data = self:inspectDown(true)
+			rememberLeaf(leaves, self.pos - vectorDown, blockName, data)
+		end
+		if getLeaf(leaves, self.pos + vectorUp) == nil then
+			blockName, data = self:inspectUp(true)
+			rememberLeaf(leaves, self.pos + vectorUp, blockName, data)
+		end
+		-- inspect Front, Left, Behind, Right
+		for i=0,3 do
+			local dir = (orientation+i)%4
+			block = self.pos + self.vectors[dir]
+			data = getLeaf(leaves, block)
+			if data == nil then
+				self:turnTo(dir)
+				hasBlock, data = turtle.inspect()
+				rememberLeaf(leaves, block, ( data and data.name ) or 0, data)
+			else
+				-- already inspected before, but distance could have changed..
+				-- inspect anyways? -> only if distance is relevant
+				if checkLeafBlock(data) and data.state.distance <= 2 then 
+					-- inspect again
+				end
+			end
+
+			if checkLogBlock(data) then
+				horizontalLogs[#horizontalLogs+1] = { pos = block, orientation = dir, data = data }
+			elseif checkLeafBlock(data) then
+				horizontalLeaves[#horizontalLeaves+1] = { pos = block, orientation = dir, data = data }
+			end
+
+		end
+
+	end
+
+	local checkMineImmediately = function(data)
+		local immediateDistance = 1 -- leaves with distance <= this will be mined immediately
+		return checkLogBlock(data) or ( checkLeafBlock(data) and data.state.distance <= immediateDistance )
+	end
+
+	
+	
+	local horizontalLogs, horizontalLeaves = inspectAll(leaves)
+
+	while horizontalLogs or #diagonalSuspects > 0 do
+
+		for i=0,3 do
+			local dir = (orientation+i)%4
+			if horizontalLogs[dir] then
+				-- mine logs first
+				self:turnTo(log.orientation)
+				self:digMove()
+				forgetLeaf(leaves, log.pos)
+				self:mineLogs() -- recursive call to mine branch
+			end
+		end
+
+		for i=0,3 do
+			local dir = (orientation+i)%4
+			if horizontalLeaves[dir] then
+				-- mine leaves next
+				self:turnTo(leaf.orientation)
+				self:digMove()
+				forgetLeaf(leaves, leaf.pos)
+				inspectAll(leaves) -- check for more logs 
+			end
+		end
+
+	end
+
+
+	
+	--in front
+	block = self.pos + self.vectors[self.orientation]
+	data = getLeaf(leaves, block)
+	if checkMineImmediately(data) then
+		self:digMove()
+		forgetLeaf(leaves, block)
+		isInTree = true
+		isInBranch = true
+	else -- left
+		block = self.pos + self.vectors[(self.orientation-1)%4]
+		if checkMineImmediately(getLeaf(leaves, block)) then
+			self:turnLeft()
+			self:digMove()
+			forgetLeaf(leaves, block)
+			isInTree = true
+			isInBranch = true
+		else -- right
+			block = self.pos + self.vectors[(self.orientation+1)%4]
+			if checkMineImmediately(getLeaf(leaves, block)) then
+				self:turnRight()
+				self:digMove()
+				forgetLeaf(leaves, block)
+				isInTree = true
+				isInBranch = true
+			else -- behind
+				block = self.pos + self.vectors[(self.orientation+2)%4]
+				if checkMineImmediately(getLeaf(leaves, block)) then
+					self:turnRight()
+					self:turnRight()
+					self:digMove()
+					forgetLeaf(leaves, block)
+					isInTree = true
+					isInBranch = true
+				else -- up
+					block = self.pos + vectorUp
+					if checkMineImmediately(getLeaf(leaves, block)) then
+						self:digMoveUp()
+						forgetLeaf(leaves, block)
+						isInTree = true
+
+					else -- down
+						block = self.pos + vectorDown
+						if checkMineImmediately(getLeaf(leaves, block)) then
+							self:digMoveDown()
+							forgetLeaf(leaves, block)
+							isInTree = true
+						else -- nearest log, if log has been found before
+							if isInTree then
+								local nextLog, data = findNextLeaf(leaves, self.pos, checkMineImmediately, nil)
+								if nextLog then
+									-- navigate instead of dig, to not disturb leaves
+									-- target block has to be mined though, when using navigate
+									-- does not keep track of logs / leaves that are removed/updated while navigating
+									if self:digToPos(nextLog.x, nextLog.y, nextLog.z) then 
+										forgetLeaf(leaves, nextLog)
+									else
+										-- cannot reach log, give up?
+										break
+									end
+									
+								else
+									-- done
+									break
+								end
+							else
+								-- check final leaves for distance
+
+								break
+							end
+						end
+					end
+				end
+			end
+		end
+	end
+	ct = ct + 1
+
+
+	
+	until ct > default.maxVeinSize
+	
+	--return to start
+	self:navigateToPos(startPos.x, startPos.y, startPos.z)
+	self:turnTo(startOrientation)
+	self.taskList:remove(currentTask)
+end
+
+function Miner:fellTree()
+
+	-- inspect for wood
+	-- mine wood until none found (can use mineVein?)
+	-- track leave metadata while felling? -> no, changes while felling
+	-- instead: after wood is removed, inspect surrounding blocks for leaves
+	-- check leaves state for distance = 1 to 6   -- distance 7 is not generated by tree gen
+	-- if found, mine in direction of lowest distance to find wood blocks
+	-- check nearest leave blocks again for distance
+	-- repeat until no leaves with distance found
+	-- but do not mine all leaves
+
+	-- could also use a breadth first search for leaves
+	-- or update the distance of leaves after mining wood blocks using own algorithm
+	-- then return to leaves that could still be connected to wood
+	-- segment the tree?
+
+	--[[
+		{
+		state = {
+			waterlogged = false,
+			persistent = false,
+			distance = 6,
+		},
+		name = "minecraft:oak_leaves",
+		tags = {
+			[ "minecraft:replaceable_by_trees" ] = true,
+			[ "computercraft:turtle_hoe_harvestable" ] = true,
+			[ "minecraft:parrots_spawnable_on" ] = true,
+			[ "computercraft:turtle_always_breakable" ] = true,
+			[ "minecraft:lava_pool_stone_cannot_replace" ] = true,
+			[ "minecraft:mineable/hoe" ] = true,
+			[ "minecraft:completes_find_tree_tutorial" ] = true,
+			[ "minecraft:leaves" ] = true,
+			[ "minecraft:sword_efficient" ] = true,
+		},
+		}
+	--]]
+
+	-- then somehow make sure to collect saplings to make it self sufficient
+
 end

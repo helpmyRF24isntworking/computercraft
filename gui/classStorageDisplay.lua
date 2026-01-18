@@ -3,13 +3,21 @@ local Button = require("classButton")
 local Label = require("classLabel")
 local Window = require("classWindow")
 local ItemControl = require("classStorageItemControl")
+local ChoiceSelector = require("classChoiceSelector")
 
 
+local sortFunctions = {
+    nameAsc = function(a,b) return a.name < b.name end,
+    nameDesc = function(a,b) return a.name > b.name end,
+    countAsc = function(a,b) return a.count < b.count end,
+    countDesc = function(a,b) return a.count > b.count end,
+}
 
 local default = {
 	colors = {
 		--background = colors.black,
 	},
+    sortFunc = "countDesc",
 }
 local global = global
 
@@ -22,10 +30,12 @@ function StorageDisplay:new(x,y,width,height,storage)
 	
 	--o.backgroundColor = default.colors.background
 
-    self.itemControls = {}
-    self.itemCt = 0
+    o.itemControls = {}
+    o.itemCt = 0
     o.storage = storage or nil
-
+    o.sortFuncName = default.sortFunc
+    o.sortFunction = sortFunctions[o.sortFuncName] or sortFunctions.countDesc
+    
 	o:initialize()
 	
 	return o
@@ -36,6 +46,14 @@ function StorageDisplay:initialize()
 
     self.lblTitle = Label:new("Stored Items",1,1)
     self:addObject(self.lblTitle)
+    self:addScrollbar(true)
+
+    self.btnSort = Button:new("Sort Order", 20, 1, 12, 1)
+    self.btnSort.click = function() self:selectSortFunction() end
+    self:addObject(self.btnSort)
+
+    self.lblSortFunc = Label:new(self.sortFuncName, 33, 1)
+    self:addObject(self.lblSortFunc)
 
     self:refresh()
 
@@ -67,13 +85,32 @@ function StorageDisplay:checkUpdates()
     end
 end
 
+function StorageDisplay:selectSortFunction()
+
+    local choices = {}
+    for name, func in pairs(sortFunctions) do
+        table.insert(choices, name)
+    end
+    self.funcSelector = ChoiceSelector:new(self.btnSort.x, self.btnSort.y+1, 16, 6, choices)
+    self.funcSelector.onChoiceSelected = function(choice)
+        self.sortFunction = sortFunctions[choice]
+        self.sortFuncName = choice
+        self.lblSortFunc:setText(choice)
+        self:refresh()
+        self:redraw()
+    end
+    self.parent:addObject(self.funcSelector)
+    self.parent:redraw()
+    return true -- noBlink
+end
+
 function StorageDisplay:refresh()
     -- change positions / contents etc.
     if self.visible then 
         local itemControls = self.itemControls
         local storage = self.storage
         local itemList = storage:getAccumulatedItemList()
-        table.sort(itemList, function(a,b) return a.name < b.name end)
+        table.sort(itemList, self.sortFunction)
 
         -- todo: resort existing controls if order changed
 
