@@ -247,16 +247,28 @@ function PathFinder:aStarPart(startPos, startOrientation, finishPos, map, distan
 				local nx, ny, nz = neighbour.x, neighbour.y, neighbour.z
 				
 				--local neighbourId = xyzToId(neighbour.x, neighbour.y, neighbour.z)
-				if not closed[nx] then 
-					closed[nx] = {} 
-					gScore[nx] = {}
+				
+				local closedx = closed[nx]
+				local gScorex, gScorey
+				if not closedx then
+					closedx = {}
+					closed[nx] = closedx
+					gScorex = {}
+					gScore[nx] = gScorex
+				else
+					gScorex = gScore[nx]
 				end
-				if not closed[nx][ny] then 
-					closed[nx][ny] = {} 
-					gScore[nx][ny] = {}
+				local closedy = closedx[ny]
+				if not closedy then
+					closedy = {}
+					closedx[ny] = closedy
+					gScorey = {}
+					gScorex[ny] = gScorey
+				else
+					gScorey = gScorex[ny]
 				end
 				
-				if not closed[nx][ny][nz] then
+				if not closedy[nz] then
 
 					neighbour.block = map:getData(nx, ny, nz)
 					if checkValid(neighbour.block) then
@@ -264,9 +276,9 @@ function PathFinder:aStarPart(startPos, startOrientation, finishPos, map, distan
 						openCount = openCount + 1
 							
 						local addedGScore = current.gScore + calculateCost(current,neighbour)
-						neighbour.gScore = gScore[nx][ny][nz]
+						neighbour.gScore = gScorey[nz]
 						if not neighbour.gScore or addedGScore < neighbour.gScore then
-							gScore[nx][ny][nz] = addedGScore
+							gScorey[nz] = addedGScore
 							neighbour.gScore = addedGScore
 							
 							neighbour.hScore = calculateHeuristic(neighbour,finish)

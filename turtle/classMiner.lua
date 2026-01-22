@@ -2645,8 +2645,39 @@ end
 
 --############################################################## TREE related functions
 
+local BreadthFirstSearch = require("classBreadthFirstSearch")
+local StateMap = require("classStateMap")
+
+local leafBlocks = {
+	["minecraft:oak_leaves"] = true,
+	["minecraft:spruce_leaves"] = true,
+	["minecraft:birch_leaves"] = true,
+	["minecraft:jungle_leaves"] = true,
+	["minecraft:acacia_leaves"] = true,
+	["minecraft:dark_oak_leaves"] = true,
+}
+local logBlocks = {
+	["minecraft:oak_log"] = true,
+	["minecraft:spruce_log"] = true,
+	["minecraft:birch_log"] = true,
+	["minecraft:jungle_log"] = true,
+	["minecraft:acacia_log"] = true,
+	["minecraft:dark_oak_log"] = true,
+}
+
+local function checkValidLeafBFS(block)
+	-- only traverse through unknown blocks or leaf blocks
+	if block == nil or leafBlocks[block] then return true
+	else return false end
+end
+local function checkGoalLeafBFS(block)
+	-- only goal if leaf block
+	if block and logBlocks[block] then return true
+	else return false end
+end
+
 local function checkAirBlock(data)
-	if data == 0 then 
+	if data == 0 or data.name == 0 then 
 		return true
 	end
 	return false
@@ -2654,289 +2685,242 @@ end
 
 local function checkLogBlock(data)
 	-- rewrite ts
-	if data and not checkAirBlock(data) and data.name == "minecraft:oak_log" then 
+	if data and not checkAirBlock(data) and logBlocks[data.name] then 
 		return true
 	end
 	return false
 end
 local function checkLeafBlock(data)
 	if data and not checkAirBlock(data) and data.tags and data.tags["minecraft:leaves"] then
+		if not leafBlocks[data.name] then
+			print("UNKNOWN LEAF BLOCK:", data.name)
+			leafBlocks[data.name] = true
+		end
 		return true
 	end
 	return false
 end
 
 
-local xyzToChunkId = ChunkyMap.xyzToChunkId
-local xyzToRelativeChunkId = ChunkyMap.xyzToRelativeChunkId
-local relativeIdToXYZ = ChunkyMap.relativeIdToXYZ
-local chunkIdToXYZ = ChunkyMap.chunkIdToXYZ
 
--- local tree map
--- perhaps also just create a new ChunkyMap for this tree?
--- needs to support metadata for blocks though
 
-local function rememberLeaf(leaves, pos, name, data)
-	if name and name ~= 0 then print("rememberLeaf", pos, name, data and data.state and data.state.distance or "nil") end
-	local x,y,z = pos.x, pos.y, pos.z
-	local chunkId = xyzToChunkId(x,y,z)
-	if not leaves[chunkId] then
-		leaves[chunkId] = {}
-	end
-	leaves[chunkId][xyzToRelativeChunkId(x,y,z)] = data
-end
+function Miner:mineTree()
 
-local function getLeaf(leaves, pos)
-	--print("getLeaf", pos)
-	local x,y,z = pos.x, pos.y, pos.z
-	local chunkId = xyzToChunkId(x,y,z)
-	if leaves[chunkId] then
-		return leaves[chunkId][xyzToRelativeChunkId(x,y,z)]
-	end
-	return nil
-end
+	-- only needed for oak trees ig 
 
-local function forgetLeaf(leaves, pos)
-	local x,y,z = pos.x, pos.y, pos.z
-	local chunkId = xyzToChunkId(x,y,z)
-	if leaves[chunkId] then
-		leaves[chunkId][xyzToRelativeChunkId(x,y,z)] = 0 -- instead of nil to mark as air
-	end
-end
+	-- TODO: prioritize logs over leaves with distance 1
+	-- but instead of doing it at the very end, do it at each DFS node after mining logs?
+	-- remove bee nests minecraft:bee_nest
+	-- for branches, check the next air block as well
 
-local function findNextLeaf(leaves, pos, checkFunction, maxDistance)
-	-- find the nearest block
-	print("findNextLeaf from", pos)
-	if not maxDistance then maxDistance = 8 end
-	
-	local minDist = -1
-	local minX, minY, minZ, blockData
-	
-	local curX, curY, curZ = pos.x, pos.y, pos.z
-
-	local sqrt = math.sqrt
-	
-	for chunkId, chunk in pairs(leaves) do
-		for relativeId, data in pairs(chunk) do
-			if data and checkFunction(data) then
-				local rcx, rcy, rcz = relativeIdToXYZ(relativeId)
-				local x,y,z = chunkIdToXYZ(chunkId)
-				x = x + rcx
-				y = y + rcy
-				z = z + rcz
-				local dist = sqrt( ( x - curX )^2 + ( y - curY )^2 + ( z - curZ )^2 )
-				
-				if ( minDist < 0 or dist < minDist) and dist <= maxDistance and dist > 0 then 
-					minDist = dist
-					minX,minY,minZ = x,y,z
-					blockData = data
-				end
-			end
-		end
-	end
-
-	if minX and minY and minZ then
-		print("found next at", minX, minY, minZ, blockData and blockData.state and blockData.state.distance or "nil")
-		return vector.new(minX,minY,minZ), blockData
-	end
-end
-
-local function manhattanDistance(pos1, pos2)
-	return math.abs(pos1.x - pos2.x) + math.abs(pos1.y - pos2.y) + math.abs(pos1.z - pos2.z)
-end
-
-function Miner:mineLogs()
-	-- global.miner:navigateToPos(2229, 68, -2665); global.miner:turnTo(1); global.miner:mineLogs()
+	-- global.miner:navigateToPos(2229, 68, -2665); global.miner:turnTo(1); global.miner:mineTree()
 
 	local currentTask = self:addCheckTask({debug.getinfo(1, "n").name})
 
 	local startPos = vector.new(self.pos.x, self.pos.y, self.pos.z)
 	local startOrientation = self.orientation
-	local block, data
 	local ct = 0
-	local isInTree, isInBranch = false, false
 
-	local branches = {} -- 0 is main trunk, 1..n are branches with possible sub-branches
+	local treeMap = StateMap:new()
+
+	local lowDistanceLeaves = {} -- map of leaf blocks with low distance
+	local lowDistance = 3
+	local logs = {}
 	
-	local leaves = {}
-
-	repeat
-	
-	-- keep track of the leaves?
-	-- only needed for oak trees ig 
-
-	-- TODO: prioritize logs over leaves with distance 1
-	-- remove bee nests minecraft:bee_nest
-	-- for branches, check the next air block as well
-
-	-- use depth first search to mine the tree branch by branch
-
+	-- local mined = {} -- 
 	
 
-	local inspectAll = function(leaves)
+	local function posToKey(pos)
+        return pos.x .. "," .. pos.y .. "," .. pos.z
+    end
+
+	local function shouldInspect(data)
+		-- not yet inspected or leaf block with distance <= 2
+		-- print("shouldInspect", data and data.name, not data or ( checkLeafBlock(data) and data.state.distance <= 2 ))
+		return not data or ( checkLeafBlock(data) and data.state.distance <= 2 )
+	end
+
+	local function rememberBlock(pos, data)
+		treeMap:setData(pos.x, pos.y, pos.z, data)
+
+		if checkLogBlock(data) then
+			table.insert(logs, pos)
+		elseif checkLeafBlock(data) then
+			if data.state.distance <= 3 then
+				lowDistanceLeaves[posToKey(pos)] = pos
+			elseif data.state.distance == 7 then
+				-- will decay soon, ignore
+				-- blocks[key] = 0
+			end
+		end
+	end
+
+	local function inspectAll()
 		-- use a custom inspectAll function
 		local orientation = self.orientation
 		local hasBlock, blockName, data
-		local horizontalLogs, horizontalLeaves = {}, {}
 
-		if getLeaf(leaves, self.pos + vectorDown) == nil then 
+		local pos = self.pos + vectorDown
+		local data = treeMap:getData(pos.x, pos.y, pos.z)
+		if shouldInspect(data) then
 			blockName, data = self:inspectDown(true)
-			rememberLeaf(leaves, self.pos - vectorDown, blockName, data)
+			rememberBlock(pos, data)
 		end
-		if getLeaf(leaves, self.pos + vectorUp) == nil then
+
+		pos = self.pos + vectorUp
+		data = treeMap:getData(pos.x, pos.y, pos.z)
+		if shouldInspect(data) then
 			blockName, data = self:inspectUp(true)
-			rememberLeaf(leaves, self.pos + vectorUp, blockName, data)
+			rememberBlock(pos, data)
 		end
+
 		-- inspect Front, Left, Behind, Right
 		for i=0,3 do
 			local dir = (orientation+i)%4
-			block = self.pos + self.vectors[dir]
-			data = getLeaf(leaves, block)
-			if data == nil then
+			local pos = self.pos + self.vectors[dir]
+			local data = treeMap:getData(pos.x, pos.y, pos.z)
+			if shouldInspect(data) then
 				self:turnTo(dir)
 				hasBlock, data = turtle.inspect()
-				rememberLeaf(leaves, block, ( data and data.name ) or 0, data)
-			else
-				-- already inspected before, but distance could have changed..
-				-- inspect anyways? -> only if distance is relevant
-				if checkLeafBlock(data) and data.state.distance <= 2 then 
-					-- inspect again
+				rememberBlock(pos, data)
+			end
+		end
+	end
+
+	local bfs = BreadthFirstSearch()
+	local options = { maxDistance = 3, returnPath = true}
+
+	local function checkPlausibleDistance(leafPos, data)
+		-- check distance of branch leaves to other logs
+		-- if its possible to reach it within distance, if not it suggests there is another log 
+		-- hidden in the branch
+
+		-- e.g. 
+		-- LOG, 	LEAF(dist1)	???
+		-- LOG, 	AIR, 		LEAF(dist2) 
+		
+		--> to get to the next known log, LEAF must be distance 3, but it has 2
+		--> mine this leaf and check if (moving away from trunk) there is a log
+		--> could also just be a LOG further up, which hasnt been explored yet but is still connected
+		-- use pathfinder to determine distance to nearest log block? if it is bigger than distance, the leaf should be mined
+
+		--[[
+			if leav.state.distance > 1 and leaf.state.distance <= 3 then 
+				local start = leafPos
+				local goal = ?   -- check all log blocks? -> could also just use BFS instead of pathfinding
+				local pathFinder = PathFinder()
+				pathFinder.checkValid = -- not turtle, not air, preferrably leaves or unknown
+				local path = pathFinder:aStarPart(self.pos, self.orientation, goal , self.map, nil)
+				local moves = #path 
+				if moves > leaf.state.distance then 
+					-- mine leaf
 				end
 			end
+		--]]
 
-			if checkLogBlock(data) then
-				horizontalLogs[#horizontalLogs+1] = { pos = block, orientation = dir, data = data }
-			elseif checkLeafBlock(data) then
-				horizontalLeaves[#horizontalLeaves+1] = { pos = block, orientation = dir, data = data }
-			end
+		-- using bfs instead of astar, because we dont know what the next log is, and thus have no target to pathfind towards
+		-- instead we find the nearest log block with bfs
 
+		-- using self.map is not recommended, since it might contain old data when the tree didnt exist yet
+		-- or another tree in the same spot has been felled before
+		-- create an additional local map for each tree
+		-- though if multiple turtles are felling the same tree, this could lead to issues
+		local reconstructedMap = treeMap:reconstructMapAtTime(data.time)
+		local getMapBlock = function(x, y, z)
+			return reconstructedMap:getBlockName(x, y, z)
 		end
 
-	end
-
-	local checkMineImmediately = function(data)
-		local immediateDistance = 1 -- leaves with distance <= this will be mined immediately
-		return checkLogBlock(data) or ( checkLeafBlock(data) and data.state.distance <= immediateDistance )
-	end
-
-	
-	
-	local horizontalLogs, horizontalLeaves = inspectAll(leaves)
-
-	while horizontalLogs or #diagonalSuspects > 0 do
-
-		for i=0,3 do
-			local dir = (orientation+i)%4
-			if horizontalLogs[dir] then
-				-- mine logs first
-				self:turnTo(log.orientation)
-				self:digMove()
-				forgetLeaf(leaves, log.pos)
-				self:mineLogs() -- recursive call to mine branch
-			end
+		if data.state.distance > 3 then 
+			options.maxDistance = 3 
+		else
+			options.maxDistance = data.state.distance
 		end
 
-		for i=0,3 do
-			local dir = (orientation+i)%4
-			if horizontalLeaves[dir] then
-				-- mine leaves next
-				self:turnTo(leaf.orientation)
-				self:digMove()
-				forgetLeaf(leaves, leaf.pos)
-				inspectAll(leaves) -- check for more logs 
-			end
-		end
 
+		local path = bfs:breadthFirstSearch(leafPos, checkGoalLeafBFS, checkValidLeafBFS, getMapBlock, options)
+		local moves = ( path and #path - 1 ) or math.huge
+		print("BFS mvs", moves, "leaf", leafPos, "dst",  data.state.distance)
+
+		if not path or moves > data.state.distance then
+			return false -- not plausible
+		else
+			return true -- plausible
+		end
 	end
 
+	-- digToPos -- either hook into existing setMapValue function or use map.log to reconstruct broken blocks by digToPos
+	-- otherwise local map will not know what additional blocks have been removed by digToPos
 
-	
-	--in front
-	block = self.pos + self.vectors[self.orientation]
-	data = getLeaf(leaves, block)
-	if checkMineImmediately(data) then
-		self:digMove()
-		forgetLeaf(leaves, block)
-		isInTree = true
-		isInBranch = true
-	else -- left
-		block = self.pos + self.vectors[(self.orientation-1)%4]
-		if checkMineImmediately(getLeaf(leaves, block)) then
-			self:turnLeft()
-			self:digMove()
-			forgetLeaf(leaves, block)
-			isInTree = true
-			isInBranch = true
-		else -- right
-			block = self.pos + self.vectors[(self.orientation+1)%4]
-			if checkMineImmediately(getLeaf(leaves, block)) then
-				self:turnRight()
-				self:digMove()
-				forgetLeaf(leaves, block)
-				isInTree = true
-				isInBranch = true
-			else -- behind
-				block = self.pos + self.vectors[(self.orientation+2)%4]
-				if checkMineImmediately(getLeaf(leaves, block)) then
-					self:turnRight()
-					self:turnRight()
-					self:digMove()
-					forgetLeaf(leaves, block)
-					isInTree = true
-					isInBranch = true
-				else -- up
-					block = self.pos + vectorUp
-					if checkMineImmediately(getLeaf(leaves, block)) then
-						self:digMoveUp()
-						forgetLeaf(leaves, block)
-						isInTree = true
+	-- the map also needs to remember when a block has been mined / inspected
+	-- this way we can do the plausibility check for the time the leaf was inspected
+	-- and we can also check for logs that have only been expected in the furture (after leaf was instpected, not before)
 
-					else -- down
-						block = self.pos + vectorDown
-						if checkMineImmediately(getLeaf(leaves, block)) then
-							self:digMoveDown()
-							forgetLeaf(leaves, block)
-							isInTree = true
-						else -- nearest log, if log has been found before
-							if isInTree then
-								local nextLog, data = findNextLeaf(leaves, self.pos, checkMineImmediately, nil)
-								if nextLog then
-									-- navigate instead of dig, to not disturb leaves
-									-- target block has to be mined though, when using navigate
-									-- does not keep track of logs / leaves that are removed/updated while navigating
-									if self:digToPos(nextLog.x, nextLog.y, nextLog.z) then 
-										forgetLeaf(leaves, nextLog)
-									else
-										-- cannot reach log, give up?
-										break
-									end
-									
-								else
-									-- done
-									break
-								end
-							else
-								-- check final leaves for distance
 
-								break
-							end
-						end
+	local its = 0
+	local maxIts = 256
+
+	local function mineLogsDFS()
+		while #logs > 0 and its < maxIts do
+
+			its = its + 1
+			-- mine logs DFS
+			local pos = table.remove(logs)
+			local x, y, z = pos.x, pos.y, pos.z
+			local data = treeMap:getData(x, y, z)
+			if data and data.name ~= 0 then
+				if self:digToPos(x, y, z) then
+					treeMap:setData(x, y, z, 0, true)
+					inspectAll()
+				else
+					print("Cannot reach log at", pos)
+				end
+			end
+		end
+	end
+
+	local function mineLeaves()
+		print("MINING LEAVES WITH LOW DISTANCE")
+
+		while next(lowDistanceLeaves) ~= nil do
+			local key, pos = next(lowDistanceLeaves)
+			local x, y, z = pos.x, pos.y, pos.z
+			lowDistanceLeaves[key] = nil
+
+			local data = treeMap:getData(x, y, z)
+			if data and data.name ~= 0 and checkLeafBlock(data) then 
+				-- double check for updated distance values
+				if data.state.distance <= 1 or ( data.state.distance <= 3 and not checkPlausibleDistance(pos, data) ) then 
+					
+					if self:digToPos(x, y, z) then 
+						treeMap:setData(x, y, z, 0, true)
+						inspectAll()
+						-- mine logs found after mining leaves
+						mineLogsDFS()
+					else
+						print("Cannot reach leaf at", pos)
 					end
 				end
 			end
 		end
 	end
-	ct = ct + 1
+
+	-- initial pass
+	inspectAll()
+	-- mine all connected logs
+	mineLogsDFS()
+	-- do a second pass over leaves with distance 1
+	mineLeaves()
 
 
-	
-	until ct > default.maxVeinSize
-	
+
+	print("Tree mining complete. Logs mined:", its)
+
 	--return to start
 	self:navigateToPos(startPos.x, startPos.y, startPos.z)
 	self:turnTo(startOrientation)
 	self.taskList:remove(currentTask)
 end
+
 
 function Miner:fellTree()
 

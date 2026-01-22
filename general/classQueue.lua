@@ -1,9 +1,17 @@
-Queue = {}
+local Queue = {}
 
 function Queue:new(o)
     local o = o or {}
     setmetatable(o, {__index = self})
     self.__index = self
+
+	-- Function Caching
+    for k, v in pairs(self) do
+       if type(v) == "function" then
+           o[k] = v  -- Directly assign method to object
+       end
+    end
+
     o.first = 0
     o.last = -1
     return o
@@ -38,3 +46,5 @@ function Queue:popRight()
 	self.last = last - 1
 	return value
 end
+
+return Queue
