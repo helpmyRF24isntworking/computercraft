@@ -2648,6 +2648,7 @@ end
 
 local BreadthFirstSearch = require("classBreadthFirstSearch")
 local StateMap = require("classStateMap")
+local manhattanDistance = ChunkyMap.manhattanDistance
 
 local leafBlocks = {
 	["minecraft:oak_leaves"] = true,
@@ -2709,6 +2710,21 @@ local function checkBeeHive(data)
 	return false
 end
 
+
+-- known issues
+-- 1. diagonal blocks without any leaves will not be found
+-- 2. leaves that are connected to multiple blocks might return plausible if they are not reinspected
+-- 		-> they are ignored to check for logs
+--     solution? a simple backtracking down the main trunk and inspecting leaves again could help 
+--		   (or step after mining all connected logs)
+--     also once at the top of the tree: use leaves gradient to find next log, continue from there with rest of logic
+-- 3. inefficient mining order -> logs and leaves could be mined in a better order to minimize movement
+--    best would be to pick the nearest log/leaf at each step, but that is quite expensive to calculate
+--    simpler is to use a heap for the leaves based on state.distance and always priotitize logs
+--    immediately mine logs even if another "job" like mineToLeaf is ongoing
+--    always mining logs first, then reevaluating the leaves.distance values could also help with 2.
+
+
 function Miner:mineTree()
 
 	-- only needed for oak trees ig 
@@ -2731,8 +2747,7 @@ function Miner:mineTree()
 	local lowDistanceLeaves = {} -- map of leaf blocks with low distance
 	local lowDistance = 3
 	local logs = {}
-	
-	-- local mined = {} -- 
+	local priorityLogPos = nil
 	
 
 	local function posToKey(pos)
@@ -2754,7 +2769,7 @@ function Miner:mineTree()
 		if not result then 
 			--print("noInspect", data.name, data.state and data.state.distance, checkLeafBlock(data))
 		elseif result and checkLeafBlock(data)then
-			print("reinspectLeaf", data.name, data.state.distance)
+			-- print("reinspectLeaf", data.name, data.state.distance)
 		end
 		return result
 	end
@@ -2803,92 +2818,56 @@ function Miner:mineTree()
 		end
 	end
 	local function inspectAll()
-		-- use a custom inspectAll function
-		--write(tostring(self.pos) .. " down")
-		inspectDown()
-		--write(" up")
-		inspectUp()
+		-- return how many logs have been found
+		local logCt = #logs
 
-		-- inspect Front, Left, Behind, Right
+		inspectDown()
+		inspectUp()
 		local orientation = self.orientation
 		for i=0,3 do
-			--write(" dir"..(orientation+i)%4)
 			local dir = (orientation+i)%4
 			inspect(dir)
 		end
+
+		return #logs - logCt
 	end
 
-
-
-	local function digToLog(x, y, z)
-
-	-- digToPos -- either hook into existing setMapValue function or use map.log to reconstruct broken blocks by digToPos
-	-- otherwise local map will not know what additional blocks have been removed by digToPos
-	-- idea+optimization: instead of normal digtopos:
-		-- try to dig to pos using potentially surrounding leaves (if no logs are there)
-		-- could reveal more hidden logs but also increase chance to get saplings back
-		-- also solves the issue of the map not being 100% accurate
-
-	-- prefer y axis to maybe find new logs
-
-		local safe = false
-		local result = true
-
-		inspectAll()
-
-		while self.pos.y ~= y do
-			if self.pos.y < y then
-				if not self:digMoveUp(safe) then result = false; break end
-				treeMap:setMined(self.pos.x, self.pos.y, self.pos.z)
-			else
-				if not self:digMoveDown(safe) then result = false; break end
-				treeMap:setMined(self.pos.x, self.pos.y, self.pos.z)
-			end
-			inspectAll()
-		end
-		
-		if result then
-			
-			if self.pos.x < x then
-				self:turnTo(3) -- +x
-			elseif self.pos.x > x then
-				self:turnTo(1) -- -x
-			end
-			while self.pos.x ~= x do
-				if not self:digMove(safe) then result = false; break end
-				treeMap:setMined(self.pos.x, self.pos.y, self.pos.z) -- we dont actually know if it was mined tho
-				inspectAll()
-			end
-
-			if result then
-				if self.pos.z < z then
-					self:turnTo(0) -- +z
-				elseif self.pos.z > z then
-					self:turnTo(2) -- -z
-				end
-				
-				while self.pos.z ~= z do
-					if not self:digMove(safe) then result = false; break end
-					treeMap:setMined(self.pos.x, self.pos.y, self.pos.z)
-					inspectAll()
-				end
-			end
-		end
-		return result
-	end
 
 	local bfs = BreadthFirstSearch()
 	local options = { maxDistance = 3, returnPath = true}
 
 	local function digToPosUsingLeaves(tx, ty, tz)
+
+		-- idea+optimization: instead of normal digtopos:
+			-- try to dig to pos using potentially surrounding leaves (if no logs are there)
+			-- could reveal more hidden logs but also increase chance to get saplings back
+			-- also solves the issue of the map not being 100% accurate
+
+		-- prefer y axis to maybe find new logs
+
+
+		-- caution: using this func to dig toward a leaf with low distance (e.g. 3)
+		--          might lead to the leaf being cut from the log. but it is replaced with another entry
+		-- not an issue but perhaps reevaluating the target leaf could help avoid unnecessary movement
+
 		local safe = false
 		local result = true
 
+		--print("digTo", tx, ty, tz)
 		local cx, cy, cz = self.pos.x, self.pos.y, self.pos.z
 
 		if cx == tx and cy == ty and cz == tz then
 			return true
 		end
+
+		local allVectors = {
+			vectors[0],
+			vectors[1],
+			vectors[2],
+			vectors[3],
+			vectorUp,
+			vectorDown,
+		}
 
 		local neighbourVectors = {}
 		local xdir, yvec, zdir
@@ -2906,31 +2885,70 @@ function Miner:mineTree()
 		if xdir then table.insert(neighbourVectors, vectors[xdir]) end
 		if zdir then table.insert(neighbourVectors, vectors[zdir]) end
 		
-		inspectAll()
+		local logsFound = inspectAll()
 		
 		repeat
-			local cpos = self.pos
-			local relevantNeighbours = {}
-			for _, vec in ipairs(neighbourVectors) do
-				table.insert(relevantNeighbours, cpos + vec)
-			end
-			for i, neighbour in ipairs(relevantNeighbours) do
-				local nx, ny, nz = neighbour.x, neighbour.y, neighbour.z
-				neighbour.dir = neighbourVectors[i]
-				local ndata = treeMap:getData(nx, ny, nz)
-				neighbour.data = ndata
-				if checkLeafBlock(ndata) then
-					neighbour.distance = ndata.state.distance
-				elseif checkLogBlock(ndata) then
-					-- logs should not be present here except its the target itself?
-					neighbour.distance = 0
-				else
-					neighbour.distance = 666
+			local cpos, nextPos = self.pos, nil
+
+
+			-- check if our target is directly adjacent
+			if ChunkyMap.manhattanDistance(cpos.x, cpos.y, cpos.z, tx, ty, tz) == 1 then
+				-- ignore all other neighbours, go directly to target
+				nextPos = vector.new(tx, ty, tz)
+			else
+
+				-- check neighbours 
+				local relevantNeighbours, relevantSet = {}, {}
+				local irrelevantNeighbours = {}
+
+				-- neighbours on the path towards target
+				for _, vec in ipairs(neighbourVectors) do
+					relevantSet[vec] = true
+					table.insert(relevantNeighbours, cpos + vec)
 				end
+
+				-- neighbours that do not lead towards target
+				for _, vec in ipairs(allVectors) do
+					if not relevantSet[vec] then
+						table.insert(irrelevantNeighbours, cpos + vec)
+					end
+				end
+
+				-- check irrelevant neighbours for logs first
+				for _, neighbour in ipairs(irrelevantNeighbours) do
+					local nx, ny, nz = neighbour.x, neighbour.y, neighbour.z
+					local ndata = treeMap:getData(nx, ny, nz)
+					if checkLogBlock(ndata) then
+						-- found log block nearby, go there first
+						-- cancel current digToPos, add it back to the queue for later
+						-- prioritize newly found log
+						priorityLogPos = vector.new(nx, ny, nz)
+						print("interrupting, found log", nx, ny, nz)
+						return "interrupted", neighbour
+					end
+				end
+
+				-- check relevant neighbours and choose preferable path
+				for i, neighbour in ipairs(relevantNeighbours) do
+					local nx, ny, nz = neighbour.x, neighbour.y, neighbour.z
+					neighbour.dir = neighbourVectors[i]
+					local ndata = treeMap:getData(nx, ny, nz)
+					neighbour.data = ndata
+					if checkLeafBlock(ndata) then
+						neighbour.distance = ndata.state.distance
+					elseif checkLogBlock(ndata) then
+						-- logs should not be present here except its the target itself?
+						neighbour.distance = 0
+					else
+						neighbour.distance = 666
+					end
+				end
+				table.sort(relevantNeighbours, function(a,b) return a.distance < b.distance end)
+				-- simply go by the "leaf" with the lowest distance if such a leaf exists
+				nextPos = relevantNeighbours[1]
 			end
-			table.sort(relevantNeighbours, function(a,b) return a.distance < b.distance end)
-			-- simply go by the "leaf" with the lowest distance if such a leaf exists
-			local nextPos = relevantNeighbours[1]
+
+			-- actually move
 			local diff = nextPos - self.pos
 			if diff.y > 0 then
 				if not self:digMoveUp(safe) then result = false; break end
@@ -2944,11 +2962,21 @@ function Miner:mineTree()
 				if not self:digMove(safe) then result = false; break end
 			end
 			treeMap:setMined(self.pos.x, self.pos.y, self.pos.z)
-			inspectAll()
-		until self.pos.x == tx and self.pos.y == ty and self.pos.z == tz or result == false
+			logsFound = inspectAll()
 
-		-- caution: using this func to dig toward a leaf with low distance (e.g. 3)
-		--          might lead to the leaf being cut from the log. but it is replaced with another entry
+			-- remove vectors for axes we've already reached
+			local filtered = {}
+			for _, vec in ipairs(neighbourVectors) do
+				local keep = not ((self.pos.x == tx and vec.x ~= 0) or
+								(self.pos.y == ty and vec.y ~= 0) or
+								(self.pos.z == tz and vec.z ~= 0))
+				if keep then
+					table.insert(filtered, vec)
+				end
+			end
+			neighbourVectors = filtered
+
+		until ( self.pos.x == tx and self.pos.y == ty and self.pos.z == tz ) or result == false
 
 		return result
 	end
@@ -2988,6 +3016,11 @@ function Miner:mineTree()
 		-- or another tree in the same spot has been felled before
 		-- create an additional local map for each tree
 		-- though if multiple turtles are felling the same tree, this could lead to issues
+
+		-- the map also needs to remember when a block has been mined / inspected
+		-- this way we can do the plausibility check for the time the leaf was inspected
+		-- and we can also check for logs that have only been expected in the furture (after leaf was instpected, not before)
+
 		local reconstructedMap = treeMap:reconstructMapAtTime(data.time)
 		local getMapBlock = function(x, y, z)
 			return reconstructedMap:getBlockName(x, y, z)
@@ -3002,7 +3035,7 @@ function Miner:mineTree()
 
 		local path = bfs:breadthFirstSearch(leafPos, checkGoalLeafBFS, checkValidLeafBFS, getMapBlock, options)
 		local moves = ( path and #path - 1 ) or math.huge
-		print("BFS mvs", moves, "leaf", leafPos, "dst",  data.state.distance)
+		-- print("BFS mvs", moves, "leaf", leafPos, "dst",  data.state.distance)
 
 		if not path or moves > data.state.distance then
 			return false -- not plausible
@@ -3011,33 +3044,33 @@ function Miner:mineTree()
 		end
 	end
 
-	-- the map also needs to remember when a block has been mined / inspected
-	-- this way we can do the plausibility check for the time the leaf was inspected
-	-- and we can also check for logs that have only been expected in the furture (after leaf was instpected, not before)
 
+	local function getActions(fromPos, fromOr, toPos)
+		-- estimate number of actions (turns) to get from fromPos to toPos
+		-- used for prioritizing logs
 
-	local its = 0
-	local maxIts = 256
+		local diff = toPos - fromPos
+		local targetOr
+		if diff.x < 0 then targetOr = 1
+		elseif diff.x > 0 then targetOr = 3
+		elseif diff.z < 0 then targetOr = 2
+		elseif diff.z > 0 then targetOr = 0 end
 
-	local function mineLogsDFS()
-		while #logs > 0 and its < maxIts do
+		local actions = 0
 
-			its = its + 1
-			-- mine logs DFS
-			local pos = table.remove(logs)
-			local x, y, z = pos.x, pos.y, pos.z
-			local data = treeMap:getData(x, y, z)
-			if data and data.name ~= 0 then
-				print("log at", pos)
-				if digToPosUsingLeaves(x, y, z) then
-					treeMap:setMined(x, y, z)
-					inspectAll()
-				else
-					print("Cannot reach log at", pos)
-				end
-			end
+		-- prefer same orientation over vertical over any other
+		if targetOr == fromOr then 
+			actions = 0
+		elseif not targetOr then 
+			actions = 0.5
+		else
+			local turnDiff = (targetOr - fromOr) % 4
+			actions = math.min(turnDiff, 4 - turnDiff)
 		end
+
+		return actions
 	end
+
 
 	local function mineTowardsLog(leafPos, leafData)
 		-- use leaf gradient descent to find the next log
@@ -3049,7 +3082,7 @@ function Miner:mineTree()
 		-- pick a random possible path,
 		-- the other leaf is added to lowDistanceLeaves for later processing anyways
 
-		local dist = leafData.state.distance
+		local dist = ( leafData and leafData.state.distance ) or 7
 		local x, y, z = leafPos.x, leafPos.y, leafPos.z
 		local candidates = {}
 		inspectAll()
@@ -3061,7 +3094,11 @@ function Miner:mineTree()
 				-- all leaves with a smaller distance are candidates for next step 
 				-- table.insert(candidates, { pos = npos, data = ndata })
 				print("nxt leaf", nx, ny, nz, "dst", ndata.state.distance)
-				if digToPosUsingLeaves(nx, ny, nz) then
+				local result = digToPosUsingLeaves(nx, ny, nz)
+				if result == "interrupted" then
+					print("SHOULDNT HAPPEN, 1")
+					return false
+				elseif result then
 					treeMap:setMined(nx, ny, nz)
 					return mineTowardsLog(npos, ndata) -- recursive call towards log
 				else
@@ -3074,17 +3111,106 @@ function Miner:mineTree()
 			elseif checkLogBlock(ndata) then
 				-- found log!
 				print("log", nx, ny, nz, "from leaf", x,y,z)
-				if digToPosUsingLeaves(nx, ny, nz) then
-					treeMap:setMined(nx, ny, nz)
-					inspectAll()
+				local result = digToPosUsingLeaves(nx, ny, nz)
+				if result == "interrupted" then
+					print("SHOULDNT HAPPEN, 2")
+					return false
+				elseif result then
+					-- treeMap:setMined(nx, ny, nz)
+					-- inspectAll()
 					return true
 				else
 					print("mtw, cannot reach log", nx, ny, nz)
 				end
 			end
 		end
+	end
+
+	local its = 0
+	local maxIts = 256
+	local firstGradientPass = false
+
+	local function mineLogsDFS()
+
+		while #logs > 0 and its < maxIts do
+
+			its = its + 1
+			-- pick next log to mine
+			local pos, logDist
+			if priorityLogPos then
+				-- use prioritized log (usually leading outwards)
+				pos = priorityLogPos
+				priorityLogPos = nil
+				logDist = manhattanDistance(self.pos.x, self.pos.y, self.pos.z, pos.x, pos.y, pos.z)
+			else
+				-- use the closest log 
+
+				local cpos, cor = self.pos, self.orientation
+				local cx, cy, cz = cpos.x, cpos.y, cpos.z
+				local log = logs[1]
+				local closestId = 1
+				local closestDist = manhattanDistance(cx, cy, cz, log.x, log.y, log.z)
+				local minActions = getActions(cpos, cor, log)
+
+				for i = 2, #logs do
+					log = logs[i]
+					local dist = manhattanDistance(cx, cy, cz, log.x, log.y, log.z)
+					if dist < closestDist then
+						closestDist = dist
+						closestId = i
+					elseif dist == closestDist then
+						-- same distance, prefer smaller action count
+						local actions = getActions(cpos, cor, log)
+						if actions < minActions then
+							minActions = actions
+							closestId = i
+						end
+
+					end
+				end
+				pos = table.remove(logs, closestId)
+				logDist = closestDist
+			end
+
+			-- mine logs DFS
+			local x, y, z = pos.x, pos.y, pos.z
+			local data = treeMap:getData(x, y, z)
+
+			if data and data.name ~= 0 then
+
+				if logDist > 1 and not firstGradientPass then 
+					-- continuous log streak broken -> use leaf gradient for next log
+					table.insert(logs, pos) -- requeue current log
+					if mineTowardsLog(self.pos, nil) then 
+						firstGradientPass = true
+					end
+					-- we only want to do this once though? -- perhaps also remove again
+				end
+
+				if logDist <= 1 or firstGradientPass then
+					-- after first gradient pass, mine all remaining logs directly
+
+					print("log at", pos)
+					local result = digToPosUsingLeaves(x, y, z)
+
+					if result == "interrupted" then
+						-- requeue current log and pick new log
+						if self.pos.x ~= x or self.pos.y ~= y or self.pos.z ~= z then
+							table.insert(logs, pos)
+						end
+					elseif result then 
+						treeMap:setMined(x, y, z)
+						inspectAll()
+					else
+						print("Cannot reach log at", pos)
+					end
+				end
+			end
+		end
 
 	end
+
+
 
 	local function mineLeaves()
 		print("MINING LEAVES WITH LOW DISTANCE")
@@ -3104,7 +3230,11 @@ function Miner:mineTree()
 				-- double check for updated distance values
 				if data.state.distance <= 1 then 
 					print("leaf at", pos, "dst", data.state.distance)
-					if digToPosUsingLeaves(x, y, z) then
+					local result = digToPosUsingLeaves(x, y, z)
+					if result == "interrupted" then
+						-- requeue current leaf, call mineLogsDFS
+						lowDistanceLeaves[key] = pos
+					elseif result then 
 						treeMap:setMined(x, y, z)
 						inspectAll()
 					else
@@ -3112,7 +3242,11 @@ function Miner:mineTree()
 					end
 
 				elseif data.state.distance <= 3 and not checkPlausibleDistance(pos, data) then
-					if digToPosUsingLeaves(x, y, z) then
+					local result = digToPosUsingLeaves(x, y, z)
+					if result == "interrupted" then
+						-- requeue current leaf
+						lowDistanceLeaves[key] = pos
+					elseif result then 
 						treeMap:setMined(x, y, z)
 						if not mineTowardsLog(pos, data) then 
 							print("no log from leaf", pos, "dst", data.state.distance)
@@ -3134,6 +3268,13 @@ function Miner:mineTree()
 	mineLogsDFS()
 	-- do a second pass over leaves with distance 1
 	mineLeaves()
+
+	-- perhaps also do a final gradient pass to find any remaining logs
+	-- mineTowardsLog(self.pos, nil)
+	-- rather not, could lead to mining neighbouring trees
+
+	-- todo: set a max distance for the tree size from trunk?
+	-- or detect that we entered another tree by detecting its trunk?
 
 
 
@@ -3163,7 +3304,7 @@ function Miner:growTree()
 			-- use bonemeal until tree grows
 			self:select(bonemeal)
 			local grown = false
-			local maxAttempts = 16
+			local maxAttempts = 32
 			local attempts = 0
 			repeat
 				attempts = attempts + 1

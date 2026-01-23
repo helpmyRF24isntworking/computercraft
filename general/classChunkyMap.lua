@@ -571,9 +571,10 @@ end
 local getDistance = ChunkyMap.getDistance
 
 
-local function manhattanDistance(sx,sy,sz,ex,ey,ez)
+function ChunkyMap.manhattanDistance(sx,sy,sz,ex,ey,ez)
 	return math.abs(ex-sx)+math.abs(ey-sy)+math.abs(ez-sz)
 end
+local manhattanDistance = ChunkyMap.manhattanDistance
 
 function ChunkyMap:rememberBlock(chunkId, relativeId, blockName)
 	-- internal use for remembering ores
