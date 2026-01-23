@@ -28,6 +28,8 @@ function StateMap:new()
 	o.chunks = {}
 	o.chunkCount = 0
 	o.log = {}
+	o.lastMinedBlocks = {}
+	o.lastMined = osEpoch()-1
 	
 	o:initialize()
 	return o
@@ -71,13 +73,34 @@ function StateMap:setData(x,y,z,data,mined)
 		data.time = time
 	end
 
-	data.mined = mined -- flag if block was mined and is thus air now, or it was inspected and found to be air
-
 	local chunk = self:accessChunk(chunkId)
-	if chunk and chunk[relativeId] ~= data then
+	local prv = chunk and chunk[relativeId]
+
+	if mined then
+		data.mined = mined 
+		-- flag if block was mined and is thus air now, or it was inspected and found to be air
+		if prv then 
+			if prv.name ~= data.name then -- aka. prv ~= 0
+				-- remember last time a certain block was mined
+				self.lastMinedBlocks[prv.name] = time
+				self.lastMined = time
+			end
+		end
+	end
+	
+	if chunk and prv ~= data then
 		tableinsert(self.log,{chunkId,relativeId,data})
 		chunk[relativeId] = data
 	end
+end
+
+function StateMap:setMined(x,y,z)
+	self:setData(x,y,z,0,true)
+end
+
+function StateMap:getLastMined(blockName)
+	if blockName then return self.lastMinedBlocks[blockName]
+	else return self.lastMined end
 end
 
 function StateMap:getData(x,y,z)

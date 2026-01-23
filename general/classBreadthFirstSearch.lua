@@ -25,7 +25,7 @@ local function reconstructPath(current)
 end
 
 
-local function getCardinalNeighbours(cx, cy, cz)
+function BreadthFirstSearch.getCardinalNeighbours(cx, cy, cz)
 
 	-- only use cardinal directions + up/down
 	return { 
@@ -37,7 +37,7 @@ local function getCardinalNeighbours(cx, cy, cz)
 		{ x =  cx + 0, y = cy + 0, z = cz - 1 }, -- north
 	}
 end
-local getNeighbours = getCardinalNeighbours
+local getNeighbours = BreadthFirstSearch.getCardinalNeighbours
 
 function BreadthFirstSearch:breadthFirstSearch(startPos, checkGoal, checkValid, getBlock, options)
     --[[
@@ -141,7 +141,7 @@ function BreadthFirstSearch:breadthFirstSearch(startPos, checkGoal, checkValid, 
 		end
     end
     
-	print("BFS: NO PATH FOUND", nodesExplored)
+	-- print("BFS: NO PATH FOUND", nodesExplored)
     return nil 
 end
 
