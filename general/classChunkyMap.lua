@@ -205,6 +205,13 @@ function ChunkyMap.chunkIdToXYZ(chunkId)
 end
 local chunkIdToXYZ = ChunkyMap.chunkIdToXYZ
 
+function ChunkyMap.idsToXYZ(chunkId, relativeId)
+	local cx,cy,cz = chunkIdToXYZ(chunkId)
+	local rcx, rcy, rcz = relativeIdToXYZ(relativeId)
+	return cx + rcx, cy + rcy, cz + rcz
+end
+local idsToXYZ = ChunkyMap.idsToXYZ
+
 function ChunkyMap.xyzToId(x,y,z)
 	-- dont use string IDs for Tables, instead use numbers  
 	-- Cantor pairing - natural numbers only to make it reversable

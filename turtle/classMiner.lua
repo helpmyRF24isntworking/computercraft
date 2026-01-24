@@ -2724,6 +2724,13 @@ end
 --    immediately mine logs even if another "job" like mineToLeaf is ongoing
 --    always mining logs first, then reevaluating the leaves.distance values could also help with 2.
 
+-- 4. old distance values of leaves 
+--  after mining all logs, update the distance values of leaves through bfs again? 
+-- bfs for dist 2 = nil but neighbour has been inspected recently dist 5 -> dist 4 now
+-- randomly reinspect leaves? best to do it on connected groups of leaves
+-- how do we get groups of leaves? 
+
+
 
 function Miner:mineTree()
 
@@ -2746,6 +2753,8 @@ function Miner:mineTree()
 
 	local lowDistanceLeaves = {} -- map of leaf blocks with low distance
 	local lowDistance = 3
+	local reinspectionDistance = 3
+	local prvReinspectionDistance = reinspectionDistance
 	local logs = {}
 	local priorityLogPos = nil
 	
@@ -2754,13 +2763,21 @@ function Miner:mineTree()
         return pos.x .. "," .. pos.y .. "," .. pos.z
     end
 
+	local function setReinspectionDistance(dist)
+		prvReinspectionDistance = reinspectionDistance
+		reinspectionDistance = dist
+	end
+	local function restoreReinspectionDistance()
+		reinspectionDistance = prvReinspectionDistance
+	end
+
 	local function shouldInspect(data)
 		-- not yet inspected or leaf block with distance <= 2
 
 		local result = false
 		if not data then 
 			result = true
-		elseif checkLeafBlock(data) and data.state.distance <= 3 then
+		elseif checkLeafBlock(data) and data.state.distance <= reinspectionDistance then
 			-- check if a log was mined since last inspection, only then reinspect the leaf
 			local timeLogMined = treeMap:getLastMined("minecraft:oak_log")
 			local wasLogMined = timeLogMined and timeLogMined > data.time or false
@@ -2833,8 +2850,41 @@ function Miner:mineTree()
 	end
 
 
+	local function getRoot()
+		-- find the root block of the tree
+		-- its the lowest block in the whole tree
+		local minX, minY, minZ = nil, math.huge, nil
+		local log = treeMap.log
+		for i = 1, #log do 
+			local entry = log[i]
+			local chunkId, relativeId, data = entry[1], entry[2], entry[3]
+
+			if checkLogBlock(data) then 
+				local x, y, z = ChunkyMap.idsToXYZ(chunkId, relativeId)
+				if y < minY then 
+					minX, minY, minZ = x, y, z
+				end
+			end
+		end
+
+		if minX then 
+			return vector.new(minX, minY, minZ)
+		else
+			print("no root found")
+			return nil
+		end
+	end
+
+	local function getTrunk()
+		-- largest collection of logs with state.axis == y
+		-- or any blocks directly above / connected to the root
+
+	end
+
+
 	local bfs = BreadthFirstSearch()
 	local options = { maxDistance = 3, returnPath = true}
+
 
 	local function digToPosUsingLeaves(tx, ty, tz)
 
@@ -2842,6 +2892,7 @@ function Miner:mineTree()
 			-- try to dig to pos using potentially surrounding leaves (if no logs are there)
 			-- could reveal more hidden logs but also increase chance to get saplings back
 			-- also solves the issue of the map not being 100% accurate
+		-- not quite sure though if this actually helps the edge cases...
 
 		-- prefer y axis to maybe find new logs
 
@@ -3035,7 +3086,7 @@ function Miner:mineTree()
 
 		local path = bfs:breadthFirstSearch(leafPos, checkGoalLeafBFS, checkValidLeafBFS, getMapBlock, options)
 		local moves = ( path and #path - 1 ) or math.huge
-		-- print("BFS mvs", moves, "leaf", leafPos, "dst",  data.state.distance)
+		print("BFS mvs", moves, "leaf", leafPos, "dst",  data.state.distance)
 
 		if not path or moves > data.state.distance then
 			return false -- not plausible
@@ -3058,11 +3109,11 @@ function Miner:mineTree()
 
 		local actions = 0
 
-		-- prefer same orientation over vertical over any other
+		-- up/down, over front, over rest
 		if targetOr == fromOr then 
-			actions = 0
-		elseif not targetOr then 
 			actions = 0.5
+		elseif not targetOr then 
+			actions = 0
 		else
 			local turnDiff = (targetOr - fromOr) % 4
 			actions = math.min(turnDiff, 4 - turnDiff)
@@ -3083,30 +3134,22 @@ function Miner:mineTree()
 		-- the other leaf is added to lowDistanceLeaves for later processing anyways
 
 		local dist = ( leafData and leafData.state.distance ) or 7
+		local minDist = dist
+		local minPos, minData = nil, nil
 		local x, y, z = leafPos.x, leafPos.y, leafPos.z
-		local candidates = {}
+
 		inspectAll()
 		local neighbours = bfs.getCardinalNeighbours(x, y, z)
-		for _, npos in ipairs(neighbours) do
+		for i, npos in ipairs(neighbours) do
 			local nx, ny, nz = npos.x, npos.y, npos.z
 			local ndata = treeMap:getData(nx, ny, nz)
-			if checkLeafBlock(ndata) and ndata.state.distance < dist then
-				-- all leaves with a smaller distance are candidates for next step 
-				-- table.insert(candidates, { pos = npos, data = ndata })
-				print("nxt leaf", nx, ny, nz, "dst", ndata.state.distance)
-				local result = digToPosUsingLeaves(nx, ny, nz)
-				if result == "interrupted" then
-					print("SHOULDNT HAPPEN, 1")
-					return false
-				elseif result then
-					treeMap:setMined(nx, ny, nz)
-					return mineTowardsLog(npos, ndata) -- recursive call towards log
-				else
-					print("mtw, cannot reach leaf", nx, ny, nz)
-				end
-				
-				-- could also handle the leaves recursively but rather not make it too complex.
-				-- let the basic logic of mineLeaves handle calling this function again
+
+			if checkLeafBlock(ndata) and ndata.state.distance < minDist then
+				-- all leaves with a smaller distance are candidates for next step
+				-- however we only care about the smallest (usually only for the first step though)
+				minDist = ndata.state.distance
+				minPos = npos
+				minData = ndata
 				
 			elseif checkLogBlock(ndata) then
 				-- found log!
@@ -3116,13 +3159,28 @@ function Miner:mineTree()
 					print("SHOULDNT HAPPEN, 2")
 					return false
 				elseif result then
-					-- treeMap:setMined(nx, ny, nz)
-					-- inspectAll()
 					return true
 				else
 					print("mtw, cannot reach log", nx, ny, nz)
 				end
 			end
+		end
+
+		if minPos then
+			local nx, ny, nz = minPos.x, minPos.y, minPos.z
+			local ndata = minData
+			print("nxt leaf", nx, ny, nz, "dst", ndata.state.distance)
+			local result = digToPosUsingLeaves(nx, ny, nz)
+			if result == "interrupted" then
+				print("SHOULDNT HAPPEN, 1")
+				return false
+			elseif result then
+				return mineTowardsLog(minPos, ndata) -- recursive call towards log
+			else
+				print("mtw, cannot reach leaf", nx, ny, nz)
+			end
+
+			-- let the basic logic of mineLeaves handle multiple leaves and recall this func	
 		end
 	end
 
@@ -3181,10 +3239,14 @@ function Miner:mineTree()
 				if logDist > 1 and not firstGradientPass then 
 					-- continuous log streak broken -> use leaf gradient for next log
 					table.insert(logs, pos) -- requeue current log
+					firstGradientPass = true
 					if mineTowardsLog(self.pos, nil) then 
-						firstGradientPass = true
+						-- could fail if no leaves are around
 					end
 					-- we only want to do this once though? -- perhaps also remove again
+					-- TODO? maybe prefer going upwards first and only triggering this when moving back down?
+					-- (actions determine what direction is preferred, currently the one in front, then up)
+					-- when pos.y > self.pos.y
 				end
 
 				if logDist <= 1 or firstGradientPass then
@@ -3210,7 +3272,7 @@ function Miner:mineTree()
 
 	end
 
-
+	local uncheckedLeaves = {}
 
 	local function mineLeaves()
 		print("MINING LEAVES WITH LOW DISTANCE")
@@ -3235,25 +3297,27 @@ function Miner:mineTree()
 						-- requeue current leaf, call mineLogsDFS
 						lowDistanceLeaves[key] = pos
 					elseif result then 
-						treeMap:setMined(x, y, z)
 						inspectAll()
 					else
 						print("Cannot reach leaf at", pos)
 					end
 
-				elseif data.state.distance <= 3 and not checkPlausibleDistance(pos, data) then
+				elseif data.state.distance <= reinspectionDistance and not checkPlausibleDistance(pos, data) then
 					local result = digToPosUsingLeaves(x, y, z)
 					if result == "interrupted" then
 						-- requeue current leaf
 						lowDistanceLeaves[key] = pos
 					elseif result then 
-						treeMap:setMined(x, y, z)
 						if not mineTowardsLog(pos, data) then 
 							print("no log from leaf", pos, "dst", data.state.distance)
 						end
 					else
 						print("Cannot reach leaf at", pos)
 					end
+				elseif data.state.distance < 90 then
+					-- only requeue leaves that might still have logs
+					uncheckedLeaves[key] = pos
+					--print("unchecked", pos, "dst", data.state.distance)
 				end
 			end
 
@@ -3262,12 +3326,253 @@ function Miner:mineTree()
 		end
 	end
 
+	local Queue = require("classQueue")
+
+	local function getLeafGroup(start, visited)
+		-- bfs like search so we get all connected leaf blocks within distance 6
+		-- also calculate centroid and representative
+
+		local components = {}
+		local group = { components = components }
+		local sumX, sumY, sumZ = 0, 0, 0
+
+		local queue = Queue:new()
+		local start = { x = start.x, y = start.y, z = start.z, distance = 0 }
+		queue:pushRight(start)
+
+		while true do
+			local current = queue:popLeft()
+			if not current then break end
+
+			local cx, cy, cz, cdist = current.x, current.y, current.z, current.distance
+			table.insert(components, vector.new(cx, cy, cz))
+			sumX = sumX + cx
+			sumY = sumY + cy
+			sumZ = sumZ + cz
+
+			if cdist < 6 then
+				local neighbours = bfs.getCardinalNeighbours(cx, cy, cz)
+				for i = 1, #neighbours do
+					local neighbour = neighbours[i]
+					local nx, ny, nz = neighbour.x, neighbour.y, neighbour.z
+
+					local vx = visited[nx]
+					if not vx then vx = {}; visited[nx] = vx end
+					local vy = vx[ny]
+					if not vy then vy = {}; vx[ny] = vy end
+					if not vy[nz] then 
+						vy[nz] = true
+
+						local ndata = treeMap:getData(nx, ny, nz)
+						if checkLeafBlock(ndata) then
+							neighbour.distance = cdist + 1
+							queue:pushRight(neighbour)
+						end
+					end
+				end
+			end
+		end
+		local ct = #components
+		local centroidX = sumX / ct
+		local centroidY = sumY / ct
+		local centroidZ = sumZ / ct
+		group.centroid = { x = centroidX, y = centroidY, z = centroidZ }
+		local representative = start
+
+		-- get representative of group (nearest to centroid)
+		local minDist = math.huge
+		for i = 1, #components do
+			local comp = components[i]
+			local dist = manhattanDistance(centroidX, centroidY, centroidZ, comp.x, comp.y, comp.z)
+			if dist < minDist then
+				minDist = dist
+				representative = comp
+			end
+		end
+		group.representative = vector.new(representative.x, representative.y, representative.z)
+
+		return group
+	end
+
+	local function checkOverlappingGroups(a, b)
+		-- check if two leaf groups overlap (any component within 6 blocks of each other)
+		for i = 1, #a.components do
+			local apos = a.components[i]
+			for j = 1, #b.components do
+				local bpos = b.components[j]
+				local dist = manhattanDistance(apos.x, apos.y, apos.z, bpos.x, bpos.y, bpos.z)
+				if dist <= 1 then
+					print("overlap", apos, bpos, "dist", dist)
+					return true
+				end
+			end
+		end
+		return false
+	end
+
+	local function reinspectLeafGroups(remainingLeaves)
+		-- find connected leaf groups and reinspect a single one
+		-- since they are within 6 blocks of each other, 
+		-- one inspection guarantees that no logs are contained if distance is 7
+		-- though navigating to the groups can cut off groups
+
+		local groups = {}
+		local visited = {}
+		local groupCreationTime = osEpoch()
+
+		for key, pos in pairs(remainingLeaves) do
+		
+			local sx, sy, sz = pos.x, pos.y, pos.z
+			local ndata = treeMap:getData(sx, sy, sz)
+			-- check if leaf still exists
+			if checkLeafBlock(ndata) then
+				local vx = visited[sx]
+				if not vx then vx = {}; visited[sx] = vx end
+				local vy = vx[sy]
+				if not vy then vy = {}; vx[sy] = vy end
+				if not vy[sz] then
+					vy[sz] = true
+
+					local group = getLeafGroup(pos, visited)
+					table.insert(groups, group)
+				end
+			end
+		end
+
+		print("found", #groups, "leaf groups")
+
+		-- check overlaps without merge
+		for i = 1, #groups do
+			local groupA = groups[i]
+			for j = i+1, #groups do
+				local groupB = groups[j]
+				if checkOverlappingGroups(groupA, groupB) then
+					print("groups", i, j, "overlap")
+				end
+			end
+		end
+
+		
+
+		local unvisitedGroups = {}
+		for i = 1, #groups do unvisitedGroups[i] = true end
+
+		while next(unvisitedGroups) do 
+			-- -- find nearest group based on representative
+			local cpos = self.pos
+			local cx, cy, cz = cpos.x, cpos.y, cpos.z
+
+			local closestGroupId
+			local minDist = math.huge
+
+			for i, _ in pairs(unvisitedGroups) do
+				local rep = groups[i].representative
+				local dist = manhattanDistance(cx, cy, cz, rep.x, rep.y, rep.z)
+				if dist < minDist then
+					minDist = dist
+					closestGroupId = i
+				end
+			end
+
+			local group = groups[closestGroupId]
+			unvisitedGroups[closestGroupId] = nil
+
+			-- process the group
+			-- pick nearest leaf of group to reinspect
+			-- also check if a leaf has been updated while processing other groups
+			-- if ANY not updated leaf has distance >= 7, skip the group
+			-- if ALL updated leaves have distance >= 7, skip the group
+			
+			local hasUpdatedLeaf, allUpdatesDistant = false, true
+			local components = group.components
+			local closestLeafId
+			minDist = math.huge
+			for i = 1, #components do
+				local comp = components[i]
+				local dist = manhattanDistance(cx, cy, cz, comp.x, comp.y, comp.z)
+				if dist < minDist then
+					minDist = dist
+					closestLeafId = i
+				end
+
+				local compData = treeMap:getData(comp.x, comp.y, comp.z)
+
+				-- print("grpLeaf", comp.x, comp.y, comp.z, "time", compData.time, "dst", compData.state.distance)
+
+				if checkLeafBlock(compData) then 
+					if compData.time > groupCreationTime then
+						-- leaf has been updated since group creation
+						-- all updated leaves must be >= 7 to skip the group
+						hasUpdatedLeaf = true
+						if compData.state.distance < 7 then 
+							allUpdatesDistant = false
+						end
+					elseif compData.state.distance >= 7 then
+						-- found a non-updated leaf with distance 7, skip group
+						-- at time of creation, groups were connected, so if one leaf is distant, the whole group is
+						allUpdatesDistant = true
+						hasUpdatedLeaf = true
+						break
+						-- TODO: check for conflicting information of leaves?
+						-- only rely on most recent inspection time
+					end
+				end
+			end
+
+			if hasUpdatedLeaf and allUpdatesDistant then 
+				-- all updated leaves will decay, skip group
+				print("skipping group, inspected, size", #components)
+			else
+
+				local closestLeaf = components[closestLeafId]
+				print("reinsp", closestLeaf.x, closestLeaf.y, closestLeaf.z, "size", #components, "upd", hasUpdatedLeaf)
+
+				-- navigate to leaf, no need for inspection on the way
+
+				-- navigateToPos is allowed to destroy blocks on the way and does not update treeMap
+				-- if self:navigateToPos(closestLeaf.x, closestLeaf.y, closestLeaf.z) then 
+
+				-- no need for inspection on the way though...
+				-- TODO: expand PathFinder for explicitly following only air blocks or nil 
+				--   (but check them for air while following the path)
+
+				-- small issue: reinspection only happens for leaves with distance <= 3
+				--  mineTowardsLog also handles leaves with distance 4 and 5
+				
+
+				local result = digToPosUsingLeaves(closestLeaf.x, closestLeaf.y, closestLeaf.z)
+				if result == "interrupted" then 
+					-- found new log on the way, add group back to unvisitedGroups
+					unvisitedGroups[closestGroupId] = true
+					-- we are out of the main mining loop, so call mineLogsDFS again
+					mineLogsDFS()
+
+				elseif result then 
+					-- if a surrounding leaf is < 7, then mine towards log
+					setReinspectionDistance(6)
+					if mineTowardsLog(closestLeaf, nil) then
+						print("found a log")
+					end
+					restoreReinspectionDistance()
+					-- TODO: what if multiple logs are contained? they wont be caught
+					-- update the group again using bfs floodfill?
+
+				else
+					print("unable to reach group", closestLeaf.x, closestLeaf.y, closestLeaf.z)
+				end
+			end
+		end
+	end
+
+
 	-- initial pass
 	inspectAll()
 	-- mine all connected logs
 	mineLogsDFS()
 	-- do a second pass over leaves with distance 1
 	mineLeaves()
+	-- group remaining leaves and reinspect one of each group
+	reinspectLeafGroups(uncheckedLeaves)
 
 	-- perhaps also do a final gradient pass to find any remaining logs
 	-- mineTowardsLog(self.pos, nil)
@@ -3277,8 +3582,8 @@ function Miner:mineTree()
 	-- or detect that we entered another tree by detecting its trunk?
 
 
-
-	print("Tree mining complete. Logs mined:", its)
+	local root = getRoot()
+	print("tree ded","root", root)
 
 	--return to start
 	self:navigateToPos(startPos.x, startPos.y, startPos.z)
