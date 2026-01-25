@@ -1,0 +1,23 @@
+
+
+print("---------------------------\nITEMS DELIVERED\nPRESS ANY KEY TO CONFIRM\n---------------------------")
+local confirmed = read()
+print("confirmed")
+
+print("---------------------------\n     ITEMS DELIVERED\nPRESS ANY KEY TO CONFIRM\n---------------------------")
+os.pullEvent("key")
+print("confirmed")
+
+
+local res
+
+local ok, err = parallel.waitForAny( 
+    function() while true do sleep(1) print("waiting") end end, 
+    function()
+        print("---------------------------\n     ITEMS DELIVERED\nPRESS ANY KEY TO CONFIRM\n---------------------------")
+        os.pullEvent("key")
+        res = "result"
+        return "KEY PRESSED"
+    end
+)
+print(ok, err, res)
