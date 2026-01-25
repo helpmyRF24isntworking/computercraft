@@ -2731,6 +2731,13 @@ end
 -- how do we get groups of leaves? 
 
 
+-- only real optimization left: use bfs to floodfill leaves distance values after having mined logs / inspected leaves
+-- e.g. leaf inspected: dist 7 -> neighbour has old value dist 2
+--           conflicting info, 7 is more recent, which means the neighbour must be at least dist 6
+--           so update dist to 6, and continue bfs from there
+--           do this for all leaves that have been inspected after last/latest log was mined
+--           only then reinspect leaves that still have a somewhat low distance value (also do this by groups)
+
 
 function Miner:mineTree()
 
@@ -2751,9 +2758,13 @@ function Miner:mineTree()
 	local treeMap = StateMap:new()
 	self.treeMap = treeMap
 
-	local lowDistanceLeaves = {} -- map of leaf blocks with low distance
-	local lowDistance = 3
+	local maxDistance = 7
+	local distanceLeaves = {}
+	for i = 1, maxDistance do distanceLeaves[i] = {} end
+	local leafDistanceMap = {}
+
 	local reinspectionDistance = 3
+
 	local prvReinspectionDistance = reinspectionDistance
 	local logs = {}
 	local priorityLogPos = nil
@@ -2797,12 +2808,17 @@ function Miner:mineTree()
 		if checkLogBlock(data) then
 			table.insert(logs, pos)
 		elseif checkLeafBlock(data) then
-			if data.state.distance <= 3 then
-				lowDistanceLeaves[posToKey(pos)] = pos
-			elseif data.state.distance == 7 then
-				-- will decay soon, ignore
-				-- blocks[key] = 0
+			local key = posToKey(pos)
+			local oldDist = leafDistanceMap[key]
+			local newDist = data.state.distance
+
+			if oldDist and newDist ~= oldDist then
+				-- already known leaf, update only if distance changed
+				distanceLeaves[oldDist][key] = nil
 			end
+			distanceLeaves[newDist][key] = pos
+			leafDistanceMap[key] = newDist
+
 		elseif checkBeeHive(data) then
 			table.insert(logs, pos) -- mine bee hives as well
 		end
@@ -3072,7 +3088,8 @@ function Miner:mineTree()
 		-- this way we can do the plausibility check for the time the leaf was inspected
 		-- and we can also check for logs that have only been expected in the furture (after leaf was instpected, not before)
 
-		local reconstructedMap = treeMap:reconstructMapAtTime(data.time)
+		local excludeAir = true
+		local reconstructedMap = treeMap:reconstructMapAtTime(data.time, excludeAir)
 		local getMapBlock = function(x, y, z)
 			return reconstructedMap:getBlockName(x, y, z)
 		end
@@ -3083,9 +3100,13 @@ function Miner:mineTree()
 			options.maxDistance = data.state.distance
 		end
 
+		options.maxDistance = 6
 
 		local path = bfs:breadthFirstSearch(leafPos, checkGoalLeafBFS, checkValidLeafBFS, getMapBlock, options)
 		local moves = ( path and #path - 1 ) or math.huge
+		global.path = path -- debugging
+		global.reco = reconstructedMap -- debugging
+
 		print("BFS mvs", moves, "leaf", leafPos, "dst",  data.state.distance)
 
 		if not path or moves > data.state.distance then
@@ -3131,12 +3152,14 @@ function Miner:mineTree()
 		-- leaf has distance 3 but two possible paths to logs
 
 		-- pick a random possible path,
-		-- the other leaf is added to lowDistanceLeaves for later processing anyways
+		-- the other leaf is added to distanceLeaves for later processing anyways
 
-		local dist = ( leafData and leafData.state.distance ) or 7
+		local dist = ( leafData and leafData.state.distance ) or maxDistance
 		local minDist = dist
 		local minPos, minData = nil, nil
 		local x, y, z = leafPos.x, leafPos.y, leafPos.z
+
+		print("mtl, leaf", x, y, z, "dst", leafData and leafData.state.distance or "nil")
 
 		inspectAll()
 		local neighbours = bfs.getCardinalNeighbours(x, y, z)
@@ -3153,7 +3176,7 @@ function Miner:mineTree()
 				
 			elseif checkLogBlock(ndata) then
 				-- found log!
-				print("log", nx, ny, nz, "from leaf", x,y,z)
+				print("mtl, log", nx, ny, nz, "from leaf", x,y,z)
 				local result = digToPosUsingLeaves(nx, ny, nz)
 				if result == "interrupted" then
 					print("SHOULDNT HAPPEN, 2")
@@ -3161,7 +3184,7 @@ function Miner:mineTree()
 				elseif result then
 					return true
 				else
-					print("mtw, cannot reach log", nx, ny, nz)
+					print("mtl, cannot reach log", nx, ny, nz)
 				end
 			end
 		end
@@ -3169,7 +3192,6 @@ function Miner:mineTree()
 		if minPos then
 			local nx, ny, nz = minPos.x, minPos.y, minPos.z
 			local ndata = minData
-			print("nxt leaf", nx, ny, nz, "dst", ndata.state.distance)
 			local result = digToPosUsingLeaves(nx, ny, nz)
 			if result == "interrupted" then
 				print("SHOULDNT HAPPEN, 1")
@@ -3177,7 +3199,7 @@ function Miner:mineTree()
 			elseif result then
 				return mineTowardsLog(minPos, ndata) -- recursive call towards log
 			else
-				print("mtw, cannot reach leaf", nx, ny, nz)
+				print("mtl, cannot reach leaf", nx, ny, nz)
 			end
 
 			-- let the basic logic of mineLeaves handle multiple leaves and recall this func	
@@ -3261,7 +3283,6 @@ function Miner:mineTree()
 							table.insert(logs, pos)
 						end
 					elseif result then 
-						treeMap:setMined(x, y, z)
 						inspectAll()
 					else
 						print("Cannot reach log at", pos)
@@ -3277,52 +3298,130 @@ function Miner:mineTree()
 	local function mineLeaves()
 		print("MINING LEAVES WITH LOW DISTANCE")
 
-		-- TODO: sort lowDistanceLeaves by distance value
-		-- best to use a heap / priority queue here?
+		-- indexed priority list for leaves based on distance
 		-- or just go by the nearest leaf, to save on movement?
 
+		while true do 
 
-		while next(lowDistanceLeaves) ~= nil do
-			local key, pos = next(lowDistanceLeaves)
+			-- get next leaf with lowest state.distance and distance to turtle
+			local cpos = self.pos
+			local cx, cy, cz = cpos.x, cpos.y, cpos.z
+
+			local key, pos, distance
+			for dist = 1, #distanceLeaves do
+				local leaves = distanceLeaves[dist]
+
+				if next(leaves) then
+					distance = dist
+				
+					local minDist = math.huge
+					
+					for k, p in pairs(leaves) do 
+						local ldist = manhattanDistance(cx, cy, cz, p.x, p.y, p.z)
+						if ldist < minDist then
+							minDist = ldist
+							key, pos = k, p
+						end
+					end
+
+					break
+				end
+			end
+
+			if not pos then break end
+
 			local x, y, z = pos.x, pos.y, pos.z
-			lowDistanceLeaves[key] = nil
 
+			distanceLeaves[distance][key] = nil
+			leafDistanceMap[key] = nil
+
+			local timeGet = osEpoch()
 			local data = treeMap:getData(x, y, z)
 			if data and data.name ~= 0 and checkLeafBlock(data) then 
-				-- double check for updated distance values
-				if data.state.distance <= 1 then 
-					print("leaf at", pos, "dst", data.state.distance)
+				local currentDist = data.state.distance
+
+				local timeStart = osEpoch()
+
+				if currentDist ~= distance then
+					-- leaf distance changed
+					distanceLeaves[currentDist][key] = pos
+					leafDistanceMap[key] = currentDist
+
+				elseif currentDist <= 1 then 
+					print("leaf at", pos, "dst", currentDist)
 					local result = digToPosUsingLeaves(x, y, z)
 					if result == "interrupted" then
 						-- requeue current leaf, call mineLogsDFS
-						lowDistanceLeaves[key] = pos
+						distanceLeaves[currentDist][key] = pos
+						leafDistanceMap[key] = currentDist
 					elseif result then 
 						inspectAll()
 					else
 						print("Cannot reach leaf at", pos)
 					end
 
-				elseif data.state.distance <= reinspectionDistance and not checkPlausibleDistance(pos, data) then
+				elseif currentDist <= reinspectionDistance and not checkPlausibleDistance(pos, data) then
+					global.reconstructedBefore = treeMap:reconstructMapAtTime(data.time, true)
+					global.reconstructedBeforeIncl = treeMap:reconstructMapAtTime(data.time, false)
+					local timeStart = osEpoch()
 					local result = digToPosUsingLeaves(x, y, z)
 					if result == "interrupted" then
 						-- requeue current leaf
-						lowDistanceLeaves[key] = pos
+						distanceLeaves[currentDist][key] = pos
+						leafDistanceMap[key] = currentDist
 					elseif result then 
-						if not mineTowardsLog(pos, data) then 
-							print("no log from leaf", pos, "dst", data.state.distance)
+						
+						if not mineTowardsLog(pos, nil) then -- data
+							-- weird, but lets chalk it up to faster inspection than distance values can be updated
+							-- also leaf decay could perhaps cause this
+							-- just change mineTowardsLog(pos, data) to data = nil, so any distance value is valid
+							-- can take up to 6 ticks to update distance values
+
+							local timeEnd = osEpoch()
+							global.res = { data = data, 
+							pos = pos,
+							currentDist = currentDist,
+							distance = distance,
+							reinspectionDistance = reinspectionDistance,
+							plausCheck = checkPlausibleDistance(pos, data),
+							logEntries = {},
+							timeGet = timeGet,
+							timeStart = timeStart,
+							timeEnd = timeEnd,
+							cpos = cpos,
+							}
+							global.reconstructedAfter = treeMap:reconstructMapAtTime(data.time, true)
+							global.reconstructedAfterIncl = treeMap:reconstructMapAtTime(data.time, false)
+							local chunkid = ChunkyMap.xyzToChunkId(x, y, z)
+							local relativeid = ChunkyMap.xyzToRelativeChunkId(x, y, z)
+							treeMap = global.miner.treeMap
+							for i=1, #treeMap.log do 
+								local entry = treeMap.log[i]
+								if entry[1] == chunkid and entry[2] == relativeid then
+									table.insert(global.res.logEntries, entry[3])
+								end
+							end
+
+							--chunkid = ChunkyMap.xyzToChunkId(x, y, z); relativeid = ChunkyMap.xyzToRelativeChunkId(x, y, z); treeMap = global.miner.treeMap; for i=1, #treeMap.log do local entry = treeMap.log[i]; if entry[1] == chunkid and entry[2] == relativeid then table.insert(global.res.logEntries, entry[3]) end end
+
+
+							-- print("no log from leaf", pos, "dst", currentDist)
+							error("no log from leaf" .. tostring(pos) .. " dst " .. tostring(currentDist))
+							-- this should never happen, since the distance is not plausible
 						end
 					else
 						print("Cannot reach leaf at", pos)
 					end
-				elseif data.state.distance < 90 then
-					-- only requeue leaves that might still have logs
+
+				elseif currentDist < maxDistance then
+					-- requeue leaves that theoretically could still have logs, but unlikely
 					uncheckedLeaves[key] = pos
-					--print("unchecked", pos, "dst", data.state.distance)
 				end
 			end
 
 			-- mine logs found after mining leaves
 			mineLogsDFS()
+
 		end
 	end
 
@@ -3504,10 +3603,10 @@ function Miner:mineTree()
 						-- leaf has been updated since group creation
 						-- all updated leaves must be >= 7 to skip the group
 						hasUpdatedLeaf = true
-						if compData.state.distance < 7 then 
+						if compData.state.distance < maxDistance then 
 							allUpdatesDistant = false
 						end
-					elseif compData.state.distance >= 7 then
+					elseif compData.state.distance >= maxDistance then
 						-- found a non-updated leaf with distance 7, skip group
 						-- at time of creation, groups were connected, so if one leaf is distant, the whole group is
 						allUpdatesDistant = true
@@ -3609,7 +3708,7 @@ function Miner:growTree()
 			-- use bonemeal until tree grows
 			self:select(bonemeal)
 			local grown = false
-			local maxAttempts = 32
+			local maxAttempts = 64
 			local attempts = 0
 			repeat
 				attempts = attempts + 1

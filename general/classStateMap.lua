@@ -124,7 +124,20 @@ function StateMap:getBlockName(x,y,z)
 	return nil
 end
 
-function StateMap:reconstructMapAtTime(time)
+function StateMap:getLogEntries(x,y,z)
+	local entries = {}
+	local chunkId = xyzToChunkId(x,y,z)
+	local relativeId = xyzToRelativeChunkId(x,y,z)
+	for i = 1, #self.log do
+		local entry = self.log[i]
+		if entry[1] == chunkId and entry[2] == relativeId then
+			tableinsert(entries, entry[3])
+		end
+	end
+	return entries
+end
+
+function StateMap:reconstructMapAtTime(time, excludeAir)
 
 	-- special function to get a theoretical map at time x
 
@@ -134,7 +147,10 @@ function StateMap:reconstructMapAtTime(time)
 	-- we want to build a map for time 7 but also including the logs that were discovered later
 
 	-- for this we use the log, to rebuild the map at time x and also include blocks
-	-- discovered in the furture
+	-- discovered in the future
+
+	-- excludeAir -- excludes air that was only discovered after time
+	-- for leaves we want to excludeAir, due to decay
     
     local reconstructed = StateMap:new()
     
@@ -147,11 +163,16 @@ function StateMap:reconstructMapAtTime(time)
         -- 1. It was a solid block (not air/mined) at any point
         -- 2. OR it was explicitly set to 0/nil before time
         
-        if data.name and ( data.name ~= 0 or not data.mined ) then
-            -- Solid block discovered at any time - we assume it also existed at time 
+		if data.time <= time then
+            -- event happened before our target time, so its stable
             reconstructed:setChunkData(chunkId, relativeId, data)
-        elseif data.time <= time then
-            -- Block was confirmed empty/mined by time
+
+        elseif data.name and not data.mined and data.name ~= 0 then 
+			-- solid block discovered at any time - we assume it also existed at time
+            reconstructed:setChunkData(chunkId, relativeId, data)
+
+		elseif data.name == 0 and not data.mined and not excludeAir then
+            -- air discovered after time (not through mining) - we can include it as well except if excludeAir is set
             reconstructed:setChunkData(chunkId, relativeId, data)
         end
     end
@@ -244,5 +265,96 @@ function StateMap:clear()
 	self.chunks = {}
 	self:clearLog()
 end
+
+function StateMap:printSliceOld(y)
+    print("=== Y-slice at", y, "===")
+    local minX, maxX, minZ, maxZ = math.huge, -math.huge, math.huge, -math.huge
+    local positions = {}
+    
+    for chunkId, chunk in pairs(self.chunks) do
+        for relativeId, data in pairs(chunk) do
+            local x, py, z = ChunkyMap.idsToXYZ(chunkId, relativeId)
+            if py == y then
+                positions[x] = positions[x] or {}
+                positions[x][z] = data
+                minX, maxX = math.min(minX, x), math.max(maxX, x)
+                minZ, maxZ = math.min(minZ, z), math.max(maxZ, z)
+            end
+        end
+    end
+    
+    for z = minZ, maxZ do
+        local line = ""
+        for x = minX, maxX do
+            local data = positions[x] and positions[x][z]
+            if not data then
+                line = line .. " "
+            elseif data.name == 0 then
+                line = line .. "-"
+            elseif data.name:find("log") then
+                line = line .. "L"
+            elseif data.name:find("leaves") then
+                line = line .. "#"
+            else
+                line = line .. "?"
+            end
+        end
+        print(line)
+    end
+end
+
+function StateMap:printSlice(y, bounds)
+    -- bounds: {minX, maxX, minZ, maxZ} - optional, calculates from all data if not provided
+    
+    print("=== Y-slice at", y, "===")
+    local minX, maxX, minZ, maxZ
+    
+    if bounds then
+        minX, maxX, minZ, maxZ = bounds.minX, bounds.maxX, bounds.minZ, bounds.maxZ
+    else
+        -- Calculate bounds from all chunks (not just this y-level)
+        minX, maxX, minZ, maxZ = math.huge, -math.huge, math.huge, -math.huge
+        for chunkId, chunk in pairs(self.chunks) do
+            for relativeId, data in pairs(chunk) do
+                local x, py, z = ChunkyMap.idsToXYZ(chunkId, relativeId)
+                minX, maxX = math.min(minX, x), math.max(maxX, x)
+                minZ, maxZ = math.min(minZ, z), math.max(maxZ, z)
+            end
+        end
+    end
+    
+    -- Build position map for this y-level
+    local positions = {}
+    for chunkId, chunk in pairs(self.chunks) do
+        for relativeId, data in pairs(chunk) do
+            local x, py, z = ChunkyMap.idsToXYZ(chunkId, relativeId)
+            if py == y then
+                positions[x] = positions[x] or {}
+                positions[x][z] = data
+            end
+        end
+    end
+    
+    -- Print with consistent bounds
+    for z = minZ, maxZ do
+        local line = ""
+        for x = minX, maxX do
+            local data = positions[x] and positions[x][z]
+            if not data then
+                line = line .. " "
+            elseif data.name == 0 then
+                line = line .. "-"
+            elseif data.name:find("log") then
+                line = line .. "#"
+            elseif data.name:find("leaves") then
+                line = line .. (tostring(data.state.distance) or 'L')
+            else
+                line = line .. "?"
+            end
+        end
+        print(line)
+    end
+end
+
 
 return StateMap
