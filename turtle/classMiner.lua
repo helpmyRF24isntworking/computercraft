@@ -58,7 +58,7 @@ local mineBlocks = {
 -- own array with fluids / allowedBlocks
 ["minecraft:water"]=true,
 ["minecraft:lava"]=true,
---["minecraft:glass"]=true,
+["minecraft:glass"]=true,
 }
 --mineBlocks = blockTranslation.translateTable(mineBlocks)
 
@@ -97,6 +97,8 @@ local disallowedBlocks = {
 ["computercraft:wireless_modem_advanced"] = true,
 ["computercraft:monitor_advanced"] = true,
 ["minecraft:bedrock"]=true,
+--["minecraft:glass"]=true,
+["minecraft:white_wool"]=true,
 }
 --disallowedBlocks = blockTranslation.translateTable(disallowedBlocks)
 -- local blocks = {
@@ -2406,7 +2408,8 @@ function Miner:followPath(path,safe)
 					break
 				end
 			else
-				if (newOr-2)%4 == self.orientation and step.block == 0 then
+				local block = self:getMapValue(step.pos.x, step.pos.y, step.pos.z)
+				if (newOr-2)%4 == self.orientation and block == 0 then
 					if not self:back() then
 						self:turnTo(newOr)
 						print("cannot move backwards")
@@ -3088,7 +3091,7 @@ function Miner:mineTree()
 		-- this way we can do the plausibility check for the time the leaf was inspected
 		-- and we can also check for logs that have only been expected in the furture (after leaf was instpected, not before)
 
-		local excludeAir = true
+		local excludeAir = true -- due to leaf decay
 		local reconstructedMap = treeMap:reconstructMapAtTime(data.time, excludeAir)
 		local getMapBlock = function(x, y, z)
 			return reconstructedMap:getBlockName(x, y, z)
@@ -3100,16 +3103,11 @@ function Miner:mineTree()
 			options.maxDistance = data.state.distance
 		end
 
-		options.maxDistance = 6
-
 		local path = bfs:breadthFirstSearch(leafPos, checkGoalLeafBFS, checkValidLeafBFS, getMapBlock, options)
 		local moves = ( path and #path - 1 ) or math.huge
-		global.path = path -- debugging
-		global.reco = reconstructedMap -- debugging
-
-		print("BFS mvs", moves, "leaf", leafPos, "dst",  data.state.distance)
 
 		if not path or moves > data.state.distance then
+			print("BFS mvs", moves, "leaf", leafPos, "dst",  data.state.distance)
 			return false -- not plausible
 		else
 			return true -- plausible
@@ -3315,7 +3313,6 @@ function Miner:mineTree()
 					distance = dist
 				
 					local minDist = math.huge
-					
 					for k, p in pairs(leaves) do 
 						local ldist = manhattanDistance(cx, cy, cz, p.x, p.y, p.z)
 						if ldist < minDist then
@@ -3323,7 +3320,6 @@ function Miner:mineTree()
 							key, pos = k, p
 						end
 					end
-
 					break
 				end
 			end
@@ -3335,12 +3331,9 @@ function Miner:mineTree()
 			distanceLeaves[distance][key] = nil
 			leafDistanceMap[key] = nil
 
-			local timeGet = osEpoch()
 			local data = treeMap:getData(x, y, z)
 			if data and data.name ~= 0 and checkLeafBlock(data) then 
 				local currentDist = data.state.distance
-
-				local timeStart = osEpoch()
 
 				if currentDist ~= distance then
 					-- leaf distance changed
@@ -3361,9 +3354,6 @@ function Miner:mineTree()
 					end
 
 				elseif currentDist <= reinspectionDistance and not checkPlausibleDistance(pos, data) then
-					global.reconstructedBefore = treeMap:reconstructMapAtTime(data.time, true)
-					global.reconstructedBeforeIncl = treeMap:reconstructMapAtTime(data.time, false)
-					local timeStart = osEpoch()
 					local result = digToPosUsingLeaves(x, y, z)
 					if result == "interrupted" then
 						-- requeue current leaf
@@ -3372,42 +3362,10 @@ function Miner:mineTree()
 					elseif result then 
 						
 						if not mineTowardsLog(pos, nil) then -- data
-							-- weird, but lets chalk it up to faster inspection than distance values can be updated
+							-- shouldnt happen, but lets chalk it up to faster inspection than distance values can be updated
 							-- also leaf decay could perhaps cause this
-							-- just change mineTowardsLog(pos, data) to data = nil, so any distance value is valid
-							-- can take up to 6 ticks to update distance values
-
-							local timeEnd = osEpoch()
-							global.res = { data = data, 
-							pos = pos,
-							currentDist = currentDist,
-							distance = distance,
-							reinspectionDistance = reinspectionDistance,
-							plausCheck = checkPlausibleDistance(pos, data),
-							logEntries = {},
-							timeGet = timeGet,
-							timeStart = timeStart,
-							timeEnd = timeEnd,
-							cpos = cpos,
-							}
-							global.reconstructedAfter = treeMap:reconstructMapAtTime(data.time, true)
-							global.reconstructedAfterIncl = treeMap:reconstructMapAtTime(data.time, false)
-							local chunkid = ChunkyMap.xyzToChunkId(x, y, z)
-							local relativeid = ChunkyMap.xyzToRelativeChunkId(x, y, z)
-							treeMap = global.miner.treeMap
-							for i=1, #treeMap.log do 
-								local entry = treeMap.log[i]
-								if entry[1] == chunkid and entry[2] == relativeid then
-									table.insert(global.res.logEntries, entry[3])
-								end
-							end
-
-							--chunkid = ChunkyMap.xyzToChunkId(x, y, z); relativeid = ChunkyMap.xyzToRelativeChunkId(x, y, z); treeMap = global.miner.treeMap; for i=1, #treeMap.log do local entry = treeMap.log[i]; if entry[1] == chunkid and entry[2] == relativeid then table.insert(global.res.logEntries, entry[3]) end end
-
-
-							-- print("no log from leaf", pos, "dst", currentDist)
-							error("no log from leaf" .. tostring(pos) .. " dst " .. tostring(currentDist))
-							-- this should never happen, since the distance is not plausible
+							-- check commit 4365578 for more debugging stuff
+							print("no log from leaf", pos, "dst", currentDist)
 						end
 					else
 						print("Cannot reach leaf at", pos)
@@ -3493,27 +3451,12 @@ function Miner:mineTree()
 		return group
 	end
 
-	local function checkOverlappingGroups(a, b)
-		-- check if two leaf groups overlap (any component within 6 blocks of each other)
-		for i = 1, #a.components do
-			local apos = a.components[i]
-			for j = 1, #b.components do
-				local bpos = b.components[j]
-				local dist = manhattanDistance(apos.x, apos.y, apos.z, bpos.x, bpos.y, bpos.z)
-				if dist <= 1 then
-					print("overlap", apos, bpos, "dist", dist)
-					return true
-				end
-			end
-		end
-		return false
-	end
-
 	local function reinspectLeafGroups(remainingLeaves)
 		-- find connected leaf groups and reinspect a single one
 		-- since they are within 6 blocks of each other, 
 		-- one inspection guarantees that no logs are contained if distance is 7
 		-- though navigating to the groups can cut off groups
+		-- exclude groups of 1 -> usually lead nowhere useful or are nearby other groups
 
 		local groups = {}
 		local visited = {}
@@ -3533,25 +3476,14 @@ function Miner:mineTree()
 					vy[sz] = true
 
 					local group = getLeafGroup(pos, visited)
-					table.insert(groups, group)
+					if #group.components > 1 then
+						table.insert(groups, group)
+					end
 				end
 			end
 		end
 
 		print("found", #groups, "leaf groups")
-
-		-- check overlaps without merge
-		for i = 1, #groups do
-			local groupA = groups[i]
-			for j = i+1, #groups do
-				local groupB = groups[j]
-				if checkOverlappingGroups(groupA, groupB) then
-					print("groups", i, j, "overlap")
-				end
-			end
-		end
-
-		
 
 		local unvisitedGroups = {}
 		for i = 1, #groups do unvisitedGroups[i] = true end
