@@ -1,77 +1,97 @@
-
 local Heap = {}
 Heap.__index = Heap
 
-local function findLowest( a, b )
+-- default comparator (min-heap)
+local function default_compare(a, b)
     return a < b
 end
 
-local function newHeap( template, compare )
-    return setmetatable( {
-        Data = {},
-        Compare = compare or findLowest,
-        Size = 0
-    }, template )
+function Heap.new()
+    return setmetatable({
+        size = 0,
+        Compare = default_compare,
+        push = Heap.push,
+        pop = Heap.pop,
+        empty = Heap.empty,
+    }, Heap)
 end
 
-local function sortUp( heap, index )
-    if index <= 1 then return end
-    local pIndex = index % 2 == 0 and index / 2 or ( index - 1 ) / 2
+local floor = math.floor
 
-    if not heap.Compare( heap.Data[pIndex], heap.Data[index] ) then
-        heap.Data[pIndex], heap.Data[index] = heap.Data[index], heap.Data[pIndex]
-        sortUp( heap, pIndex )
-    end
-end
+function Heap:push(value)
+    local compare = self.Compare
+    local size = self.size + 1
+    self.size = size
+    self[size] = value
 
-local function sortDown( heap, index )
-    local leftIndex, rightIndex, minIndex
-    leftIndex = index * 2
-    rightIndex = leftIndex + 1
-    if rightIndex > heap.Size then
-        if leftIndex > heap.Size then return
-        else minIndex = leftIndex end
-    else
-        if heap.Compare( heap.Data[leftIndex], heap.Data[rightIndex] ) then minIndex = leftIndex
-        else minIndex = rightIndex end
-    end
-
-    if not heap.Compare( heap.Data[index], heap.Data[minIndex] ) then
-        heap.Data[index], heap.Data[minIndex] = heap.Data[minIndex], heap.Data[index]
-        sortDown( heap, minIndex )
-    end
-end
-
-function Heap:Empty()
-    return self.Size == 0
-end
-
-function Heap:Clear()
-    self.Data, self.Size, self.Compare = {}, 0, self.Compare or findLowest
-    return self
-end
-
-function Heap:Push( item )
-    if item then
-        self.Size = self.Size + 1
-        self.Data[self.Size] = item
-        sortUp( self, self.Size )
-    end
-    return self
-end
-
-function Heap:Pop()
-    local root
-    if self.Size > 0 then
-        root = self.Data[1]
-        self.Data[1] = self.Data[self.Size]
-        self.Data[self.Size] = nil
-        self.Size = self.Size - 1
-        if self.Size > 1 then
-            sortDown( self, 1 )
+    -- sift up
+    local i = size
+    while i > 1 do
+        local parent = floor(i / 2)
+        local pval = self[parent]
+        if not compare(value, pval) then
+            break
         end
+        self[i] = pval
+        i = parent
     end
+    self[i] = value
+end
+
+function Heap:pop()
+    local size = self.size
+    if size == 0 then
+        return nil
+    end
+
+    local root = self[1]
+    local last = self[size]
+    self[size] = nil
+    size = size - 1
+    self.size = size
+
+    if size == 0 then
+        return root
+    end
+
+    local compare = self.Compare
+    local i = 1
+    local half = floor(size / 2)
+
+    -- sift down
+    while i <= half do
+        local left = i * 2
+        local right = left + 1
+
+        local child = left
+        local cval = self[left]
+
+        if right <= size then
+            local rval = self[right]
+            if compare(rval, cval) then
+                child = right
+                cval = rval
+            end
+        end
+
+        if not compare(cval, last) then
+            break
+        end
+
+        self[i] = cval
+        i = child
+    end
+
+    self[i] = last
     return root
 end
 
-return setmetatable( Heap, { __call = function( self, ... ) return newHeap( self, ... ) end } )
+function Heap:peek()
+    return self[1]
+end
+
+function Heap:empty()
+    return self.size == 0
+end
+
+return Heap

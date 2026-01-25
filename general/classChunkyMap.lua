@@ -38,11 +38,11 @@ local sqSize = default.chunkSize^2
 local tableinsert = table.insert
 
 ChunkyMap = {}
+ChunkyMap.__index = ChunkyMap
 
 function ChunkyMap:new(inMemory)
 	local o = o or {}
 	setmetatable(o, self)
-	self.__index = self
 	
 	-- Function Caching
     for k, v in pairs(self) do

@@ -20,95 +20,14 @@ local vectors = {
 }
 
 local costOrientation = {
-	-- each action takes 400 ms
 	[0] = 1, 	-- forward, up, down
-	[2] = 1, -- back
-	[-2] = 1, -- back
-	[-1] = 2, -- left
-	[3] = 2,	-- left
-	[1] = 2,	-- right
-	[-3] = 2,	-- right
+	[2] = 1.75, -- back
+	[-2] = 1.75, -- back
+	[-1] = 1.5, -- left
+	[3] = 1.5,	-- left
+	[1] = 1.5,	-- right
+	[-3] = 1.5,	-- right
 }
-
---KEEP COSTS LOW BECAUSE HEURISTIC VALUE IS ALSO SMALL IN DIFFERENCE
-
-local function calculateCost(currentOr,neighbourOr,neighbourBlock)
-	
-	local odiff = neighbourOr - currentOr
-	local cost = costOrientation[odiff]
-	
-	if odiff == 2 or odiff == -2 then
-		-- moving backwards
-		if neighbourBlock == 0 then
-			-- no extra cost 
-		elseif neighbourBlock then
-			-- known solid behind: turn(400) + turn(400) + fail(50) + inspect(50) + dig(50) + forward(400) = 1350ms
-			cost = 3.375  -- 1350/400 = 3.375 actions
-		else 
-			-- unknown block, add probability of existing
-			-- 3.375 * 0.8 + 0.2 * 1.0 -- 80% chance of a block being here
-			cost = 2.9
-		end
-	else
-		-- moving forward/side/up/down
-		if neighbourBlock == 0 then 
-			-- no extra cost
-		elseif neighbourBlock then
-			-- known solid block, requires x turns(x*400) + fail(50) + inspect(50) + dig(50) + forward(400)
-			-- forward + turns already counted in costOrientation
-			cost = cost + 0.375 -- 150/400 = 0.375 actions
-		else 
-			-- unknown block; expected additional cost
-			-- 0.8 * 0.375 + 0.2 * 0
-			cost = cost + 0.3
-		end
-	end
-	return cost
-end
-
-local function calculateHeuristic(cx,cy,cz,fx,fy,fz)
-	--manhattan = orthogonal
-	return ( abs(cx - fx) + abs(cy - fy) + abs(cz - fz) ) * 1.25
-	-- multiplier represents average cost per move/block 
-	-- best case = 1.0 
-	-- worst case = 3.375 (moving backwards into known solid block)
-	-- digMove has 550/400 = 1.375 cost with a block
-end
-
---[[ 
-	add this to aStarPart function for eval of the multiplier
-	
-	-- Calculate map knowledge ratio
-    local totalBlocks = 0
-    local knownBlocks = 0
-    local sampleSize = 10000
-    
-    -- Sample area between start and finish
-    for i = 1, sampleSize do
-        local rx = sx + math.random(0, abs(fx-sx))
-        local ry = sy + math.random(0, abs(fy-sy))
-        local rz = sz + math.random(0, abs(fz-sz))
-        totalBlocks = totalBlocks + 1
-        if map:getData(rx, ry, rz) ~= nil then
-            knownBlocks = knownBlocks + 1
-        end
-    end
-    
-    local explorationRatio = knownBlocks / totalBlocks
-    
-    -- Adjust heuristic based on knowledge
-    -- More explored = lower multiplier (turns matter more)
-    -- Less explored = higher multiplier (unknowns add cost)
-    local heuristicMult = 1.0 + (1.0 - explorationRatio) * 0.5
-    -- Range: 1.0 (fully explored) to 1.5 (fully unknown)
-    print("ratio:", explorationRatio, "known", knownBlocks, "total", totalBlocks, "mult", heuristicMult)
-
-	highly explored area: 1.1 multiplier
-	unknown: 1.3-1.4 multiplier
-	-> average 1.2
---]]
-
-
 
 local function checkValid(block)
 	if block then return false
@@ -127,83 +46,81 @@ local function reconstructPath(current,start)
 	local path = {}
 	while true do
 		if current.previous then
-			current.pos = vector.new(current[1], current[2], current[3])
+			current.pos = vector.new(current.x, current.y, current.z)
 			tableinsert(path, 1, current)
 			current = current.previous
 		else
-			start.pos = vector.new(start[1], start[2], start[3])
+			start.pos = vector.new(start.x, start.y, start.z)
 			tableinsert(path, 1, start)
 			return path
 		end		
 	end
 end
 
-local neighbours = {}
-for i=1,6 do neighbours[i] = { 0, 0, 0, 0 } end -- prealloc x, y, z, o
 
-
-local function getNeighbours(cx, cy, cz, co)
-    local n = neighbours
-    
-    -- Unroll based on orientation
-    if co == 0 then
-        n[1][1], n[1][2], n[1][3], n[1][4] = cx, cy, cz+1, 0
-        n[4][1], n[4][2], n[4][3], n[4][4] = cx+1, cy, cz, 3
-        n[5][1], n[5][2], n[5][3], n[5][4] = cx-1, cy, cz, 1
-        n[6][1], n[6][2], n[6][3], n[6][4] = cx, cy, cz-1, 2
-
-    elseif co == 1 then
-        n[1][1], n[1][2], n[1][3], n[1][4] = cx-1, cy, cz, 1
-        n[4][1], n[4][2], n[4][3], n[4][4] = cx, cy, cz+1, 0
-        n[5][1], n[5][2], n[5][3], n[5][4] = cx, cy, cz-1, 2
-        n[6][1], n[6][2], n[6][3], n[6][4] = cx+1, cy, cz, 3
-
-    elseif co == 2 then
-        n[1][1], n[1][2], n[1][3], n[1][4] = cx, cy, cz-1, 2
-        n[4][1], n[4][2], n[4][3], n[4][4] = cx-1, cy, cz, 1
-        n[5][1], n[5][2], n[5][3], n[5][4] = cx+1, cy, cz, 3
-        n[6][1], n[6][2], n[6][3], n[6][4] = cx, cy, cz+1, 0
-
-    else -- co == 3
-        n[1][1], n[1][2], n[1][3], n[1][4] = cx+1, cy, cz, 3
-        n[4][1], n[4][2], n[4][3], n[4][4] = cx, cy, cz-1, 2
-        n[5][1], n[5][2], n[5][3], n[5][4] = cx, cy, cz+1, 0
-        n[6][1], n[6][2], n[6][3], n[6][4] = cx-1, cy, cz, 1
-    end
-    
-    -- Up/down same regardless
-    n[2][1], n[2][2], n[2][3], n[2][4] = cx, cy+1, cz, co
-    n[3][1], n[3][2], n[3][3], n[3][4] = cx, cy-1, cz, co
-    
-    return n
+local function calculateHeuristic(cur,goal)
+	--manhattan = orthogonal
+	return abs(cur.x - goal.x) + abs(cur.y - goal.y) + abs(cur.z - goal.z)
+	-- return math.sqrt((current.x-goal.x)^2 + (current.y+goal.y)^2 + (current.z+goal.z)^2)
 end
 
-local function getCachedData(map, x, y, z, cache)
-    local cx = cache[x]
-    if not cx then
-        cx = {}
-        cache[x] = cx
-    end
-    local cy = cx[y]
-    if not cy then
-        cy = {}
-        cx[y] = cy
-    end
-    local data = cy[z]
-    if data == nil then
-        data = map:getData(x, y, z) or false -- false if nil to cache it
-        cy[z] = data
-	elseif data == false then -- cached nil in form of false
-		return nil
+local function getNeighbours(cur)
+	local neighbours = {}
+	
+	local cx, cy, cz, co = cur.x, cur.y, cur.z, cur.o
+	-- forward
+	local vector = vectors[co]
+	neighbours[1] = { x = cx + vector.x, y = cy + vector.y, z = cz + vector.z, o = co }
+	-- up
+	neighbours[2] = { x = cx, y = cy + 1, z = cz, o = co }
+	-- down
+	neighbours[3] = { x = cx, y = cy - 1, z = cz, o = co }
+	-- left
+	local curo = (co-1)%4
+	vector = vectors[curo]
+	neighbours[4] = { x = cx + vector.x, y = cy + vector.y, z = cz + vector.z, o = curo }
+	-- right
+	curo = (co+1)%4
+	vector = vectors[curo]
+	neighbours[5] = { x = cx + vector.x, y = cy + vector.y, z = cz + vector.z, o = curo }
+	-- back
+	curo = (co+2)%4
+	vector = vectors[curo]
+	neighbours[6] = { x = cx + vector.x, y = cy + vector.y, z = cz + vector.z, o = curo }
+
+	return neighbours
+end
+
+
+
+--KEEP COSTS LOW BECAUSE HEURISTIC VALUE IS ALSO SMALL IN DIFFERENCE
+
+local function calculateCost(current,neighbour)
+	
+	local cost = costOrientation[neighbour.o-current.o]
+	
+	if neighbour.block then
+		--block already explored
+		if neighbour.block == 0 then
+			-- no extra cost
+		else
+			-- if block is mineable is checked in checkValidNode -> not yet
+			cost = cost + 0.75 -- 0.75 fastest
+			-- WARNING: we dont neccessarily know which block comes after this one...
+		end
+	else
+		-- it is unknown what type of block is here could be air, could be a chest
+		-- SOLUTION -> recalculate path when it is blocked by a disallowed block
+		cost = cost + 1.5 -- 1.5 fastest
+		-- if map is mostly unknown this is not good
 	end
-    return data
+	return cost
 end
-
 
 function PathFinder:checkPossible(startPos, startOrientation, finishPos, map, distance, doReset)
 	-- reverse search
 	local distance = distance or default.distance * 2
-	local path, gScore = self:aStarPart(finishPos,0,startPos,map,distance)
+	local path, closed = self:aStarPart(finishPos,0,startPos,map,distance)
 	if path then 
 		--print(#path, path[#path].pos, startPos)
 		if path[#path].pos == startPos then
@@ -223,12 +140,10 @@ function PathFinder:checkPossible(startPos, startOrientation, finishPos, map, di
 		if doReset then 
 			print("RESET CLOSED")
 			-- set the visited blocks to nil
-			for x,gx in pairs(gScore) do
-				for y,gy in pairs(gx) do
-					for z,score in pairs(gy) do
-						if score < 0 then -- closed
-							map:setData(x,y,z,nil,true)
-						end
+			for x,closedx in pairs(closed) do
+				for y,closedy in pairs(closedx) do
+					for z,_ in pairs(closedy) do
+						map:setData(x,y,z,nil,true)
 					end
 				end
 			end
@@ -258,18 +173,6 @@ function PathFinder:aStarPart(startPos, startOrientation, finishPos, map, distan
 		-- no map access : -650
 		-- no vectors			2850
 		-- no xyzToId			2650 -- nur für lange distanzen?
-
-	-- 25.01.2026: x+200 random map
-	    -- default: 				5100-5300 ct 256573
-		-- neighbours pool 			4650-4900 ct 256573
-		-- chached map 		   		4250-4350 ct 256573
-		-- [1][2] .. 				4150-4250
-		-- only gscore (no closed) 	4000-4100 ct 256573, open 710903, closed 671757 (like all above)
-		-- heap optimized 			3650-3750  -- oof, same improvements for old logic 
-		-- chat heap 				3180 aber andere zahlen für open 
-		-- heap2: 					3090 - 3130 				-- 254974, 707176, 668425
-		-- no open:epmty() 		  	3010 - 3100
-
 		
 	local startTime = osEpoch("local")
 	
@@ -278,99 +181,120 @@ function PathFinder:aStarPart(startPos, startOrientation, finishPos, map, distan
 	local map = map
 	local distance = distance or default.distance
 	
-	local mapCache = {}
-	local sx, sy, sz = startPos.x, startPos.y, startPos.z
-	local fx, fy, fz = finishPos.x, finishPos.y, finishPos.z
+	local start = { x=startPos.x, y=startPos.y, z=startPos.z, o = startOrientation, block = 0 }
+	local finish = { x=finishPos.x, y=finishPos.y, z=finishPos.z }
 	
-	
-	local finishBlock = map:getData(fx, fy, fz) -- do not use cache here
-	if not checkValid(finishBlock) then
-		print("ASTAR: FINISH NOT VALID", finishBlock)
-		map:setData(fx, fy, fz, 0)
+	local startBlock = map:getData(finish.x, finish.y, finish.z)
+	if not checkValid(startBlock) then
+		print("ASTAR: FINISH NOT VALID", startBlock)
+		map:setData(finish.x, finish.y, finish.z, 0)
 		-- overwrite current map value
 	end
-
-	local start = { [1]=sx, [2]=sy, [3]=sz, [4] = startOrientation, block = 0 }
-	start[5] = 0
-	start[6] = calculateHeuristic(sx, sy, sz, fx, fy, fz)
-
-	local gScore = { [sx] = { [sy] = { [sz] = 0 }}}
 	
-	local open = Heap.new()
-	open.Compare = function(a,b)
-		return a[6] < b[6]
-	end
+	local fScore = {}
+	local gScore = {}
 
+	gScore[start.x] = {}
+	gScore[start.x][start.y] = {}
+	gScore[start.x][start.y][start.z] = 0
+
+	
+	start.gScore = 0
+	start.fScore = calculateHeuristic(start, finish)
+	
+	local closed = {}
+	if not closed[start.x] then closed[start.x] = {} end
+	if not closed[start.x][start.y] then closed[start.x][start.y] = {} end
+	
+	local open = Heap()
+	open.Compare = function(a,b)
+		return a.fScore < b.fScore
+	end
+	open:Push(start)
+	
 	local ct = 0
 	local closedCount = 0
 	local openCount = 0
-
-	local current = start
 	
-	while current do
+	while not open:Empty() do
 		ct = ct + 1
+		
+		local current = open:Pop()
+		local cx,cy,cz = current.x, current.y, current.z
+		--logger:add(tostring(current.pos))
+		
+		--local currentId = xyzToId(current.x, current.y, current.z)
+		--print(currentId)
 
-		local cx,cy,cz,co,cGscore = current[1], current[2], current[3], current[4], current[5]
-
-		local minGscore = gScore[cx][cy][cz]
-		if minGscore >= 0 then
-			if cx == fx and cy == fy and cz == fz
-			or abs(cx - sx) + abs(cy - sy) + abs(cz - sz) >= distance then
-
+		
+		if not closed[cx][cy][cz] then
+			if cx == finish.x and cy == finish.y and cz == finish.z
+			or abs(cx - start.x) + abs(cy - start.y) + abs(cz - start.z) >= distance then
 				-- check if current pos is further than threshold for max distance
 				-- or use time/iteration based approach
 				
 				local path = reconstructPath(current,start)
-				-- print(osEpoch("local")-startTime, "FOUND, MOV:", #path, "CT", ct)
-				-- print("open neighbours:", openCount, "closed", closedCount)
+				print(osEpoch("local")-startTime, "FOUND, MOV:", #path, "CT", ct)
+				print("open neighbours:", openCount, "closed", closedCount)
 				return path
 
 			end
-			gScore[cx][cy][cz] = -1 -- mark as closed
-		
-			local neighbours = getNeighbours(cx, cy, cz, co)
+			closed[cx][cy][cz] = true
+			
+			local neighbours = getNeighbours(current)
 			for i=1, #neighbours do
 				local neighbour = neighbours[i]
-				local nx, ny, nz, no = neighbour[1], neighbour[2], neighbour[3], neighbour[4]
+				local nx, ny, nz = neighbour.x, neighbour.y, neighbour.z
 				
-
-				local gScorex = gScore[nx]
-				if not gScorex then
+				--local neighbourId = xyzToId(neighbour.x, neighbour.y, neighbour.z)
+				
+				local closedx = closed[nx]
+				local gScorex, gScorey
+				if not closedx then
+					closedx = {}
+					closed[nx] = closedx
 					gScorex = {}
 					gScore[nx] = gScorex
+				else
+					gScorex = gScore[nx]
 				end
-				local gScorey = gScorex[ny]
-				if not gScorey then
+				local closedy = closedx[ny]
+				if not closedy then
+					closedy = {}
+					closedx[ny] = closedy
 					gScorey = {}
 					gScorex[ny] = gScorey
+				else
+					gScorey = gScorex[ny]
 				end
 				
-				local nGscore = gScorey[nz]
-				if not nGscore or nGscore >= 0 then -- open 
+				if not closedy[nz] then
 
-					local nBlock = getCachedData(map, nx, ny, nz, mapCache)
-					if checkValid(nBlock) then
+					neighbour.block = map:getData(nx, ny, nz)
+					if checkValid(neighbour.block) then
 					
 						openCount = openCount + 1
-						local addedGScore = cGscore + calculateCost(co, no, nBlock)
-						
-						if not nGscore or addedGScore < nGscore then
+							
+						local addedGScore = current.gScore + calculateCost(current,neighbour)
+						neighbour.gScore = gScorey[nz]
+						if not neighbour.gScore or addedGScore < neighbour.gScore then
 							gScorey[nz] = addedGScore
-
-							local nHscore = calculateHeuristic(nx, ny, nz, fx, fy, fz)
-
-							local node = { nx, ny, nz, no,
-									addedGScore,
-									addedGScore + nHscore,
-									previous = current,
-								}
-							open:push(node)
-
+							neighbour.gScore = addedGScore
+							
+							neighbour.hScore = calculateHeuristic(neighbour,finish)
+							neighbour.fScore = addedGScore + neighbour.hScore
+							
+							open:Push(neighbour)
+							neighbour.previous = current
+							
+							-- -- previous = current could result in very long chains
+							-- -- perhaps use a table to store paths?
 						end
 						
 					else
-						-- path not safe, close this node
-						gScorey[nz] = -1
+						-- path not safe
+						-- close this id? TEST
+						closed[nx][ny][nz] = true
 					end
 				else
 					closedCount = closedCount + 1
@@ -385,19 +309,17 @@ function PathFinder:aStarPart(startPos, startOrientation, finishPos, map, distan
 			--sleep(0.001) -- to avoid timeout
 			os.pullEvent(os.queueEvent("yield"))
 		end
-
-		current = open:pop()
+		if ct%1000 == 0 then
+			-- maybe yield for longer for other tasks to catch up
+			--> seems to solve all problems -> test interval and duration
+			--sleep(0.5)
+			-- print(osEpoch("local")-startTime, ct)
+		end
 	end
-
 	print(osEpoch("local")-startTime, "NO PATH FOUND", "CT", ct)
-	return nil, gScore
+	return nil, closed
 	--https://github.com/GlorifiedPig/Luafinding/blob/master/src/luafinding.lua
-
 end
-
-
-
-
 
 
 function PathFinder:aStarId(startPos, startOrientation, finishPos, map, distance)
