@@ -9,6 +9,8 @@ node = nil
 nodeStream = nil
 nodeRefuel = nil
 nodeStorage = nil
+turtleStorage = nil
+
 
 handleError = function(err,status)
 	if not status then
@@ -34,6 +36,10 @@ handleError = function(err,status)
 	end
 end
 
+addTask = function(task)
+	-- instead of global.addtask, miner:addTask would be much nicer ..
+	table.insert(global.tasks, task)
+end
 
 requestStation = function()
 	if global.node then

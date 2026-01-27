@@ -14,18 +14,12 @@ local storageChannel = bluenet.default.channels.storage
 local peripheralCall = peripheral.call
 
 local RemoteStorage = ItemStorage:new()
-RemoteStorage.__index = RemoteStorage
+-- RemoteStorage.__index = RemoteStorage
 
-function RemoteStorage:new(node)
+function RemoteStorage:new(node, skipInitialize)
 	local o = o or ItemStorage:new()
 	setmetatable(o, self)
-	
-	-- Function Caching
-    for k, v in pairs(self) do
-       if type(v) == "function" then
-           o[k] = v  -- Directly assign method to object
-       end
-    end
+    self.__index = self
 
     o.node = node or nil
     o.turtles = {}
@@ -46,7 +40,11 @@ function RemoteStorage:new(node)
     o.pendingItemListRequests = {}
     o.pendingAvailableRequests = {}
 
-	o:initialize()
+    print("skip init", skipInitialize)
+    if not skipInitialize then
+        print("init", skipInitialize)
+	    o:initialize()
+    end
 	return o
 end
 
@@ -54,6 +52,7 @@ end
 -- setup: initialize this and hook node into main receiving thread or open a new one for standalone storage
 
 function RemoteStorage:initialize()
+    
     if not self.node then 
         self.node = NetworkNode:new("storage",false, true)
     end
@@ -148,7 +147,13 @@ function RemoteStorage:loadConfig(fileName)
             self.requestingInventory = config.requestingInventory
         end
     else
-        print("could not load storage config from", fileName)
+        --print(textutils.serialize(debug.traceback()))
+        print("nope")
+        -- print("could not load storage config from", fileName)
+        local f = fs.open("trace.txt", "w")
+        --print(textutils.serialize(debug.traceback()))
+        f.write(textutils.serialize(debug.traceback()))
+        f.close()
     end
 end
 
@@ -373,7 +378,7 @@ end
 
 function RemoteStorage:pingTurtles()
     self.turtles = {}
-    self.node:broadcast( {"GET_TURTLE_STATE"}, false )
+    self.node:broadcast( {"REQUEST_TURTLE_STATE"}, false )
     sleep(default.shortWaitTime) -- wait for answers to arrive
     return self.turtles
 end
@@ -427,12 +432,10 @@ function RemoteStorage:requestDelivery(itemName, count, toPlayer, fromProvider)
     end
 
     local providerFilter = fromProvider and { [fromProvider] = true } or nil
-    return self:requestReserveItems(itemName, count, requestingPos, requestingInv, providerFilter)
+    local reservations = self:requestReserveItems(itemName, count, providerFilter)
+    return self:requestTransportReservations(reservations, requestingPos, requestingInv)
     
 end
-
-
-
 
 function RemoteStorage:requestAvailableItems(itemName, count)
     local providerCt = 0
@@ -506,8 +509,39 @@ end
 
 
 
+function RemoteStorage:getSortedItemProviders(itemName, sortOrder)
+    local itemProviders = self.providerIndex[itemName] 
+    -- sort providers by available count
+    local sortedProviders = {}
+    for provider, available in pairs(itemProviders or {}) do
+        sortedProviders[#sortedProviders + 1] = { provider = provider, available = available }
+    end
+    local sortFunc
+    if sortOrder == "available_desc" then
+        sortFunc = function(a, b) return a.available > b.available end
+    elseif sortOrder == "available_asc" then
+        sortFunc = function(a, b) return a.available < b.available end
+    end
+    if sortFunc then
+        table.sort(sortedProviders, sortFunc)
+    end
+    return sortedProviders
+end
 
-function RemoteStorage:requestReserveItems(itemName, count, requestingPos, requestingInv, providerFilter)
+function RemoteStorage:reserveItems(provider, itemName, count)
+    local reservation
+    local answer = self.node:send(provider, {"RESERVE_ITEMS", { name = itemName, count = count }}, true, true, default.waitTime)
+    if answer and answer.data[1] == "ITEMS_RESERVED" then
+        reservation = answer.data[2]
+        reservation.provider = provider
+        if reservation.pos then 
+            reservation.pos = vector.new(reservation.pos.x, reservation.pos.y, reservation.pos.z)
+        end
+    end 
+    return reservation
+end
+
+function RemoteStorage:requestReserveItems(itemName, count, providerFilter)
     -- broadcast to all storage providers? kind of weird, no?
     -- try ringlike topology, where message is passed along until someone can provide it?
 
@@ -517,22 +551,20 @@ function RemoteStorage:requestReserveItems(itemName, count, requestingPos, reque
     local reservations = {}
     self:requestAvailableItems(itemName, count)
 
-    for provider, available in pairs(self.providerIndex[itemName] or {}) do
+    local sortedProviders = self:getSortedItemProviders(itemName, "available_desc")
+
+    for i=1,#sortedProviders do
+        local provider, available = sortedProviders[i].provider, sortedProviders[i].available
         if providerFilter and not providerFilter[provider] then
             print("skipping provider", provider, "not in filter")
         else
             print("provider", provider, "has", available, "of", itemName)
             if available > 0 then 
-                local answer = self.node:send(provider, {"RESERVE_ITEMS", { name = itemName, count = count }}, true, true, default.waitTime)
-                if answer and answer.data[1] == "ITEMS_RESERVED" then
-                    local data = answer.data[2]
-                    data.provider = provider
-                    if data.pos then 
-                        data.pos = vector.new(data.pos.x, data.pos.y, data.pos.z)
-                    end
-                    reservations[#reservations+1] = data
-                    remaining = remaining - data.reserved
-                    print("reserved", data.reserved, "of", itemName, "from", provider)
+                local reservation = self:reserveItems(provider, itemName, math.min(available, remaining)) 
+                if reservation then
+                    reservations[#reservations+1] = reservation
+                    remaining = remaining - reservation.reserved
+                    print("reserved", reservation.reserved, "of", itemName, "from", provider)
                     if remaining <= 0 then
                         -- all items reserved
                         break
@@ -561,6 +593,14 @@ function RemoteStorage:requestReserveItems(itemName, count, requestingPos, reque
         print("no reservations could be made for", itemName)
         return nil
     end
+
+    return reservations
+end
+
+function RemoteStorage:requestTransportReservations(reservations, requestingPos, requestingInv)
+
+    local allTransportsAccepted = true
+
     self:pingTurtles()
 
     -- todo: max items a turtle can carry = 15*stackSize
@@ -576,6 +616,7 @@ function RemoteStorage:requestReserveItems(itemName, count, requestingPos, reque
         local res = reservations[i]
         -- not neares turtle to current/requesting position but pickup/provider position
         local availableTurtles = self:getNearestAvailableTurtles(res.pos)
+        local transportAccepted = false
         for k = 1, #availableTurtles do
             local id, dist = availableTurtles[k].id, availableTurtles[k].dist
             print("transport request to turtle", id, "for reservation", res.id, "from provider", res.provider)
@@ -586,11 +627,16 @@ function RemoteStorage:requestReserveItems(itemName, count, requestingPos, reque
             --local answer = self.node:send(id, {"TRANSPORT_REQUEST", 
             --    { reservation = res, dropOffPos = self.requestingPos, requestingInv = self.requestingInventory, requester = self.node.id }},
             --    true, true, default.waitTime)
-            if answer and answer.data[1] == "RECEIVED" then --"TRANSPORT_ACCEPTED" then 
+            if answer and answer.data[1] == "TASK_ACCEPTED" then
                 turtles[id].alreadySent = true
                 print("transport accepted by turtle", id)
+                transportAccepted = true
                 break
             end
+        end
+        if not transportAccepted then 
+            print("no transport accepted for reservation", res.id, "from", res.provider)
+            allTransportsAccepted = false
         end
     end
 
@@ -621,14 +667,13 @@ function RemoteStorage:requestReserveItems(itemName, count, requestingPos, reque
 
     -- todo: cancel reservations if pickup failed or not in time
 
-    return nil
+    return allTransportsAccepted
 
 end
 
-function RemoteStorage:reserveItems(provider, itemName, count)
-    return self.node:send(provider, {"RESERVE_ITEMS", { name = itemName, count = count }}, true, true, default.waitTime)
-end
+
 function RemoteStorage:pickupItems(provider, reservationId)
+    -- pseudo function
     local answer = self.node:send(provider, {"PICKUP_ITEMS", { reservationId = reservationId }}, true, true, default.waitTime)
 end
 

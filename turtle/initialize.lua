@@ -1,9 +1,19 @@
 
 -- initialize the required globals
 
+
 require("classList")
-require("classMiner")
+local Miner = require("classMiner")
 require("classBluenetNode")
+
+local utils = require("utils")
+local StorageExtension = require("extTurtleStorage")
+local TreeExtension = require("extTreeMining")
+utils.loadExtension(StorageExtension, Miner)
+utils.loadExtension(TreeExtension, Miner)
+
+local TurtleStorage = require("classTurtleStorage")
+
 --require("classNetworkNode")
 
 tasks = {}
@@ -38,7 +48,9 @@ else
 	local status,err = pcall(function() 
 		global.miner = Miner:new()
 		global.map = global.miner.map
+		
 	end )
 	global.handleError(err,status)
-
+	
+	global.turtleStorage = TurtleStorage:new(global.miner, global.nodeStorage)
 end

@@ -162,12 +162,13 @@ local vectors = {
 local vectorUp = vector.new(0,1,0)
 local vectorDown = vector.new(0,-1,0)
 
-Miner = {}
+local Miner = {}
+Miner.__index = Miner
 
 function Miner:new()
 	local o = o or {} --Worker:new()
 	setmetatable(o,self)
-	self.__index = self
+
 	print("----INITIALIZING----")
 	assert(turtle,"this device is not a turtle")
 	
@@ -1110,17 +1111,63 @@ end
 
 function Miner:turnTo(orient)
 	local currentTask = self:addCheckTask({debug.getinfo(1, "n").name})
-	orient = orient%4
-	while self.orientation ~= orient do
-	
-		local diff = self.orientation - orient
-		if ( diff > 0 and math.abs(diff) < 3 ) or ( self.orientation == 0 and orient == 3 ) then
-			self:turnLeft()
-		else
-			self:turnRight()
+	if orient then 
+		orient = orient%4
+		while self.orientation ~= orient do
+		
+			local diff = self.orientation - orient
+			if ( diff > 0 and math.abs(diff) < 3 ) or ( self.orientation == 0 and orient == 3 ) then
+				self:turnLeft()
+			else
+				self:turnRight()
+			end
 		end
 	end
 	self.taskList:remove(currentTask)
+end
+
+function Miner:turnInspect(orient, safe)
+	local currentTask = self:addCheckTask({debug.getinfo(1, "n").name})
+	-- turn to orientation and inspect while spinning, could probably be one function
+	if orient then 
+		orient = orient%4
+		while self.orientation ~= orient do
+		
+			local diff = self.orientation - orient
+			if ( diff > 0 and math.abs(diff) < 3 ) or ( self.orientation == 0 and orient == 3 ) then
+				self:turnLeft()
+			else
+				self:turnRight()
+			end
+			self:inspect(safe)
+		end
+	end
+	self.taskList:remove(currentTask)
+end
+
+function Miner:getTargetOrientation(x, y, z)
+	-- should be and adjacent position to current pos
+	local cx, cy, cz = self.pos.x, self.pos.y, self.pos.z
+	local dx = x -cx
+	local dy = y -cy
+	local dz = z -cz
+
+	local targetOr = nil
+	if dx > 0 then targetOr =  3
+	elseif dx < 0 then targetOr = 1
+	elseif dz > 0 then targetOr = 0
+	elseif dz < 0 then targetOr = 2
+	end
+
+	-- if dy > 0 then "up"
+	-- if dy < 0 then "down"
+
+	return targetOr
+end
+
+function Miner:turnToPos(x,y,z)
+	local targetOr = self:getTargetOrientation(x,y,z)
+	self:turnTo(targetOr)
 end
 
 
@@ -1193,6 +1240,11 @@ end
 function Miner:turnRight()
 	turtle.turnRight()
 	self.orientation = ( self.orientation + 1 ) % 4
+end
+
+function Miner:place(text)
+	local ok, reason = turtle.place(text)
+	return ok, reason
 end
 
 function Miner:dig(side)
@@ -1317,11 +1369,11 @@ function Miner:inspectDown(safe)
 	return block, data
 end
 function Miner:inspectLeft()
-	local block = self.pos + self.vectors[(orientation-1)%4]
+	local block = self.pos + self.vectors[(self.orientation-1)%4]
 	local name = self:getMapValue(block.x, block.y, block.z)
 	local hasBlock, data
 	if name == nil then
-		self:turnTo((orientation-1)%4)
+		self:turnTo((self.orientation-1)%4)
 		hasBlock, data = turtle.inspect()
 		self:setMapValue(block.x, block.y, block.z, 
 		( data and data.name ) or 0)
@@ -1333,11 +1385,11 @@ function Miner:inspectLeft()
 	return block, data
 end
 function Miner:inspectRight()
-	local block = self.pos + self.vectors[(orientation+1)%4]
+	local block = self.pos + self.vectors[(self.orientation+1)%4]
 	local name = self:getMapValue(block.x, block.y, block.z)
 	local hasBlock, data
 	if name == nil then
-		self:turnTo((orientation+1)%4)
+		self:turnTo((self.orientation+1)%4)
 		hasBlock, data = turtle.inspect()
 		self:setMapValue(block.x, block.y, block.z,
 		( data and data.name ) or 0)
@@ -1362,7 +1414,7 @@ function Miner:inspectAll()
 	
 	-- inspect Front, Left, Behind, Right
 	for i=0,3 do
-		block = self.pos + self.vectors[(orientation+i)%4]
+		local block = self.pos + self.vectors[(orientation+i)%4]
 		local mapValue = self:getMapValue(block.x, block.y, block.z)
 
 		if mapValue == nil then
@@ -1378,7 +1430,7 @@ function Miner:inspectAll()
 	self.taskList:remove(currentTask)
 end
 
-function Miner:digMove(safe)		
+function Miner:digMove(safe)
 	-- tries to dig the block in front and move forwards
 	-- while not mining any turtles
 	local currentTask = self:addCheckTask({debug.getinfo(1, "n").name})
@@ -2260,109 +2312,155 @@ function Miner:recoverTurtle(id, pos)
 end
 
 --##############################################################
+-- add to classMiner
+--local PathFinderOld = require("classPathFinderOldTest")
+function Miner:testPathfinding(distance)
+	
+	local goal
+	if type(distance) == "number" then 
+		goal = vector.new(self.pos.x + distance, self.pos.y, self.pos.z)
+	else
+		goal = distance 
+	end
+	
+	self.map:setMaxChunks(800)
+	local pathFinder = PathFinder()
+	--local pathFinderOld = PathFinderOld()
+	self.pf = pathFinder
+	pathFinder.checkValid = checkSafe
+	--pathFinderOld.checkValid = checkSafe
+	local path = pathFinder:aStarPart(self.pos, self.orientation, goal , self.map, 10000)
+	--local path = pathFinderOld:aStarPart(self.pos, self.orientation, goal , self.map, 10000)
+end
+
 
 function Miner:navigateToPos(x,y,z)
+	-- default miner navigation with safety override near goal
+	local options = {
+		safe = true,
+		safeDistance = 3, -- within 3 blocks of goal, safety is ignored if block is not disallowed
+	}
+
+	return self:navigate(x,y,z, self.map, options)
+end
+
+
+function Miner:navigate(x, y, z, map, options)
 	local currentTask = self:addCheckTask({debug.getinfo(1, "n").name})
 	local result = true
 	local goal = vector.new(x,y,z)
 
-	local safe = true -- always be safe except very close to goal
-	local safeDistance = 3
+	if not options then options = {} end
 
-	if self.pos ~= goal then
+	local safe = options.safe == nil and true or options.safe
+	local safeDistance = options.safeDistance or nil
+	local maxDistance = options.maxDistance or default.pathfinding.maxDistance
+	local checkValidFunc = options.checkValidFunc or checkSafe
+	local followFunc = options.followFunc or function(path, safe, stepOffset) return self:followPath(path, safe, stepOffset) end
+	local stepOffset = options.stepOffset or 0 -- how many steps away from goal to stop
+
+	local checkGoal = function()
+		local diff = self.pos - goal
+		local moves = math.abs(diff.x) + math.abs(diff.y) + math.abs(diff.z)
+		return moves <= stepOffset
+	end
+
+	if not checkGoal() then
 
 		-- calculate how many tries are allowed
 		local diff = self.pos - goal
-		local cost = math.abs(diff.x) + math.abs(diff.y) + math.abs(diff.z)	
+		local cost = math.abs(diff.x) + math.abs(diff.y) + math.abs(diff.z)
 		local maxTries = cost / 2
-		if maxTries < 15 then maxTries = default.pathfinding.maxTries end
-		local maxParts = ( cost / default.pathfinding.maxDistance ) * 2
+		if maxTries < 15 then maxTries = default.pathfinding.maxTries end -- how many tries for navigation are allowed
+		local maxParts = ( cost / maxDistance ) * 2  -- into how many sub-problems the navigation is split
 		if maxParts < 2 then maxParts = default.pathfinding.maxParts end
-		local ct = 0
-		local minDist = -1
+		local tryCount = 0
+		local minDist = math.huge
 		local mapReset = false
 		
+		
 		local pathFinder = PathFinder()
-		pathFinder.checkValid = checkSafe
+		pathFinder.checkValid = checkValidFunc
 		
 		repeat
-			ct = ct + 1
-			local countParts = 0
+			tryCount = tryCount + 1
+			local partsCount = 0
 			repeat 
-				countParts = countParts+1
-				local path = pathFinder:aStarPart(self.pos, self.orientation, goal , self.map, nil)
-				-- check near goal, and path leads to goal
-				-- if path and path[#path].pos == goal and #path < safeDistance + 3 then -- keep eye on this ordeal
-				local movesToGoal = math.abs(self.pos.x - goal.x) + math.abs(self.pos.y - goal.y) + math.abs(self.pos.z - goal.z)
-				if movesToGoal <= safeDistance then
-					if not checkDisallowed(self:getMapValue(goal.x, goal.y, goal.z)) then
-						if safe then print("OVERRIDE SAFETY", movesToGoal) end
-						safe = false
+				partsCount = partsCount + 1
+				local path = pathFinder:aStarPart(self.pos, self.orientation, goal, map, maxDistance)
+
+				local movesToGoal
+				if safeDistance then
+					-- check near goal, and path leads to goal
+					-- if path and path[#path].pos == goal and #path < safeDistance + 3 then -- keep eye on this ordeal
+					movesToGoal = math.abs(self.pos.x - goal.x) + math.abs(self.pos.y - goal.y) + math.abs(self.pos.z - goal.z)
+					if movesToGoal <= safeDistance then
+						if not checkDisallowed(self:getMapValue(goal.x, goal.y, goal.z)) then
+							if safe then print("OVERRIDE SAFETY", movesToGoal) end
+							safe = false
+						end
 					end
 				end
 
 				if path then 
-					if not self:followPath(path,safe) then 
-						-- print("NOT SAFE TO FOLLOW PATH")
+					if not followFunc(path,safe,stepOffset) then 
 						result = false
 					else 
-						if self.pos == goal then
-							result = true 
+						if checkGoal() then
+							result = true
 						else
+							result = false
+
 							-- check if the goal can be reached
 							local cp = self.pos
 							local dist = math.abs(cp.x - goal.x) + math.abs(cp.y - goal.y) + math.abs(cp.z - goal.z)
-							--print("min", minDist, "dist", dist, "try", ct, "part", countParts)
-							result = false
-							if minDist < 0 or dist < minDist then 
+							--print("min", minDist, "dist", dist, "try", tryCount, "part", partsCount)
+							
+							if dist < minDist then
 								minDist = dist
-							elseif dist >= minDist and ct > 1 then  
-								path = pathFinder:checkPossible(self.pos, self.orientation, goal, self.map, nil, not mapReset)
+							elseif dist >= minDist and tryCount > 1 then 
+								-- we overshot the target
+								path = pathFinder:checkPossible(self.pos, self.orientation, goal, map, nil, not mapReset)
 								if not path then 
 									
 									if not mapReset then 
 										mapReset = true
-										countParts = 0
-										ct = math.max(ct, maxTries/2)
+										partsCount = 0
+										tryCount = math.max(tryCount, maxTries/2)
 									else
 										-- path truly impossible
 										print("IMPOSSIBLE GOAL", goal)
 										
-										ct = maxTries
-										countParts = maxParts
-										-- get home as near as possible
-										-- navigateHome but without restarting pathfinding on error?
-										-- if self.returningHome == false then 
-										--	self:navigateToPos(self.home.x, self.home.y, self.home.z) 
-										-- end
-										result = false -- return false otherwise will continue with mining at home
-										self:digToPos(self.home.x, self.home.y, self.home.z, true)
-										
+										if self.returningHome == false then 
+											self:returnHome()
+										end
+										tryCount = maxTries
+										partsCount = maxParts
+										result = false -- return false otherwise will continue prev. task
 									end
 									
 								else
 									print("GOAL POSSIBLE", goal, #path)
-									result = self:followPath(path, safe)
+									result = followFunc(path, safe, stepOffset)
 								end
 							end
 						end
 					end
 				else
 					-- dig to target
-					safe = movesToGoal > safeDistance
+					safe = ( safeDistance and movesToGoal > safeDistance ) or safe
 					if not self:digToPos(goal.x, goal.y, goal.z, safe) then
-						--path was not safe
 						print("NOT SAFE TO DIG TO POS")
 						result = false
-						countParts = maxParts
+						partsCount = maxParts
 						sleep(0.5) -- give other turtles a chance to move out the way
 					else result = true end
 				end
-			until result == true or countParts >= maxParts
-		until result == true or ct >= maxTries
+			until result == true or partsCount >= maxParts
+		until result == true or tryCount >= maxTries
 	end
 	
-	if self.pos ~= goal then result = false end
+	if not checkGoal() then result = false end
 	if result == false then 
 		print("NOT SAFE TO FOLLOW PATH AFTER MULTIPLE TRIES")
 	end
@@ -2376,7 +2474,7 @@ function Miner:followPath(path,safe)
 	--print("FOLLOWING PATH TO", path[#path].pos)
 	local currentTask = self:addCheckTask({debug.getinfo(1, "n").name})
 	local result = true
-	if safe == nil then safe = true end -- always safe?
+	if safe == nil then safe = true end
 
 	for i,step in ipairs(path) do
 		if step.pos ~= self.pos  then
@@ -2390,44 +2488,32 @@ function Miner:followPath(path,safe)
 			elseif diff.y < 0 then upDown = -1
 			else upDown = 1 end
 
-			-- inspecting slows down movement, minimize it
+			local block = self:getMapValue(step.pos.x, step.pos.y, step.pos.z)
+			local moveBackwards = newOr and (newOr-2)%4 == self.orientation and block == 0
+
+			-- inspect as much as possible without additional movement
 			if i > 1 then
 				if upDown ~= 1 then self:inspectUp() end
 				if upDown ~= -1 then self:inspectDown() end
-				if not newOr or newOr ~= self.orientation then self:inspect() end
+				if not newOr or newOr ~= self.orientation then self:inspect() end -- and not moveBackwards
 			end
 
 			if upDown > 0 then
-				if not self:digMoveUp(safe) then 
-					result = false --return false
-					break
-				end
+				if not self:digMoveUp(safe) then result = false; break end
 			elseif upDown < 0 then
-				if not self:digMoveDown(safe) then 
-					result = false --return false
-					break
-				end
+				if not self:digMoveDown(safe) then result = false; break end
 			else
-				local block = self:getMapValue(step.pos.x, step.pos.y, step.pos.z)
-				if (newOr-2)%4 == self.orientation and block == 0 then
+				if moveBackwards then
 					if not self:back() then
-						self:turnTo(newOr)
-						print("cannot move backwards")
-						result = false
-						break
+						self:turnInspect(newOr, false)
+						if not self:digMove(safe) then result = false; break end
 					end
 				else
-					if newOr ~= self.orientation then
-						self:turnTo(newOr)
-						self:inspect() --inspect left / right
-					end
-					if not self:digMove(safe) then
-						result = false
-						break
-					end
+					self:turnInspect(newOr, false)
+					if not self:digMove(safe) then result = false; break end
 				end
 			end
-		end 
+		end
 	end
 
 	if result and #path > 0 then
@@ -2442,1265 +2528,30 @@ function Miner:followPath(path,safe)
 	--end
 	self.taskList:remove(currentTask)
 	return result
+end
+-- add to classMiner
+--local PathFinderOld = require("classPathFinderOldTest")
+function Miner:testPathfinding(distance)
 	
-end
-
-
-
---############################################################## STORAGE related functions
-
-function Miner.getWiredNetworkName()
-	for i = 1, 5 do
-		turtle.detect() -- instead of sleep
-		for _, side in ipairs(redstone.getSides()) do
-			local mainType, subType = peripheral.getType(side)
-			if mainType == "modem" and peripheral.call(side, "isWireless") == false then 
-				local name = peripheral.call(side, "getNameLocal")
-				if name then return name end
-			end
-		end
+	local goal
+	if type(distance) == "number" then 
+		goal = vector.new(self.pos.x + distance, self.pos.y, self.pos.z)
+	else
+		goal = distance 
 	end
-	return nil
-end
-local getWiredNetworkName = Miner.getWiredNetworkName
-
-function Miner:getTurtleInventoryList()
-	-- turtle.getItemDetail(i) is instant
-	-- scan inventory for storage related tasks
-	local invList = {}
-	local hasFuel = false 
-	for i = 1,default.inventorySize do
-		local data = turtle.getItemDetail(i)
-		if data and data.name then
-			if not hasFuel and fuelItems[data.name] then
-				hasFuel = true --keep the fuel
-				invList[i] = { name = data.name, count = data.count, protected = true }
-			else
-				invList[i] = { name = data.name, count = data.count, protected = false }
-			end
-		else
-			invList[i] = { count = 0 }
-		end
-	end
-	return invList
-end
-
-function Miner:pickupAndDeliverItems(reservation, dropOffPos, requester, requestingInv)
-	local currentTask = self:addCheckTask({debug.getinfo(1, "n").name})
-	-- TODO: make this a checkpointed task
-
-	local pos = reservation.pos
-	if self:navigateToPos(pos.x, pos.y, pos.z) then 
-
-		
-		local networkName = Miner.getWiredNetworkName()
-		print("networkName:", networkName)
-
-		local invListBefore = self:getTurtleInventoryList()
-
-		local waitTime = 10 -- extracting can take some time
 	
-		local answer = self.nodeStorage:send(reservation.provider, 
-			{"PICKUP_ITEMS", { reservationId = reservation.id, turtleName = networkName }}, true, true, waitTime)
-		if answer and answer.data[1] == "ITEMS_EXTRACTED" then 
-			local data = answer.data[2]
-			print("extracted", data.name, data.count, data.extractedToTurtle)
-			local gotItems = false
-			if data.extractedToTurtle then
-				gotItems = true
-			else
-			--[[ -- TODO: rewrite or delete this shit, just an idea for the turtle to suck up items i guess
-				local pickupInv
-				for _,inv in ipairs(peripheral.getNames()) do
-					local mainType, subType = peripheral.getType(inv)
-					if subType == "inventory" then
-						pickupInv = peripheral.wrap(inv)
-						break
-					end
-				end
-				if not pickupInv then 
-					print("no inventory found for pickup ... ") 
-					return
-				else
-					-- pickup items
-					
-					local itemName, count = data.name, data.count
-					local remaining = count
-
-					for slot = 1, pickupInv.size() do
-						local slotData = pickupInv.getItemDetail(slot)
-						if slotData and slotData.name == itemName then
-							local toMove = math.min(slotData.count, remaining)
-							-- bullshit ai generated code ...
-							local moved = pickupInv.pushItems(self.Inventory, slot, toMove)
-							if moved and moved > 0 then
-								print(string.format("Turtle picked up %d of %s from pickup inventory", moved, itemName))
-								remaining = remaining - moved
-								if remaining <= 0 then
-									break
-								end
-							end
-						end
-					end
-					if remaining > 0 then 
-						print("Turtle could not pick up all items, remaining:", remaining)
-					end
-				end ]]
-			end
-
-
-			local invListAfter = self:getTurtleInventoryList()
-
-			local invList = {}
-			-- build new inventory list with difference in items
-			for i = 1, default.inventorySize do 
-				local before = invListBefore[i]
-				local after = invListAfter[i]
-				if before.name == after.name then
-					if before.count == after.count then 
-						before.protected = true
-						invList[i] = before
-					elseif before.count > after.count then
-						-- items removed -- should never happen -- condenseInventory might play a role though
-						print("ITEMS REMOVED ON PICKUP?", before.name, before.count - after.count)
-						invList[i] = { name = before.name, count = 0, protected = true }
-					else
-						-- items added
-						invList[i] = { name = after.name, count = after.count - before.count, protected = false }
-					end
-				else
-					if not before.name and after.name then
-						-- new items
-						invList[i] = { name = after.name, count = after.count, protected = false }
-					elseif before.name and not after.name then
-						-- items removed -- should never happen -- condenseInventory might play a role though
-						print("STACK REMOVED ON PICKUP?", before.name, before.count)
-						invList[i] = { name = before.name, count = 0, protected = true }
-					else
-						-- changed items -- should never happen
-						print("STACK CHANGED ON PICKUP?", before.name, "to", after.name)
-						invList[i] = { name = after.name, count = after.count, protected = true }
-					end
-				end
-			end
-			
-
-			if gotItems then
-				-- deliver items to requesting storage
-				if self:navigateToPos(dropOffPos.x, dropOffPos.y, dropOffPos.z) then 
-					-- drop items into inv 
-
-					local waitTime = default.waitTime
-					if requestingInv == "player" then 
-						waitTime = 60*2
-						networkName = nil -- "player"
-					else 
-						networkName = Miner.getWiredNetworkName()
-						print("networkName", networkName)
-					end
-
-
-					-- if this fails use, Miner:transferItems() and dump items into a chest
-					print("delivered", data.name, data.count, "to", requester, "inv", networkName or requestingInv)
-					local answer, manualConfirmation
-					local requestConfirmation = function() 
-						answer = self.nodeStorage:send(requester, {"ITEMS_DELIVERED", 
-						{ reservation = reservation, requestingInv = networkName or requestingInv, invList = invList }},
-						true, true, waitTime)
-					end
-
-					parallel.waitForAny( 
-						requestConfirmation, 
-						function()
-							shell.switchTab(multishell.getCurrent())
-							print("---------------------------\n     ITEMS DELIVERED\nPRESS ENTER TO CONFIRM\n---------------------------")
-							--os.pullEvent("key")
-							local confirmed = read()
-							manualConfirmation = true
-						end
-					)
-					if answer and answer.data[1] == "DELIVERY_CONFIRMED" then
-						print("delivery confirmed by requester", requester)
-					elseif manualConfirmation then 
-						print("manual delivery confirmation")
-					else
-						if answer then print(answer.data[1]) end
-						print("no delivery confirmation from requester", requester)
-						-- perhaps ping requester again if this happens often
-					end
-					self:returnHome()
-				else
-
-				end
-			end
-		else
-			print(answer and answer.data[1] or "NO ANSWER FROM PROVIDER")
-		end
-	end
-	self.taskList:remove(currentTask)
-	
+	self.map:setMaxChunks(800)
+	local pathFinder = PathFinder()
+	--local pathFinderOld = PathFinderOld()
+	self.pf = pathFinder
+	pathFinder.checkValid = checkSafe
+	--pathFinderOld.checkValid = checkSafe
+	local path = pathFinder:aStarPart(self.pos, self.orientation, goal , self.map, 10000)
+	--local path = pathFinderOld:aStarPart(self.pos, self.orientation, goal , self.map, 10000)
 end
 
 
 
 
 
-
-
---############################################################## TREE related functions
-
-local BreadthFirstSearch = require("classBreadthFirstSearch")
-local StateMap = require("classStateMap")
-local manhattanDistance = ChunkyMap.manhattanDistance
-
-local leafBlocks = {
-	["minecraft:oak_leaves"] = true,
-	["minecraft:spruce_leaves"] = true,
-	["minecraft:birch_leaves"] = true,
-	["minecraft:jungle_leaves"] = true,
-	["minecraft:acacia_leaves"] = true,
-	["minecraft:dark_oak_leaves"] = true,
-}
-local logBlocks = {
-	["minecraft:oak_log"] = true,
-	["minecraft:spruce_log"] = true,
-	["minecraft:birch_log"] = true,
-	["minecraft:jungle_log"] = true,
-	["minecraft:acacia_log"] = true,
-	["minecraft:dark_oak_log"] = true,
-}
-
-
-local function checkValidLeafBFS(block)
-	-- only traverse through unknown blocks or leaf blocks
-	if block == nil or leafBlocks[block] then return true
-	else return false end
-end
-local function checkGoalLeafBFS(block)
-	-- only goal if leaf block
-	if block and logBlocks[block] then return true
-	else return false end
-end
-
-local function checkAirBlock(data)
-	if data == 0 or data.name == 0 then 
-		return true
-	end
-	return false
-end
-
-local function checkLogBlock(data)
-	-- rewrite ts
-	if data and not checkAirBlock(data) and logBlocks[data.name] then 
-		return true
-	end
-	return false
-end
-local function checkLeafBlock(data)
-	if data and not checkAirBlock(data) and data.tags and data.tags["minecraft:leaves"] then
-		if not leafBlocks[data.name] then
-			print("UNKNOWN LEAF BLOCK:", data.name)
-			leafBlocks[data.name] = true
-		end
-		return true
-	end
-	return false
-end
-local function checkBeeHive(data)
-	if data and not checkAirBlock(data) and data.name == "minecraft:bee_nest"  then
-		return true
-	end
-	return false
-end
-
-
--- known issues
--- 1. diagonal blocks without any leaves will not be found
--- 2. leaves that are connected to multiple blocks might return plausible if they are not reinspected
--- 		-> they are ignored to check for logs
---     solution? a simple backtracking down the main trunk and inspecting leaves again could help 
---		   (or step after mining all connected logs)
---     also once at the top of the tree: use leaves gradient to find next log, continue from there with rest of logic
--- 3. inefficient mining order -> logs and leaves could be mined in a better order to minimize movement
---    best would be to pick the nearest log/leaf at each step, but that is quite expensive to calculate
---    simpler is to use a heap for the leaves based on state.distance and always priotitize logs
---    immediately mine logs even if another "job" like mineToLeaf is ongoing
---    always mining logs first, then reevaluating the leaves.distance values could also help with 2.
-
--- 4. old distance values of leaves 
---  after mining all logs, update the distance values of leaves through bfs again? 
--- bfs for dist 2 = nil but neighbour has been inspected recently dist 5 -> dist 4 now
--- randomly reinspect leaves? best to do it on connected groups of leaves
--- how do we get groups of leaves? 
-
-
--- only real optimization left: use bfs to floodfill leaves distance values after having mined logs / inspected leaves
--- e.g. leaf inspected: dist 7 -> neighbour has old value dist 2
---           conflicting info, 7 is more recent, which means the neighbour must be at least dist 6
---           so update dist to 6, and continue bfs from there
---           do this for all leaves that have been inspected after last/latest log was mined
---           only then reinspect leaves that still have a somewhat low distance value (also do this by groups)
-
-
-function Miner:mineTree()
-
-	-- only needed for oak trees ig 
-
-	-- TODO: prioritize logs over leaves with distance 1
-	-- but instead of doing it at the very end, do it at each DFS node after mining logs?
-	-- remove bee nests minecraft:bee_nest
-	-- for branches, check the next air block as well
-
-	-- global.miner:navigateToPos(2229, 68, -2665); global.miner:turnTo(1); global.miner:mineTree()
-
-	local currentTask = self:addCheckTask({debug.getinfo(1, "n").name})
-
-	local startPos = vector.new(self.pos.x, self.pos.y, self.pos.z)
-	local startOrientation = self.orientation
-
-	local treeMap = StateMap:new()
-	self.treeMap = treeMap
-
-	local maxDistance = 7
-	local distanceLeaves = {}
-	for i = 1, maxDistance do distanceLeaves[i] = {} end
-	local leafDistanceMap = {}
-
-	local reinspectionDistance = 3
-
-	local prvReinspectionDistance = reinspectionDistance
-	local logs = {}
-	local priorityLogPos = nil
-	
-
-	local function posToKey(pos)
-        return pos.x .. "," .. pos.y .. "," .. pos.z
-    end
-
-	local function setReinspectionDistance(dist)
-		prvReinspectionDistance = reinspectionDistance
-		reinspectionDistance = dist
-	end
-	local function restoreReinspectionDistance()
-		reinspectionDistance = prvReinspectionDistance
-	end
-
-	local function shouldInspect(data)
-		-- not yet inspected or leaf block with distance <= 2
-
-		local result = false
-		if not data then 
-			result = true
-		elseif checkLeafBlock(data) and data.state.distance <= reinspectionDistance then
-			-- check if a log was mined since last inspection, only then reinspect the leaf
-			local timeLogMined = treeMap:getLastMined("minecraft:oak_log")
-			local wasLogMined = timeLogMined and timeLogMined > data.time or false
-			result = wasLogMined
-		end
-		if not result then 
-			--print("noInspect", data.name, data.state and data.state.distance, checkLeafBlock(data))
-		elseif result and checkLeafBlock(data)then
-			-- print("reinspectLeaf", data.name, data.state.distance)
-		end
-		return result
-	end
-
-	local function rememberBlock(pos, data)
-		treeMap:setData(pos.x, pos.y, pos.z, data)
-
-		if checkLogBlock(data) then
-			table.insert(logs, pos)
-		elseif checkLeafBlock(data) then
-			local key = posToKey(pos)
-			local oldDist = leafDistanceMap[key]
-			local newDist = data.state.distance
-
-			if oldDist and newDist ~= oldDist then
-				-- already known leaf, update only if distance changed
-				distanceLeaves[oldDist][key] = nil
-			end
-			distanceLeaves[newDist][key] = pos
-			leafDistanceMap[key] = newDist
-
-		elseif checkBeeHive(data) then
-			table.insert(logs, pos) -- mine bee hives as well
-		end
-	end
-
-	local function inspectDown()
-		local pos = self.pos + vectorDown
-		local data = treeMap:getData(pos.x, pos.y, pos.z)
-		if shouldInspect(data) then
-			local blockName, data = self:inspectDown(true)
-			rememberBlock(pos, data)
-		end
-	end
-	local function inspectUp()
-		local pos = self.pos + vectorUp
-		local data = treeMap:getData(pos.x, pos.y, pos.z)
-		if shouldInspect(data) then
-			local blockName, data = self:inspectUp(true)
-			rememberBlock(pos, data)
-		end
-	end
-	local function inspect(dir)
-		if not dir then dir = self.orientation end
-		local pos = self.pos + self.vectors[dir]
-		local data = treeMap:getData(pos.x, pos.y, pos.z)
-		if shouldInspect(data) then
-			self:turnTo(dir)
-			local hasBlock, data = self:inspect(true)
-			rememberBlock(pos, data)
-		end
-	end
-	local function inspectAll()
-		-- return how many logs have been found
-		local logCt = #logs
-
-		inspectDown()
-		inspectUp()
-		local orientation = self.orientation
-		for i=0,3 do
-			local dir = (orientation+i)%4
-			inspect(dir)
-		end
-
-		return #logs - logCt
-	end
-
-
-	local function getRoot()
-		-- find the root block of the tree
-		-- its the lowest block in the whole tree
-		local minX, minY, minZ = nil, math.huge, nil
-		local log = treeMap.log
-		for i = 1, #log do 
-			local entry = log[i]
-			local chunkId, relativeId, data = entry[1], entry[2], entry[3]
-
-			if checkLogBlock(data) then 
-				local x, y, z = ChunkyMap.idsToXYZ(chunkId, relativeId)
-				if y < minY then 
-					minX, minY, minZ = x, y, z
-				end
-			end
-		end
-
-		if minX then 
-			return vector.new(minX, minY, minZ)
-		else
-			print("no root found")
-			return nil
-		end
-	end
-
-	local function getTrunk()
-		-- largest collection of logs with state.axis == y
-		-- or any blocks directly above / connected to the root
-
-	end
-
-
-	local bfs = BreadthFirstSearch()
-	local options = { maxDistance = 3, returnPath = true}
-
-
-	local function digToPosUsingLeaves(tx, ty, tz)
-
-		-- idea+optimization: instead of normal digtopos:
-			-- try to dig to pos using potentially surrounding leaves (if no logs are there)
-			-- could reveal more hidden logs but also increase chance to get saplings back
-			-- also solves the issue of the map not being 100% accurate
-		-- not quite sure though if this actually helps the edge cases...
-
-		-- prefer y axis to maybe find new logs
-
-
-		-- caution: using this func to dig toward a leaf with low distance (e.g. 3)
-		--          might lead to the leaf being cut from the log. but it is replaced with another entry
-		-- not an issue but perhaps reevaluating the target leaf could help avoid unnecessary movement
-
-		local safe = false
-		local result = true
-
-		--print("digTo", tx, ty, tz)
-		local cx, cy, cz = self.pos.x, self.pos.y, self.pos.z
-
-		if cx == tx and cy == ty and cz == tz then
-			return true
-		end
-
-		local allVectors = {
-			vectors[0],
-			vectors[1],
-			vectors[2],
-			vectors[3],
-			vectorUp,
-			vectorDown,
-		}
-
-		local neighbourVectors = {}
-		local xdir, yvec, zdir
-
-		if cx < tx then xdir = 3
-		elseif cx > tx then xdir = 1 end
-
-		if cz < tz then zdir = 0
-		elseif cz > tz then zdir = 2 end
-
-		if cy < ty then yvec = vectorUp
-		elseif cy > ty then yvec = vectorDown end
-
-		if yvec then table.insert(neighbourVectors, yvec) end
-		if xdir then table.insert(neighbourVectors, vectors[xdir]) end
-		if zdir then table.insert(neighbourVectors, vectors[zdir]) end
-		
-		local logsFound = inspectAll()
-		
-		repeat
-			local cpos, nextPos = self.pos, nil
-
-
-			-- check if our target is directly adjacent
-			if ChunkyMap.manhattanDistance(cpos.x, cpos.y, cpos.z, tx, ty, tz) == 1 then
-				-- ignore all other neighbours, go directly to target
-				nextPos = vector.new(tx, ty, tz)
-			else
-
-				-- check neighbours 
-				local relevantNeighbours, relevantSet = {}, {}
-				local irrelevantNeighbours = {}
-
-				-- neighbours on the path towards target
-				for _, vec in ipairs(neighbourVectors) do
-					relevantSet[vec] = true
-					table.insert(relevantNeighbours, cpos + vec)
-				end
-
-				-- neighbours that do not lead towards target
-				for _, vec in ipairs(allVectors) do
-					if not relevantSet[vec] then
-						table.insert(irrelevantNeighbours, cpos + vec)
-					end
-				end
-
-				-- check irrelevant neighbours for logs first
-				for _, neighbour in ipairs(irrelevantNeighbours) do
-					local nx, ny, nz = neighbour.x, neighbour.y, neighbour.z
-					local ndata = treeMap:getData(nx, ny, nz)
-					if checkLogBlock(ndata) then
-						-- found log block nearby, go there first
-						-- cancel current digToPos, add it back to the queue for later
-						-- prioritize newly found log
-						priorityLogPos = vector.new(nx, ny, nz)
-						print("interrupting, found log", nx, ny, nz)
-						return "interrupted", neighbour
-					end
-				end
-
-				-- check relevant neighbours and choose preferable path
-				for i, neighbour in ipairs(relevantNeighbours) do
-					local nx, ny, nz = neighbour.x, neighbour.y, neighbour.z
-					neighbour.dir = neighbourVectors[i]
-					local ndata = treeMap:getData(nx, ny, nz)
-					neighbour.data = ndata
-					if checkLeafBlock(ndata) then
-						neighbour.distance = ndata.state.distance
-					elseif checkLogBlock(ndata) then
-						-- logs should not be present here except its the target itself?
-						neighbour.distance = 0
-					else
-						neighbour.distance = 666
-					end
-				end
-				table.sort(relevantNeighbours, function(a,b) return a.distance < b.distance end)
-				-- simply go by the "leaf" with the lowest distance if such a leaf exists
-				nextPos = relevantNeighbours[1]
-			end
-
-			-- actually move
-			local diff = nextPos - self.pos
-			if diff.y > 0 then
-				if not self:digMoveUp(safe) then result = false; break end
-			elseif diff.y < 0 then
-				if not self:digMoveDown(safe) then result = false; break end
-			else
-				local newOr
-				if diff.x ~= 0 then newOr = xdir
-				elseif diff.z ~= 0 then newOr = zdir end
-				self:turnTo(newOr)
-				if not self:digMove(safe) then result = false; break end
-			end
-			treeMap:setMined(self.pos.x, self.pos.y, self.pos.z)
-			logsFound = inspectAll()
-
-			-- remove vectors for axes we've already reached
-			local filtered = {}
-			for _, vec in ipairs(neighbourVectors) do
-				local keep = not ((self.pos.x == tx and vec.x ~= 0) or
-								(self.pos.y == ty and vec.y ~= 0) or
-								(self.pos.z == tz and vec.z ~= 0))
-				if keep then
-					table.insert(filtered, vec)
-				end
-			end
-			neighbourVectors = filtered
-
-		until ( self.pos.x == tx and self.pos.y == ty and self.pos.z == tz ) or result == false
-
-		return result
-	end
-
-	local function checkPlausibleDistance(leafPos, data)
-		-- check distance of branch leaves to other logs
-		-- if its possible to reach it within distance, if not it suggests there is another log 
-		-- hidden in the branch
-
-		-- e.g. 
-		-- LOG, 	LEAF(dist1)	???
-		-- LOG, 	AIR, 		LEAF(dist2) 
-		
-		--> to get to the next known log, LEAF must be distance 3, but it has 2
-		--> mine this leaf and check if (moving away from trunk) there is a log
-		--> could also just be a LOG further up, which hasnt been explored yet but is still connected
-		-- use pathfinder to determine distance to nearest log block? if it is bigger than distance, the leaf should be mined
-
-		--[[
-			if leav.state.distance > 1 and leaf.state.distance <= 3 then 
-				local start = leafPos
-				local goal = ?   -- check all log blocks? -> could also just use BFS instead of pathfinding
-				local pathFinder = PathFinder()
-				pathFinder.checkValid = -- not turtle, not air, preferrably leaves or unknown
-				local path = pathFinder:aStarPart(self.pos, self.orientation, goal , self.map, nil)
-				local moves = #path 
-				if moves > leaf.state.distance then 
-					-- mine leaf
-				end
-			end
-		--]]
-
-		-- using bfs instead of astar, because we dont know what the next log is, and thus have no target to pathfind towards
-		-- instead we find the nearest log block with bfs
-
-		-- using self.map is not recommended, since it might contain old data when the tree didnt exist yet
-		-- or another tree in the same spot has been felled before
-		-- create an additional local map for each tree
-		-- though if multiple turtles are felling the same tree, this could lead to issues
-
-		-- the map also needs to remember when a block has been mined / inspected
-		-- this way we can do the plausibility check for the time the leaf was inspected
-		-- and we can also check for logs that have only been expected in the furture (after leaf was instpected, not before)
-
-		local excludeAir = true -- due to leaf decay
-		local reconstructedMap = treeMap:reconstructMapAtTime(data.time, excludeAir)
-		local getMapBlock = function(x, y, z)
-			return reconstructedMap:getBlockName(x, y, z)
-		end
-
-		if data.state.distance > 3 then 
-			options.maxDistance = 3 
-		else
-			options.maxDistance = data.state.distance
-		end
-
-		local path = bfs:breadthFirstSearch(leafPos, checkGoalLeafBFS, checkValidLeafBFS, getMapBlock, options)
-		local moves = ( path and #path - 1 ) or math.huge
-
-		if not path or moves > data.state.distance then
-			print("BFS mvs", moves, "leaf", leafPos, "dst",  data.state.distance)
-			return false -- not plausible
-		else
-			return true -- plausible
-		end
-	end
-
-
-	local function getActions(fromPos, fromOr, toPos)
-		-- estimate number of actions (turns) to get from fromPos to toPos
-		-- used for prioritizing logs
-
-		local diff = toPos - fromPos
-		local targetOr
-		if diff.x < 0 then targetOr = 1
-		elseif diff.x > 0 then targetOr = 3
-		elseif diff.z < 0 then targetOr = 2
-		elseif diff.z > 0 then targetOr = 0 end
-
-		local actions = 0
-
-		-- up/down, over front, over rest
-		if targetOr == fromOr then 
-			actions = 0.5
-		elseif not targetOr then 
-			actions = 0
-		else
-			local turnDiff = (targetOr - fromOr) % 4
-			actions = math.min(turnDiff, 4 - turnDiff)
-		end
-
-		return actions
-	end
-
-
-	local function mineTowardsLog(leafPos, leafData)
-		-- use leaf gradient descent to find the next log
-		-- recursive intersecations are theoretically possible
-		-- LOG - LEAF - LEAF - LEAF - LOG
-		--              LEAF
-		-- leaf has distance 3 but two possible paths to logs
-
-		-- pick a random possible path,
-		-- the other leaf is added to distanceLeaves for later processing anyways
-
-		local dist = ( leafData and leafData.state.distance ) or maxDistance
-		local minDist = dist
-		local minPos, minData = nil, nil
-		local x, y, z = leafPos.x, leafPos.y, leafPos.z
-
-		print("mtl, leaf", x, y, z, "dst", leafData and leafData.state.distance or "nil")
-
-		inspectAll()
-		local neighbours = bfs.getCardinalNeighbours(x, y, z)
-		for i, npos in ipairs(neighbours) do
-			local nx, ny, nz = npos.x, npos.y, npos.z
-			local ndata = treeMap:getData(nx, ny, nz)
-
-			if checkLeafBlock(ndata) and ndata.state.distance < minDist then
-				-- all leaves with a smaller distance are candidates for next step
-				-- however we only care about the smallest (usually only for the first step though)
-				minDist = ndata.state.distance
-				minPos = npos
-				minData = ndata
-				
-			elseif checkLogBlock(ndata) then
-				-- found log!
-				print("mtl, log", nx, ny, nz, "from leaf", x,y,z)
-				local result = digToPosUsingLeaves(nx, ny, nz)
-				if result == "interrupted" then
-					print("SHOULDNT HAPPEN, 2")
-					return false
-				elseif result then
-					return true
-				else
-					print("mtl, cannot reach log", nx, ny, nz)
-				end
-			end
-		end
-
-		if minPos then
-			local nx, ny, nz = minPos.x, minPos.y, minPos.z
-			local ndata = minData
-			local result = digToPosUsingLeaves(nx, ny, nz)
-			if result == "interrupted" then
-				print("SHOULDNT HAPPEN, 1")
-				return false
-			elseif result then
-				return mineTowardsLog(minPos, ndata) -- recursive call towards log
-			else
-				print("mtl, cannot reach leaf", nx, ny, nz)
-			end
-
-			-- let the basic logic of mineLeaves handle multiple leaves and recall this func	
-		end
-	end
-
-	local its = 0
-	local maxIts = 256
-	local firstGradientPass = false
-
-	local function mineLogsDFS()
-
-		while #logs > 0 and its < maxIts do
-
-			its = its + 1
-			-- pick next log to mine
-			local pos, logDist
-			if priorityLogPos then
-				-- use prioritized log (usually leading outwards)
-				pos = priorityLogPos
-				priorityLogPos = nil
-				logDist = manhattanDistance(self.pos.x, self.pos.y, self.pos.z, pos.x, pos.y, pos.z)
-			else
-				-- use the closest log 
-
-				local cpos, cor = self.pos, self.orientation
-				local cx, cy, cz = cpos.x, cpos.y, cpos.z
-				local log = logs[1]
-				local closestId = 1
-				local closestDist = manhattanDistance(cx, cy, cz, log.x, log.y, log.z)
-				local minActions = getActions(cpos, cor, log)
-
-				for i = 2, #logs do
-					log = logs[i]
-					local dist = manhattanDistance(cx, cy, cz, log.x, log.y, log.z)
-					if dist < closestDist then
-						closestDist = dist
-						closestId = i
-					elseif dist == closestDist then
-						-- same distance, prefer smaller action count
-						local actions = getActions(cpos, cor, log)
-						if actions < minActions then
-							minActions = actions
-							closestId = i
-						end
-
-					end
-				end
-				pos = table.remove(logs, closestId)
-				logDist = closestDist
-			end
-
-			-- mine logs DFS
-			local x, y, z = pos.x, pos.y, pos.z
-			local data = treeMap:getData(x, y, z)
-
-			if data and data.name ~= 0 then
-
-				if logDist > 1 and not firstGradientPass then 
-					-- continuous log streak broken -> use leaf gradient for next log
-					table.insert(logs, pos) -- requeue current log
-					firstGradientPass = true
-					if mineTowardsLog(self.pos, nil) then 
-						-- could fail if no leaves are around
-					end
-					-- we only want to do this once though? -- perhaps also remove again
-					-- TODO? maybe prefer going upwards first and only triggering this when moving back down?
-					-- (actions determine what direction is preferred, currently the one in front, then up)
-					-- when pos.y > self.pos.y
-				end
-
-				if logDist <= 1 or firstGradientPass then
-					-- after first gradient pass, mine all remaining logs directly
-
-					print("log at", pos)
-					local result = digToPosUsingLeaves(x, y, z)
-
-					if result == "interrupted" then
-						-- requeue current log and pick new log
-						if self.pos.x ~= x or self.pos.y ~= y or self.pos.z ~= z then
-							table.insert(logs, pos)
-						end
-					elseif result then 
-						inspectAll()
-					else
-						print("Cannot reach log at", pos)
-					end
-				end
-			end
-		end
-
-	end
-
-	local uncheckedLeaves = {}
-
-	local function mineLeaves()
-		print("MINING LEAVES WITH LOW DISTANCE")
-
-		-- indexed priority list for leaves based on distance
-		-- or just go by the nearest leaf, to save on movement?
-
-		while true do 
-
-			-- get next leaf with lowest state.distance and distance to turtle
-			local cpos = self.pos
-			local cx, cy, cz = cpos.x, cpos.y, cpos.z
-
-			local key, pos, distance
-			for dist = 1, #distanceLeaves do
-				local leaves = distanceLeaves[dist]
-
-				if next(leaves) then
-					distance = dist
-				
-					local minDist = math.huge
-					for k, p in pairs(leaves) do 
-						local ldist = manhattanDistance(cx, cy, cz, p.x, p.y, p.z)
-						if ldist < minDist then
-							minDist = ldist
-							key, pos = k, p
-						end
-					end
-					break
-				end
-			end
-
-			if not pos then break end
-
-			local x, y, z = pos.x, pos.y, pos.z
-
-			distanceLeaves[distance][key] = nil
-			leafDistanceMap[key] = nil
-
-			local data = treeMap:getData(x, y, z)
-			if data and data.name ~= 0 and checkLeafBlock(data) then 
-				local currentDist = data.state.distance
-
-				if currentDist ~= distance then
-					-- leaf distance changed
-					distanceLeaves[currentDist][key] = pos
-					leafDistanceMap[key] = currentDist
-
-				elseif currentDist <= 1 then 
-					print("leaf at", pos, "dst", currentDist)
-					local result = digToPosUsingLeaves(x, y, z)
-					if result == "interrupted" then
-						-- requeue current leaf, call mineLogsDFS
-						distanceLeaves[currentDist][key] = pos
-						leafDistanceMap[key] = currentDist
-					elseif result then 
-						inspectAll()
-					else
-						print("Cannot reach leaf at", pos)
-					end
-
-				elseif currentDist <= reinspectionDistance and not checkPlausibleDistance(pos, data) then
-					local result = digToPosUsingLeaves(x, y, z)
-					if result == "interrupted" then
-						-- requeue current leaf
-						distanceLeaves[currentDist][key] = pos
-						leafDistanceMap[key] = currentDist
-					elseif result then 
-						
-						if not mineTowardsLog(pos, nil) then -- data
-							-- shouldnt happen, but lets chalk it up to faster inspection than distance values can be updated
-							-- also leaf decay could perhaps cause this
-							-- check commit 4365578 for more debugging stuff
-							print("no log from leaf", pos, "dst", currentDist)
-						end
-					else
-						print("Cannot reach leaf at", pos)
-					end
-
-				elseif currentDist < maxDistance then
-					-- requeue leaves that theoretically could still have logs, but unlikely
-					uncheckedLeaves[key] = pos
-				end
-			end
-
-			-- mine logs found after mining leaves
-			mineLogsDFS()
-
-		end
-	end
-
-	local Queue = require("classQueue")
-
-	local function getLeafGroup(start, visited)
-		-- bfs like search so we get all connected leaf blocks within distance 6
-		-- also calculate centroid and representative
-
-		local components = {}
-		local group = { components = components }
-		local sumX, sumY, sumZ = 0, 0, 0
-
-		local queue = Queue:new()
-		local start = { x = start.x, y = start.y, z = start.z, distance = 0 }
-		queue:pushRight(start)
-
-		while true do
-			local current = queue:popLeft()
-			if not current then break end
-
-			local cx, cy, cz, cdist = current.x, current.y, current.z, current.distance
-			table.insert(components, vector.new(cx, cy, cz))
-			sumX = sumX + cx
-			sumY = sumY + cy
-			sumZ = sumZ + cz
-
-			if cdist < 6 then
-				local neighbours = bfs.getCardinalNeighbours(cx, cy, cz)
-				for i = 1, #neighbours do
-					local neighbour = neighbours[i]
-					local nx, ny, nz = neighbour.x, neighbour.y, neighbour.z
-
-					local vx = visited[nx]
-					if not vx then vx = {}; visited[nx] = vx end
-					local vy = vx[ny]
-					if not vy then vy = {}; vx[ny] = vy end
-					if not vy[nz] then 
-						vy[nz] = true
-
-						local ndata = treeMap:getData(nx, ny, nz)
-						if checkLeafBlock(ndata) then
-							neighbour.distance = cdist + 1
-							queue:pushRight(neighbour)
-						end
-					end
-				end
-			end
-		end
-		local ct = #components
-		local centroidX = sumX / ct
-		local centroidY = sumY / ct
-		local centroidZ = sumZ / ct
-		group.centroid = { x = centroidX, y = centroidY, z = centroidZ }
-		local representative = start
-
-		-- get representative of group (nearest to centroid)
-		local minDist = math.huge
-		for i = 1, #components do
-			local comp = components[i]
-			local dist = manhattanDistance(centroidX, centroidY, centroidZ, comp.x, comp.y, comp.z)
-			if dist < minDist then
-				minDist = dist
-				representative = comp
-			end
-		end
-		group.representative = vector.new(representative.x, representative.y, representative.z)
-
-		return group
-	end
-
-	local function reinspectLeafGroups(remainingLeaves)
-		-- find connected leaf groups and reinspect a single one
-		-- since they are within 6 blocks of each other, 
-		-- one inspection guarantees that no logs are contained if distance is 7
-		-- though navigating to the groups can cut off groups
-		-- exclude groups of 1 -> usually lead nowhere useful or are nearby other groups
-
-		local groups = {}
-		local visited = {}
-		local groupCreationTime = osEpoch()
-
-		for key, pos in pairs(remainingLeaves) do
-		
-			local sx, sy, sz = pos.x, pos.y, pos.z
-			local ndata = treeMap:getData(sx, sy, sz)
-			-- check if leaf still exists
-			if checkLeafBlock(ndata) then
-				local vx = visited[sx]
-				if not vx then vx = {}; visited[sx] = vx end
-				local vy = vx[sy]
-				if not vy then vy = {}; vx[sy] = vy end
-				if not vy[sz] then
-					vy[sz] = true
-
-					local group = getLeafGroup(pos, visited)
-					if #group.components > 1 then
-						table.insert(groups, group)
-					end
-				end
-			end
-		end
-
-		print("found", #groups, "leaf groups")
-
-		local unvisitedGroups = {}
-		for i = 1, #groups do unvisitedGroups[i] = true end
-
-		while next(unvisitedGroups) do 
-			-- -- find nearest group based on representative
-			local cpos = self.pos
-			local cx, cy, cz = cpos.x, cpos.y, cpos.z
-
-			local closestGroupId
-			local minDist = math.huge
-
-			for i, _ in pairs(unvisitedGroups) do
-				local rep = groups[i].representative
-				local dist = manhattanDistance(cx, cy, cz, rep.x, rep.y, rep.z)
-				if dist < minDist then
-					minDist = dist
-					closestGroupId = i
-				end
-			end
-
-			local group = groups[closestGroupId]
-			unvisitedGroups[closestGroupId] = nil
-
-			-- process the group
-			-- pick nearest leaf of group to reinspect
-			-- also check if a leaf has been updated while processing other groups
-			-- if ANY not updated leaf has distance >= 7, skip the group
-			-- if ALL updated leaves have distance >= 7, skip the group
-			
-			local hasUpdatedLeaf, allUpdatesDistant = false, true
-			local components = group.components
-			local closestLeafId
-			minDist = math.huge
-			for i = 1, #components do
-				local comp = components[i]
-				local dist = manhattanDistance(cx, cy, cz, comp.x, comp.y, comp.z)
-				if dist < minDist then
-					minDist = dist
-					closestLeafId = i
-				end
-
-				local compData = treeMap:getData(comp.x, comp.y, comp.z)
-
-				-- print("grpLeaf", comp.x, comp.y, comp.z, "time", compData.time, "dst", compData.state.distance)
-
-				if checkLeafBlock(compData) then 
-					if compData.time > groupCreationTime then
-						-- leaf has been updated since group creation
-						-- all updated leaves must be >= 7 to skip the group
-						hasUpdatedLeaf = true
-						if compData.state.distance < maxDistance then 
-							allUpdatesDistant = false
-						end
-					elseif compData.state.distance >= maxDistance then
-						-- found a non-updated leaf with distance 7, skip group
-						-- at time of creation, groups were connected, so if one leaf is distant, the whole group is
-						allUpdatesDistant = true
-						hasUpdatedLeaf = true
-						break
-						-- TODO: check for conflicting information of leaves?
-						-- only rely on most recent inspection time
-					end
-				end
-			end
-
-			if hasUpdatedLeaf and allUpdatesDistant then 
-				-- all updated leaves will decay, skip group
-				print("skipping group, inspected, size", #components)
-			else
-
-				local closestLeaf = components[closestLeafId]
-				print("reinsp", closestLeaf.x, closestLeaf.y, closestLeaf.z, "size", #components, "upd", hasUpdatedLeaf)
-
-				-- navigate to leaf, no need for inspection on the way
-
-				-- navigateToPos is allowed to destroy blocks on the way and does not update treeMap
-				-- if self:navigateToPos(closestLeaf.x, closestLeaf.y, closestLeaf.z) then 
-
-				-- no need for inspection on the way though...
-				-- TODO: expand PathFinder for explicitly following only air blocks or nil 
-				--   (but check them for air while following the path)
-
-				-- small issue: reinspection only happens for leaves with distance <= 3
-				--  mineTowardsLog also handles leaves with distance 4 and 5
-				
-
-				local result = digToPosUsingLeaves(closestLeaf.x, closestLeaf.y, closestLeaf.z)
-				if result == "interrupted" then 
-					-- found new log on the way, add group back to unvisitedGroups
-					unvisitedGroups[closestGroupId] = true
-					-- we are out of the main mining loop, so call mineLogsDFS again
-					mineLogsDFS()
-
-				elseif result then 
-					-- if a surrounding leaf is < 7, then mine towards log
-					setReinspectionDistance(6)
-					if mineTowardsLog(closestLeaf, nil) then
-						print("found a log")
-					end
-					restoreReinspectionDistance()
-					-- TODO: what if multiple logs are contained? they wont be caught
-					-- update the group again using bfs floodfill?
-
-				else
-					print("unable to reach group", closestLeaf.x, closestLeaf.y, closestLeaf.z)
-				end
-			end
-		end
-	end
-
-
-	-- initial pass
-	inspectAll()
-	-- mine all connected logs
-	mineLogsDFS()
-	-- do a second pass over leaves with distance 1
-	mineLeaves()
-	-- group remaining leaves and reinspect one of each group
-	reinspectLeafGroups(uncheckedLeaves)
-
-	-- perhaps also do a final gradient pass to find any remaining logs
-	-- mineTowardsLog(self.pos, nil)
-	-- rather not, could lead to mining neighbouring trees
-
-	-- todo: set a max distance for the tree size from trunk?
-	-- or detect that we entered another tree by detecting its trunk?
-
-
-	local root = getRoot()
-	print("tree ded","root", root)
-
-	--return to start
-	self:navigateToPos(startPos.x, startPos.y, startPos.z)
-	self:turnTo(startOrientation)
-	self.taskList:remove(currentTask)
-end
-
-function Miner:place(text)
-	local ok, reason = turtle.place(text)
-	return ok, reason
-end
-
-function Miner:growTree()
-
-	local sapling = self:findInventoryItem("minecraft:oak_sapling")
-	local bonemeal = self:findInventoryItem("minecraft:bone_meal")
-
-	if sapling and bonemeal then 
-		self:select(sapling)
-		local ok, reason = self:place()
-		if ok then
-			print("Planted sapling")
-			-- use bonemeal until tree grows
-			self:select(bonemeal)
-			local grown = false
-			local maxAttempts = 64
-			local attempts = 0
-			repeat
-				attempts = attempts + 1
-				local ok, reason = self:place()
-				if not ok then
-					if reason == "Cannot place item here" then
-						-- probably already grown
-						local blockName, data = self:inspect(true)
-						if blockName and logBlocks[blockName] then
-							grown = true
-						end
-					end
-					if not grown then
-						print("Using bonemeal failed:", reason)
-					end
-				end
-			until grown or attempts >= maxAttempts
-		end
-	end
-end
-
-function Miner:fellTree()
-
-	-- inspect for wood
-	-- mine wood until none found (can use mineVein?)
-	-- track leave metadata while felling? -> no, changes while felling
-	-- instead: after wood is removed, inspect surrounding blocks for leaves
-	-- check leaves state for distance = 1 to 6   -- distance 7 is not generated by tree gen
-	-- if found, mine in direction of lowest distance to find wood blocks
-	-- check nearest leave blocks again for distance
-	-- repeat until no leaves with distance found
-	-- but do not mine all leaves
-
-	-- could also use a breadth first search for leaves
-	-- or update the distance of leaves after mining wood blocks using own algorithm
-	-- then return to leaves that could still be connected to wood
-	-- segment the tree?
-
-	--[[
-		{
-		state = {
-			waterlogged = false,
-			persistent = false,
-			distance = 6,
-		},
-		name = "minecraft:oak_leaves",
-		tags = {
-			[ "minecraft:replaceable_by_trees" ] = true,
-			[ "computercraft:turtle_hoe_harvestable" ] = true,
-			[ "minecraft:parrots_spawnable_on" ] = true,
-			[ "computercraft:turtle_always_breakable" ] = true,
-			[ "minecraft:lava_pool_stone_cannot_replace" ] = true,
-			[ "minecraft:mineable/hoe" ] = true,
-			[ "minecraft:completes_find_tree_tutorial" ] = true,
-			[ "minecraft:leaves" ] = true,
-			[ "minecraft:sword_efficient" ] = true,
-		},
-		}
-	--]]
-
-	-- then somehow make sure to collect saplings to make it self sufficient
-
-end
+return Miner

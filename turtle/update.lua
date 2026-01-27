@@ -7,6 +7,7 @@ local waitTime = 5
 folders = {
 "general",
 "turtle",
+"storage",  -- does not include storage/standalone
 }
 
 files = {

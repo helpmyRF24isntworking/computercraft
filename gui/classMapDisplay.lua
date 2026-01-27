@@ -10,6 +10,7 @@ backgroundColor = colors.gray,
 unknownColor = colors.black,
 freeColor = colors.lightGray,
 blockedColor = colors.gray,
+disallowedColor = colors.red,
 buttonColor = colors.lightBlue,
 turtleColor = colors.blue,
 aboveColor = colors.purple,
@@ -346,6 +347,7 @@ function MapDisplay:redraw() -- super override
 			free = colors.toBlit(default.freeColor),
 			blocked = colors.toBlit(default.blockedColor),
 			unknown = colors.toBlit(default.unknownColor),
+			bad = colors.toBlit(default.disallowedColor)
 		}
 		
 		for row=0, self.height-1 do
@@ -365,7 +367,11 @@ function MapDisplay:redraw() -- super override
 					else
 						text[col] = " "
 						textColor[col] = 0
-						backgroundColor[col] = blit.blocked
+						if data == "computercraft:turtle_advanced" then 
+							backgroundColor[col] = blit.bad
+						else
+							backgroundColor[col] = blit.blocked
+						end
 					end
 				else
 					

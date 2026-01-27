@@ -427,6 +427,7 @@ function ChunkyMap:getData(x,y,z)
 	end
 	return nil
 end
+ChunkyMap.getBlockName = ChunkyMap.getData
 
 
 function ChunkyMap:resetChunk(chunkId)

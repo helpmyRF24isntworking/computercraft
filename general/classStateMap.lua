@@ -67,7 +67,9 @@ function StateMap:setData(x,y,z,data,mined)
 	local relativeId = xyzToRelativeChunkId(x,y,z)
 
 	local time = osEpoch()
-	if data == 0 or not data.name then
+	if not data then
+		data = { name = nil, time = time }
+	elseif data == 0 or not data.name then
 		data = { name = 0, time = time}
 	else
 		data.time = time

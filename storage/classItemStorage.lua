@@ -7,19 +7,14 @@ local default = {
 
 local peripheralCall = peripheral.call
 
-ItemStorage = {}
-ItemStorage.__index = ItemStorage
+local ItemStorage = {}
+-- ItemStorage.__index = ItemStorage
 
 function ItemStorage:new()
 	local o = o or {}
 	setmetatable(o, self)
-	
-	-- Function Caching
-    for k, v in pairs(self) do
-       if type(v) == "function" then
-           o[k] = v  -- Directly assign method to object
-       end
-    end
+
+    self.__index = self
 
 	o.inventories = {}
     o.index = {}
@@ -31,6 +26,7 @@ function ItemStorage:new()
 end
 
 function ItemStorage:initialize()
+    print("item init")
     self.peripheralHubs = self.findWiredModems()
 end
 

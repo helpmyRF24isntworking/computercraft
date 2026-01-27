@@ -96,7 +96,7 @@ function BreadthFirstSearch:breadthFirstSearch(startPos, checkGoal, checkValid, 
         -- if maxNodes and nodesExplored > maxNodes then break end
 
         -- Check if max distance reached
-        if maxDistance and cdist > maxDistance then
+        if maxDistance and cdist >= maxDistance then
 			break
 		else
         
