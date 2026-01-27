@@ -3,7 +3,7 @@ local CheckPointer = require("classCheckPointer")
 --require("classMap")
 require("classLogger")
 require("classList")
-require("classChunkyMap")
+local ChunkyMap = require("classChunkyMap")
 local bluenet = require("bluenet")
 local config = config
 
@@ -165,6 +165,14 @@ local vectorDown = vector.new(0,-1,0)
 local Miner = {}
 Miner.__index = Miner
 
+-- variables for extensions to access
+Miner.default = default
+Miner.fuelItems = fuelItems
+Miner.vectors = vectors
+Miner.vectorUp = vectorUp
+Miner.vectorDown = vectorDown
+Miner.mineBlocks = mineBlocks
+
 function Miner:new()
 	local o = o or {} --Worker:new()
 	setmetatable(o,self)
@@ -181,7 +189,6 @@ function Miner:new()
 	o.orientation = 0
 	o.node = global.node
 	o.nodeRefuel = global.nodeRefuel
-	o.nodeStorage = global.nodeStorage
 	o.pos = vector.new(0,70,0)
 	o.gettingFuel = false
 	o.initializing = true
@@ -475,6 +482,12 @@ function Miner:getCostHome()
 		local diff = self.pos - self.home
 		result = math.abs(diff.x) + math.abs(diff.y) + math.abs(diff.z)	
 	end
+	return result
+end
+
+function Miner:getDistanceToPos(x,y,z)
+	local diff = self.pos - vector.new(x,y,z)
+	local result = math.abs(diff.x) + math.abs(diff.y) + math.abs(diff.z)
 	return result
 end
 

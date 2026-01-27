@@ -8,13 +8,12 @@ local default = {
 local peripheralCall = peripheral.call
 
 local ItemStorage = {}
--- ItemStorage.__index = ItemStorage
+ItemStorage.__index = ItemStorage
 
 function ItemStorage:new()
 	local o = o or {}
 	setmetatable(o, self)
 
-    self.__index = self
 
 	o.inventories = {}
     o.index = {}
@@ -26,7 +25,6 @@ function ItemStorage:new()
 end
 
 function ItemStorage:initialize()
-    print("item init")
     self.peripheralHubs = self.findWiredModems()
 end
 

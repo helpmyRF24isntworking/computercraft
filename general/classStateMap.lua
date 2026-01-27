@@ -1,5 +1,5 @@
 
-require("classChunkyMap")
+local ChunkyMap = require("classChunkyMap")
 
 local default =  {
 
@@ -11,12 +11,12 @@ local default =  {
 local osEpoch = os.epoch
 local tableinsert = table.insert
 
-StateMap = {}
+local StateMap = {}
+StateMap.__index = StateMap
 
 function StateMap:new()
 	local o = o or {}
 	setmetatable(o, self)
-	self.__index = self
 	
 	-- Function Caching
     for k, v in pairs(self) do
@@ -29,7 +29,7 @@ function StateMap:new()
 	o.chunkCount = 0
 	o.log = {}
 	o.lastMinedBlocks = {}
-	o.lastMined = osEpoch()-1
+	o.lastMined = osEpoch() - 1
 	
 	o:initialize()
 	return o

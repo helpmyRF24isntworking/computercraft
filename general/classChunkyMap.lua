@@ -37,7 +37,7 @@ local sqrt = math.sqrt
 local sqSize = default.chunkSize^2
 local tableinsert = table.insert
 
-ChunkyMap = {}
+local ChunkyMap = {}
 ChunkyMap.__index = ChunkyMap
 
 function ChunkyMap:new(inMemory)
@@ -923,3 +923,5 @@ function ChunkyMap.idToPos(id)
 	return vector.new(x,y,z)
 end
 local idToPos = ChunkyMap.idToPos
+
+return ChunkyMap

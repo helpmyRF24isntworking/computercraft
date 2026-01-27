@@ -14,12 +14,11 @@ local storageChannel = bluenet.default.channels.storage
 local peripheralCall = peripheral.call
 
 local RemoteStorage = ItemStorage:new()
--- RemoteStorage.__index = RemoteStorage
+RemoteStorage.__index = RemoteStorage
 
 function RemoteStorage:new(node, skipInitialize)
 	local o = o or ItemStorage:new()
 	setmetatable(o, self)
-    self.__index = self
 
     o.node = node or nil
     o.turtles = {}
@@ -31,6 +30,7 @@ function RemoteStorage:new(node, skipInitialize)
     o.providerInventory = nil -- perhaps multiple inventories?
     o.providerPos = nil
     o.providerIndex = {}
+    o.providerSorting = "available_desc"
 
     o.reservations = {}
 
@@ -40,9 +40,7 @@ function RemoteStorage:new(node, skipInitialize)
     o.pendingItemListRequests = {}
     o.pendingAvailableRequests = {}
 
-    print("skip init", skipInitialize)
     if not skipInitialize then
-        print("init", skipInitialize)
 	    o:initialize()
     end
 	return o
@@ -70,7 +68,7 @@ function RemoteStorage:initialize()
                 self:handleItemListResponse(msg)
             elseif msg.data[1] == "TURTLE_STATE" then 
                 --print(msg.data[1], "from", msg.sender, "distance", msg.distance)
-                self.turtles[msg.sender] = msg.data[2]
+                self:handleTurtleStateResponse(msg)
             elseif msg.data[1] == "REQUEST_AVAILABLE_ITEMS" then
                 self:onRequestAvailableItems(msg)
             elseif msg.data[1] == "REQUEST_ITEM_LIST" then
@@ -147,13 +145,7 @@ function RemoteStorage:loadConfig(fileName)
             self.requestingInventory = config.requestingInventory
         end
     else
-        --print(textutils.serialize(debug.traceback()))
-        print("nope")
-        -- print("could not load storage config from", fileName)
-        local f = fs.open("trace.txt", "w")
-        --print(textutils.serialize(debug.traceback()))
-        f.write(textutils.serialize(debug.traceback()))
-        f.close()
+        print("could not load storage config from", fileName)
     end
 end
 
@@ -186,6 +178,12 @@ end
 function RemoteStorage:setRequestingPos(x,y,z)
     self.requestingPos = vector.new(x,y,z)
     self:saveConfig()
+end
+function RemoteStorage:getRequestingPos()
+    return self.requestingPos
+end
+function RemoteStorage:getProviderPos()
+    return self.providerPos
 end
 
 
@@ -371,6 +369,25 @@ function RemoteStorage:pingStorageProviders()
                     false, false, nil, default.priorityProtocol )
 end
 
+function RemoteStorage:handleStateMessage(msg)
+    -- update own state of sender
+    local state = msg.data[2]
+    if state then
+        if state.type == "remote_storage" then
+            self:handleProviderStateResponse(msg)
+        elseif state.type == "turtle_storage" then
+            self:handleTurtleStateResponse(msg)
+        else 
+            print("unknown state type", state.type)
+        end
+    end
+end
+
+function RemoteStorage:handleTurtleStateResponse(msg)
+    local state = msg.data[2]
+    self.turtles[msg.sender] = state
+end
+
 function RemoteStorage:handleProviderStateResponse(msg)
     local state = msg.data[2]
     self.providers[msg.sender] = state
@@ -378,13 +395,14 @@ end
 
 function RemoteStorage:pingTurtles()
     self.turtles = {}
-    self.node:broadcast( {"REQUEST_TURTLE_STATE"}, false )
+    local state = self:getState()
+    self.node:broadcast( {"REQUEST_TURTLE_STATE", state}, false )
     sleep(default.shortWaitTime) -- wait for answers to arrive
     return self.turtles
 end
 
 function RemoteStorage:getNearestAvailableTurtles(pos)
-    if not pos then pos = self.providerPos end
+    if not pos then pos = self:getRequestingPos() end
     local availableTurtles = {}
     for id, state in pairs(self.turtles) do
         if state.task == nil and not state.stuck and not state.alreadySent then 
@@ -399,7 +417,7 @@ function RemoteStorage:getNearestAvailableTurtles(pos)
 end
 
 function RemoteStorage:requestDelivery(itemName, count, toPlayer, fromProvider)
-    local requestingPos = self.requestingPos
+    local requestingPos = self:getRequestingPos()
     local requestingInv = self.requestingInventory
 
     if not count or count <= 0 then return end
@@ -508,8 +526,30 @@ function RemoteStorage:handleAvailableResponse(msg, forMsg)
 end
 
 
+function RemoteStorage:getNearestProviders(pos)
+    local providers = {}
+    if not pos then pos = self:getRequestingPos() end
+    if pos then 
+        for id, state in pairs(self.providers) do
+            local providerPos = state.providerPos
+            if providerPos then
+                
+                local diff = pos - vector.new(providerPos.x, providerPos.y, providerPos.z)
+                local dist = diff:length()
+                providers[#providers+1] = { id = id, dist = dist}
 
-function RemoteStorage:getSortedItemProviders(itemName, sortOrder)
+            end
+        end
+        table.sort(providers, function(a, b) return a.dist < b.dist end)
+    end
+    return providers
+end
+
+function RemoteStorage:setProviderSorting(sortOrder)
+    self.providerSorting = sortOrder
+end
+
+function RemoteStorage:getSortedItemProviders(itemName)
     local itemProviders = self.providerIndex[itemName] 
     -- sort providers by available count
     local sortedProviders = {}
@@ -517,10 +557,17 @@ function RemoteStorage:getSortedItemProviders(itemName, sortOrder)
         sortedProviders[#sortedProviders + 1] = { provider = provider, available = available }
     end
     local sortFunc
-    if sortOrder == "available_desc" then
+    if self.providerSorting == "available_desc" then
         sortFunc = function(a, b) return a.available > b.available end
-    elseif sortOrder == "available_asc" then
+    elseif self.providerSorting == "available_asc" then
         sortFunc = function(a, b) return a.available < b.available end
+    elseif self.providerSorting == "distance_asc" then 
+        local providers = self:getNearestProviders()
+        for i = 1, #providers do
+            local provider = providers[i].id
+            sortedProviders[i] = { provider = provider, available = itemProviders[provider]}
+        end
+        return sortedProviders
     end
     if sortFunc then
         table.sort(sortedProviders, sortFunc)
@@ -540,6 +587,9 @@ function RemoteStorage:reserveItems(provider, itemName, count)
     end 
     return reservation
 end
+
+
+
 
 function RemoteStorage:requestReserveItems(itemName, count, providerFilter)
     -- broadcast to all storage providers? kind of weird, no?
@@ -694,6 +744,7 @@ end
 
 function RemoteStorage:getState()
     return {
+        type = "remote_storage",
         label = os.getComputerLabel() or self.node.id,
         pos = global.pos,
         providerPos = self.providerPos,
@@ -702,7 +753,7 @@ function RemoteStorage:getState()
 end
 
 function RemoteStorage:onRequestProviderState(msg)
-    self:handleProviderStateResponse(msg) -- update own state of requester
+    self:handleStateMessage(msg) -- update own state of sender
     local state = self:getState()
     self.node:send(msg.sender, {"PROVIDER_STATE", state})
 end

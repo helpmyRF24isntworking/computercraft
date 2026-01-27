@@ -2,8 +2,6 @@
 require("classBluenetNode")
 local bluenet = require("bluenet")
 local RemoteStorage = require("classRemoteStorage")
-local ItemStorage = require("classItemStorage")
-local CheckPointer = require("classCheckPointer")
 
 -- basic storage functions over bluenet 
 -- mainly for turtles that dont actually manage a storage system themselves
@@ -13,17 +11,18 @@ local default = {
     waitTime = 3,
     shortWaitTime = 0.5,
     priorityProtocol = "storage_priority",
+    extractionWaitTime = 10,
 }
 local storageChannel = bluenet.default.channels.storage
 local peripheralCall = peripheral.call
 
 
 local TurtleStorage = {}
--- avoid RemoteStorage:new() to not call its initializer
 setmetatable(TurtleStorage, { __index = RemoteStorage })
 TurtleStorage.__index = TurtleStorage
 
-local TurtleStorage = RemoteStorage:new(nil, true)
+--local TurtleStorage = RemoteStorage:new(nil, true)
+--TurtleStorage.__index = TurtleStorage
 
 function TurtleStorage:new(miner, node)
 	local o = RemoteStorage:new(nil, true)
@@ -32,7 +31,7 @@ function TurtleStorage:new(miner, node)
     o.node = node 
     o.miner = miner
 
-    print("same function reference", o.initialize, ItemStorage.initialize, RemoteStorage.initialize)
+
 	o:initialize()
 	return o
 end
@@ -41,7 +40,6 @@ end
 -- setup: initialize this and hook node into main receiving thread or open a new one for standalone storage
 
 function TurtleStorage:initialize()
-    print("turtle initialize")
     if not self.node then 
         print("no node for TurtleStorage provided")
         self.node = NetworkNode:new("storage",false, true)
@@ -49,6 +47,12 @@ function TurtleStorage:initialize()
     if not self.miner then 
         print("no miner for TurtleStorage provided")
         return nil
+    else 
+        if self.miner:hasStorageExtension() then
+            self.miner.storage = self
+        else
+            print("miner has no storage extension")
+        end
     end
 
     -- bluenet.openChannel(bluenet.modem, bluenet.default.channels.storage) 
@@ -122,9 +126,22 @@ function TurtleStorage:initialize()
         end
     end
 
+    self:setProviderSorting("distance_asc")
+
     self:pingStorageProviders()
 end
 
+
+function TurtleStorage:getProviderPos() -- override
+    if self.miner then
+        return self.miner.pos
+    end
+end
+function TurtleStorage:getRequestingPos() -- override
+    if self.miner then
+        return self.miner.pos
+    end
+end
 
 function TurtleStorage:handleItemsDelivered(msg)
     -- perhaps for turtle to turtle delivery?
@@ -143,22 +160,34 @@ function TurtleStorage:getItemList()
 end
 
 
-function TurtleStorage:pickupItems(provider, reservationId)
-    -- TODO -- see extTurtleStorage
-    local answer = self.nodeStorage:send(reservation.provider, 
-        {"PICKUP_ITEMS", { reservationId = reservation.id, turtleName = networkName }}, true, true, waitTime)
-    if answer and answer.data[1] == "ITEMS_EXTRACTED" then 
-    end
+function TurtleStorage:pickupReservation(provider, reservationId)
 
-    -- not sure why this is here
-    local answer = self.node:send(provider, {"PICKUP_ITEMS", { reservationId = reservationId }}, true, true, default.waitTime)
+    local ok, extractedToTurtle = false, nil
+    local networkName = self.miner.getWiredNetworkName()
+    print("networkName:", networkName)
+
+    local waitTime = default.extractionWaitTime -- extracting can take some time
+
+    local answer = self.node:send(provider, {"PICKUP_ITEMS", 
+        { reservationId = reservationId, turtleName = networkName }}, true, true, waitTime)
+
+    if answer and answer.data[1] == "ITEMS_EXTRACTED" then 
+        local data = answer.data[2]
+        print("extracted", data.name, data.count, "into turt", data.extractedToTurtle)
+        ok = true
+        extractedToTurtle = data.extractedToTurtle
+        
+    else
+        print(answer and answer.data[1] or "NO ANSWER FROM PROVIDER")
+    end
+    return ok, extractedToTurtle
 end
 
 
 function TurtleStorage:onTask(msg)
     -- e.g. pickupanddeliver items: forward task to global task list, to not block receiving thread
     global.addTask(msg.data)
-    self.node:answer(forMsg, {"TASK_ACCEPTED"})
+    self.node:answer(msg, {"TASK_ACCEPTED"})
 end
 
 function TurtleStorage:getState()
@@ -167,6 +196,7 @@ function TurtleStorage:getState()
     local miner = self.miner
     if miner and miner.pos then 
         state = {}
+        state.type = "turtle_storage"
         state.id = computerId
         state.label = os.getComputerLabel() or computerId
 
@@ -187,6 +217,7 @@ end
 
 function TurtleStorage:onRequestTurtleState(msg)
     -- dont respond if miner is not initialized
+    self:handleProviderStateResponse(msg) -- update own record of provider
     local state = self:getState()
     if state then
         self.node:send(msg.sender, {"TURTLE_STATE", state })

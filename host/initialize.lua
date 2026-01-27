@@ -4,7 +4,7 @@ require("classBluenetNode")
 local Monitor = require("classMonitor")
 local HostDisplay = require("classHostDisplay")
 --require("classMap")
-require("classChunkyMap")
+local ChunkyMap = require("classChunkyMap")
 require("classTaskGroup")
 local RemoteStorage = require("classRemoteStorage")
 

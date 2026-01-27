@@ -1,8 +1,15 @@
 -- Tree related Miner Functions
-
+local Miner = require("classMiner")
+local vector = vector
+local vectors = Miner.vectors
+local vectorUp = Miner.vectorUp
+local vectorDown = Miner.vectorDown
+local mineBlocks = Miner.mineBlocks
+local osEpoch = os.epoch
 
 local Extension = {}
 
+local ChunkyMap = require("classChunkyMap")
 local utils = require("utils")
 local BreadthFirstSearch = require("classBreadthFirstSearch")
 local StateMap = require("classStateMap")
@@ -267,8 +274,6 @@ function Extension:mineTree()
 	local options = { maxDistance = 3, returnPath = true}
 
 
-
-
 	local function followPath(path, safe, stepOffset)
 		-- "interrupting" this func is not possible due to main logic in Miner:navigate
 
@@ -334,6 +339,10 @@ function Extension:mineTree()
 
 		return result
 	end
+
+    -- while mining a tree, allow normal navigation to mine through tree blocks
+    -- otherwise pickup tasks etc. will become very hard to pathfind
+    -- TODO!: disallow Dirt blocks / blocks to place tree on!!
 
 	local function addAllowedBlocks()
 		-- temporarily add leaf blocks as valid minable blocks for digMove etc.
@@ -426,7 +435,7 @@ function Extension:mineTree()
 
 
 			-- check if our target is directly adjacent
-			if ChunkyMap.manhattanDistance(cpos.x, cpos.y, cpos.z, tx, ty, tz) == 1 then
+			if manhattanDistance(cpos.x, cpos.y, cpos.z, tx, ty, tz) == 1 then
 				-- ignore all other neighbours, go directly to target
 				nextPos = vector.new(tx, ty, tz)
 			else
@@ -1057,6 +1066,7 @@ function Extension:mineTree()
 		end
 	end
 
+    local addedAllowedBlocks = addAllowedBlocks()
 
 	-- initial pass
 	inspectAll()
@@ -1076,13 +1086,15 @@ function Extension:mineTree()
 	-- todo: set a max distance for the tree size from trunk?
 	-- or detect that we entered another tree by detecting its trunk?
 
-
 	local root = getRoot()
 	print("tree ded","root", root)
 
 	--return to start
 	self:navigateToPos(startPos.x, startPos.y, startPos.z)
 	self:turnTo(startOrientation)
+
+    removeAllowedBlocks(addedAllowedBlocks)
+
 	self.taskList:remove(currentTask)
 end
 
@@ -1091,8 +1103,29 @@ function Extension:growTree()
 	local grown = false
 
 	local saplingItem = "minecraft:oak_sapling"
+    local bonemealItem = "minecraft:bone_meal"
 	local sapling = self:findInventoryItem(saplingItem)
-	local bonemeal = self:findInventoryItem("minecraft:bone_meal")
+	local bonemeal = self:findInventoryItem(bonemealItem)
+
+    if not bonemeal then
+        -- try to pickup some bonemeal first
+        local ok, count = self:pickupItems(bonemealItem, 16)
+        if ok then
+            bonemeal = self:findInventoryItem(bonemealItem)
+        else
+            print("Pickup bonemeal failed")
+        end
+    end
+
+    if not sapling then
+        -- try to pickup some saplings first
+        local ok, count = self:pickupItems(saplingItem, 4)
+        if ok then
+            sapling = self:findInventoryItem(saplingItem)
+        else
+            print("Pickup sapling failed")
+        end
+    end
 
 	if sapling and bonemeal then 
 		self:select(sapling)
@@ -1123,7 +1156,7 @@ function Extension:growTree()
 							grown = true
 						end
 					elseif reason == "No items to place" then
-						bonemeal = self:findInventoryItem("minecraft:bone_meal")
+						bonemeal = self:findInventoryItem(bonemealItem)
 						if not bonemeal then
 							print("Out of bonemeal")
 							-- now we can finally use the storage system to request arbitrary items
@@ -1134,8 +1167,26 @@ function Extension:growTree()
 							-- new classTurtleStorage -> also add pickupAndDeliver there
 							-- has to somehow extend the classMiner, cant all be in here
 							-- 
-
-							break
+                            local ok, count = self:pickupItems(bonemealItem, 16)
+                            if ok then
+                                bonemeal = self:findInventoryItem(bonemealItem)
+                                if not bonemeal then
+                                    print("Pickup bonemeal failed it seems", ok, count)
+                                    -- intentionally fail to trace this error
+                                    -- if ok, then we should also have bonemeal in the inventory
+                                    -- host: extracted 0 of bonemeal to turtle
+                                    -- turtle got ok though count is 0?
+                                    --> provider thought he had more items than he actually had.
+                                    --> res was confirmed, so turtle got ok, but no items were extracted
+                                    self:select(bonemeal)
+                                    break
+                                end
+                                self:select(bonemeal)
+                            else
+                                print("Pickup bonemeal failed")
+                                break
+                            end
+							
 						else
 							self:select(bonemeal)
 							ok = true
