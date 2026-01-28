@@ -4,6 +4,7 @@ local tasks = global.tasks
 local taskList = global.list
 local miner = global.miner
 local nodeStream = global.nodeStream
+local nodeStorage = global.nodeStorage
 
 local id = os.getComputerID()
 local label = os.getComputerLabel() or id
@@ -81,10 +82,16 @@ local function packData()
 		
 end
 
+local state = { id = id, label = label }
+local packet = {"STATE", state}
+local invalidPos = vector.new(-1,-1,-1)
+
 nodeStream.onRequestStreamData = function(previous)
-	local state = {}
-	state.id = id
-	state.label = label
+
+	-- use preallocated state and packet
+	local state = state
+	local miner = miner
+
 	state.time = osEpoch("ingame") --ingame milliseconds
 	
 	if miner and miner.pos then -- somethings broken
@@ -95,7 +102,10 @@ nodeStream.onRequestStreamData = function(previous)
 		
 		state.fuelLevel = miner:getFuelLevel()
 		state.emptySlots = miner:getEmptySlots()
-	
+		
+		local unloadedLog = unloadedLog
+		local mapLog = mapLog
+
 		--state.inventory = miner:
 		local map = miner.map
 		local minerLog = map.log
@@ -120,12 +130,13 @@ nodeStream.onRequestStreamData = function(previous)
 		state.unloadedLog = unloadedLog
 		state.mapLog = mapLog
 		
-		if miner.taskList.first then
-			state.task = miner.taskList.first[1]
-			state.lastTask = miner.taskList.last[1]
+		local taskList = miner.taskList
+		if taskList.first then
+			state.task = taskList.first[1]
+			state.lastTask = taskList.last[1]
 		end
 	else
-		state.pos = vector.new(-1,-1,-1)
+		state.pos = invalidPos
 		state.orientation = -1
 		state.fuelLevel = -1
 		state.emptySlots = -1
@@ -138,13 +149,15 @@ nodeStream.onRequestStreamData = function(previous)
 			state.task = ""
 		end
 		state.mapLog = {}
+		state.unloadedLog = {}
 	end	
-	if global.err then
-		state.lastTask = global.err.func
-		state.task = global.err.text
+	local err = global.err
+	if err then
+		state.lastTask = err.func
+		state.task = err.text
 	end
 
-	return {"STATE", state }
+	return packet
 end
 
 while true do
@@ -157,6 +170,7 @@ while true do
 	end
 	nodeStream:stream()
 	nodeStream:checkWaitList()
+	nodeStorage:checkWaitList() -- !! should not be done in send but in main, main is blocking however
 	sleep(0.2) --0.2
 end
 

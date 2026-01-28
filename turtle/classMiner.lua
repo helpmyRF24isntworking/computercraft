@@ -145,7 +145,7 @@ local oreBlocks = {
 
 }
 --oreBlocks = blockTranslation.translateTable(oreBlocks)
-
+local turtle = turtle
 local vector = vector
 local debuginfo = debug.getinfo
 local tablepack = table.pack
@@ -2353,8 +2353,8 @@ function Miner:navigateToPos(x,y,z)
 		safe = true,
 		safeDistance = 3, -- within 3 blocks of goal, safety is ignored if block is not disallowed
 	}
-
-	return self:navigate(x,y,z, self.map, options)
+	local result = self:navigate(x,y,z, self.map, options)
+	return result
 end
 
 

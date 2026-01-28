@@ -214,7 +214,6 @@ function Extension:pickupItems(itemName, count)
     -- request items which the turtle itself can come pick up
     local currentTask = self:addCheckTask({debug.getinfo(1, "n").name})
 
-    local result = true
     local received = 0
     local startPos = self.pos
     local startOrientation = self.orientation
@@ -237,13 +236,14 @@ function Extension:pickupItems(itemName, count)
                 received = received + reservation.reserved
             else
                 print("could not pick up reserved items", itemName, reservation.reserved)
-                result = false
             end
         end
     end
 
     self:navigateToPos(startPos.x, startPos.y, startPos.z)
     self:turnTo(startOrientation)
+
+    local result = (received >= count)
 
     self.taskList:remove(currentTask)
     return result, received

@@ -111,16 +111,15 @@ nodeStream.onStreamMessage = function(msg,previous)
 	
 	--local start = os.epoch("local")
 	local ct = 0
-	if msg and msg.data and msg.data[1] == "MAP_UPDATE" then
+	local data = msg and msg.data
+	if data and data[1] == "MAP_UPDATE" then
 		if miner then 
-			local mapLog = msg.data[2]
+			local map = miner.map
+			local mapLog = data[2]
 			for i = 1, #mapLog do
 				local entry = mapLog[i]
-				
-			--for _,entry in ipairs(mapLog) do
-				-- setData without log
 				-- setChunkData should not result in the chunk being requested!
-				miner.map:setChunkData(entry[1],entry[2],entry[3],false)
+				map:setChunkData(entry[1],entry[2],entry[3],false)
 				ct = ct + 1
 			end
 		end

@@ -375,6 +375,7 @@ function ChunkyMap:setChunkData(chunkId,relativeId,data,real)
 	elseif not self.inMemory and osEpoch() - self.lastSave > self.saveInterval then
 		self:saveChanged()
 		-- could just as easily be called from the main loop
+		-- just 1 setChunkData triggerts 2 osEpoch calls
 	end
 end
 

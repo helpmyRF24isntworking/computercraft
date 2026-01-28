@@ -27,6 +27,10 @@ local timer -- does that work?
 local osEpoch = os.epoch
 local mathRandom = math.random
 local peripheralCall = peripheral.call
+local bluenetReceive = bluenet.receive
+
+-- todo: local channel and modem
+-- they are shared across all instances of NetworkNode anyway
 
 NetworkNode = {}
 NetworkNode.__index = NetworkNode
@@ -49,6 +53,7 @@ function NetworkNode:new(protocol,isHost,skipLookup)
 	o.id = os.getComputerID()
 	o.computers = {}
 	o.waitlist = List:new()
+	o.waitlistIndex = {}
 	o.streamlist = List:new()
 	o.streams = {}
 	o.host = nil
@@ -187,21 +192,22 @@ function NetworkNode:beforeReceive(msg)
 	--if msg.data[1] == "RUN" then -- from now on, RUN is handled by the receiver
 	--	shell.run(msg.data[2])
 	--else
-
-	if msg.data[1] == "LOOKUP" then
+	local data = msg.data
+	local txt = data[1]
+	if txt == "LOOKUP" then
 		--print(msg.data[1], msg.data[2], self.isHost, self.id, msg.protocol, self.protocol, msg.id)
-		if self.isHost and msg.data[2] == "host" then 
+		if self.isHost and data[2] == "host" then 
 			self:answer(msg, { "LOOKUP_RESPONSE", "host" })
-		elseif msg.data[2] == self.id then --or msg.data[2] == self.label
+		elseif data[2] == self.id then --or msg.data[2] == self.label
 			self:answer(msg, { "LOOKUP_RESPONSE", self.id })
 		end
 		return true
-	elseif msg.data[1] == "REBOOT" then
+	elseif txt == "REBOOT" then
 		os.reboot()
-	elseif msg.data[1] == "SHUTDOWN" then
+	elseif txt == "SHUTDOWN" then
 		os.shutdown()
-	elseif msg.data[1] == "NEW_HOST" then
-		self.host = msg.data[2]
+	elseif txt == "NEW_HOST" then
+		self.host = data[2]
 		print("new host set to", self.host, self.protocol)
 		self:answer(msg, {"NEW_HOST_OK"})
 		return true
@@ -209,12 +215,6 @@ function NetworkNode:beforeReceive(msg)
 	return nil
 end
 
-function NetworkNode:beforeSend(msg)
-	-- add original message to waitlist
-	if msg.answer and not msg.wait then
-		self.waitlist:addFirst(msg)
-	end
-end
 
 function NetworkNode:generateUUID()
 	-- local template ='xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'
@@ -235,9 +235,11 @@ function NetworkNode.checkValid(msg,waitTime)
 end
 local checkValid = NetworkNode.checkValid
 
+-- DEPRECATED: use waitlistIndex instead
 function NetworkNode:findMessage(uuid)
 	-- find original message to answer to
 	-- more likely to be the oldest rather than the newest
+	print("use waitlistIndex instead of findMessage")
 	local msg = self.waitlist.last
 	while msg do
 		if msg.id == uuid then
@@ -255,9 +257,10 @@ end
 
 function NetworkNode:checkEvents()
 	-- check all events, oldest first
-	local event = self.events.last
+	local events = self.events
+	local event = events.last
 	while event do
-		local prv = self.events:removeLast(event)
+		local prv = events:removeLast(event)
 		self:handleEvent(event)
 		event = prv
 	end
@@ -278,9 +281,10 @@ end
 
 function NetworkNode:checkMessages()
 	-- check all messages, oldest first
-	local msg = self.messages.last
+	local messages = self.messages
+	local msg = messages.last
 	while msg do
-		local prv = self.messages:removeLast(msg)
+		local prv = messages:removeLast(msg)
 		self:handleMessage(msg) -- potentially adds msg to another list
 		msg = prv
 	end
@@ -290,13 +294,12 @@ end
 function NetworkNode:handleMessage(msg)
 	if msg then 
 		--print(msg.type, msg.data and msg.data[1], msg.wait)
-		
 		if self:beforeReceive(msg) then 
 			return
 		end
 		
-		
-		if msg.type == default.typeSend then
+		local msgType = msg.type
+		if msgType == default.typeSend then
 			if msg.answer then
 				if self.onRequestAnswer then
 					--special handler exists
@@ -309,12 +312,13 @@ function NetworkNode:handleMessage(msg)
 				self.onReceive(msg)
 			end
 			
-		elseif msg.type == default.typeAnswer then
+		elseif msgType == default.typeAnswer then
 			if not msg.wait then 
 				-- check if the message that requested this answer is outdated
-				local original = self:findMessage(msg.id)
+				local original = self.waitlistIndex[msg.id]
 				if original then
 					self.waitlist:remove(original)
+					self.waitlistIndex[original.id] = nil
 					if checkValid(original) then
 						if self.onAnswer then 
 							self.onAnswer(msg,original)
@@ -330,9 +334,9 @@ function NetworkNode:handleMessage(msg)
 				-- msg is being waited for synchronously, do not handle here
 			end
 			
-		elseif msg.type == default.typeStream then
+		elseif msgType == default.typeStream then
 		
-			local previous = self:findMessage(msg.id)
+			local previous = self.waitlistIndex[msg.id]
 			-- if msg.sender == 16 or msg.sender == 0 then 
 			-- print(osEpoch()/72000, msg.id, not(not self.streams[msg.id]),
 					-- msg.sender, msg.data[1], 
@@ -341,8 +345,9 @@ function NetworkNode:handleMessage(msg)
 			-- end
 			if previous then 
 				self.waitlist:remove(previous)
+				self.waitlistIndex[previous.id] = nil
 				
-				if checkValid(previous) and self.streams[msg.id] then 
+				if checkValid(previous) and self.streams[msg.id] then
 					--print(os.epoch("local"),"STREAM", msg.data[1], msg.waitTime)
 					self.streamlist:addFirst(msg) -- continue the streaming cycle
 					if self.onStreamMessage then
@@ -367,6 +372,7 @@ function NetworkNode:handleMessage(msg)
 					answer.waitTime = msg.waitTime
 					answer.type = default.typeStream
 					self.waitlist:addFirst(answer)
+					self.waitlistIndex[answer.id] = answer
 					print("STREAM REQUEST", msg.sender, msg.id, answer.data[1])
 				else
 					self.streams[msg.id] = nil
@@ -383,15 +389,19 @@ end
 
 function NetworkNode:checkWaitList()
 	-- regularly check this list to trigger onNoAnswer events
-	local msg = self.waitlist.last
+	local waitlist = self.waitlist
+	local waitlistIndex = self.waitlistIndex
+	local msg = waitlist.last
 	while msg do
 		if not checkValid(msg) then
-			self.waitlist:remove(msg)
-			if msg.type == default.typeSend then 
+			waitlist:remove(msg)
+			waitlistIndex[msg.id] = nil
+			local msgType = msg.type
+			if msgType == default.typeSend then 
 				if self.onNoAnswer then
 					self.onNoAnswer(msg)
 				end
-			elseif msg.type == default.typeStream then
+			elseif msgType == default.typeStream then
 				self.streams[msg.id] = nil
 				print(os.epoch("local")/1000,"STREAM BROKEN", msg.id, msg.recipient, "timed out", msg.waitTime)
 				if self.onStreamBroken then
@@ -407,15 +417,19 @@ end
 
 function NetworkNode:listenForAnswer(forMsg,waitTime)
 	-- ONLY FOR INTERNAL USE
+
+	-- instead of using osEpoch() we could create a timer, pass it to bluenet.receive and check it there
+	-- 
 	local startTime = osEpoch()
 	local msg
+	local forId, protocol = forMsg.id, forMsg.protocol
 	--print(osEpoch(),"waiting", forMsg.protocol,forMsg.id,waitTime)
 	repeat 
 		--print(osEpoch(),"waiting for a better life?")
-		msg = bluenet.receive(forMsg.protocol,waitTime)
+		msg = bluenetReceive(protocol, waitTime)
 		--print(msg.id, msg.data[1], msg.protocol,waitTime)
 		if msg then 
-			if msg.id == forMsg.id then
+			if msg.id == forId then
 				--self.waitlist:remove(forMsg)
 				--print(msg.id, msg.data[1], msg.protocol,waitTime)
 				break
@@ -436,7 +450,7 @@ function NetworkNode:listenForAnswer(forMsg,waitTime)
 			--end
 			break
 		end
-		
+		print("epoch call, ln448 bluenet", osEpoch())
 		waitTime = waitTime - ( (osEpoch()-startTime)/72000 )
 		
 	until waitTime <= 0
@@ -454,7 +468,7 @@ end
 function NetworkNode:listen(waitTime,subProtocol)
 	-- listen for anything, not just answers
 	--print("listening", waitTime, subProtocol or self.protocol)
-	local msg = bluenet.receive(subProtocol or self.protocol,waitTime)
+	local msg = bluenetReceive(subProtocol or self.protocol, waitTime)
 	--print("received", msg.data, msg.protocol, msg.id)
 	if msg then
 		self:handleMessage(msg)
@@ -466,29 +480,25 @@ end
 
 
 function NetworkNode:answer(forMsg,data)
+	local recipient = forMsg.sender
 	local msg = {
 		id = forMsg.id,
 		time = osEpoch(),
 		sender = self.id,
-		recipient = forMsg.sender,
+		recipient = recipient,
 		protocol = forMsg.protocol or self.protocol,
 		type = default.typeAnswer,
 		data = data,
 		--answer = false,
 		wait = forMsg.wait,
 	}
-	
-	
-	--bluenet.resetTimer()
 
-	local recipient = self:idAsChannel(msg.recipient)
+	-- local recipient = self:idAsChannel(msg.recipient)
 	
 	--print("answering",msg.sender,msg.recipient, recipient ,msg.id,msg.protocol)
 	
 	if self.opened then
 		peripheralCall(self.modem, "transmit", recipient, self.channel, msg)
-		-- needed?
-		--peripheral.call(self.modem, "transmit", default.channels.repeater, self.channel, msg)
 	end
 
 	return msg
@@ -533,17 +543,18 @@ function NetworkNode:send(recipient,data,answer,wait,waitTime,subProtocol)
 			
 		--print("sending", recipient, msg.id)
 		
-		self:beforeSend(msg)
-		
-		
-		--bluenet.resetTimer()
-		
-		recipient = self:idAsChannel(recipient)
+
+		-- no need to convert recipient to channel, when will there be more than 65535 computers?
+		-- recipient = self:idAsChannel(recipient)
 		
 		if self.opened then
 			peripheralCall(self.modem, "transmit", recipient, self.channel, msg)
-			-- needed?
-			--peripheral.call(self.modem, "transmit", default.channels.repeater, self.channel, msg)
+		end
+
+		-- add original message to waitlist
+		if answer and not wait then
+			self.waitlist:addFirst(msg)
+			self.waitlistIndex[msg.id] = msg
 		end
 
 		if wait then
@@ -626,27 +637,31 @@ end
 function NetworkNode:stream()
 	-- implement in while true do loop 
 
-	local previous = self.streamlist.last
+	local streams = self.streams
+	local streamlist = self.streamlist
+	local previous = streamlist.last
 	while previous do 
-		self.streamlist:remove(previous)
-		if self.streams[previous.id] then 
+		streamlist:remove(previous)
+		if streams[previous.id] then 
+			
 			-- only send if stream wasnt broken 
 			
 			local data = nil
 			if self.onRequestStreamData then
 				data = self.onRequestStreamData(previous)
-				
 			end
+
 			--print(data.time)
 			if not data or not data[1] then -- maybe remove second check
-				if previous.data and previous.data[1] == "EMPTY_STREAM" then 
-					if previous.data[2] >= default.emptyStreamThreshold then
+				local prvData = previous.data
+				if prvData and prvData[1] == "EMPTY_STREAM" then 
+					if prvData[2] >= default.emptyStreamThreshold then
 						-- reopen stream in onRequestStreamData
 						print("BROKE EMPTY STREAM", previous.id)
-						self.streams[previous.id] = nil
+						streams[previous.id] = nil
 						--print(textutils.serialize(self.streams))
 					else
-						data = { "EMPTY_STREAM", previous.data[2] + 1 }
+						data = { "EMPTY_STREAM", prvData[2] + 1 }
 					end
 				else
 					data = { "EMPTY_STREAM", 1}
@@ -695,13 +710,20 @@ function NetworkNode:sendStream(recipient,data,streamId,wait,waitTime,subProtoco
 	
 	recipient = self:idAsChannel(recipient)
 	
-	if not wait then 
-		self.waitlist:addFirst(msg)
-	end
-	
+	-- ensure to not send messages with references to lists
+	-- otherwise the whole list will be sent with each message
 	if self.opened then
 		peripheralCall(self.modem, "transmit", recipient, self.channel, msg)
 	end
+
+	if not wait then 
+		self.waitlist:addFirst(msg)
+		self.waitlistIndex[streamId] = msg
+	end
+	
+	-- if self.opened then
+	-- 	peripheralCall(self.modem, "transmit", recipient, self.channel, msg)
+	--end
 		
 	if wait then 
 		return self:listenForAnswer(msg, waitTime or default.waitTime)

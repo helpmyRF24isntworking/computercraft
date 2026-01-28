@@ -1149,6 +1149,7 @@ function Extension:growTree()
 				attempts = attempts + 1
 				local ok, reason = self:place()
 				if not ok then
+                    local gotItems = false
 					if reason == "Cannot place item here" then
 						-- probably already grown
 						local blockName, data = self:inspect(true)
@@ -1180,8 +1181,10 @@ function Extension:growTree()
                                     --> res was confirmed, so turtle got ok, but no items were extracted
                                     self:select(bonemeal)
                                     break
+                                else 
+                                    gotItems = true
+                                    self:select(bonemeal)
                                 end
-                                self:select(bonemeal)
                             else
                                 print("Pickup bonemeal failed")
                                 break
@@ -1192,7 +1195,7 @@ function Extension:growTree()
 							ok = true
 						end
 					end
-					if not ok and not grown then
+					if not ok and not grown and not gotItems then
 						print("Using bonemeal failed:", reason)
 					end
 				end

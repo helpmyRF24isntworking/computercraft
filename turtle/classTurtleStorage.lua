@@ -123,12 +123,19 @@ function TurtleStorage:initialize()
             elseif forMsg.data[1] == "REQUEST_AVAILABLE_ITEMS" then 
                 self:handleNoAvailableResponse(forMsg)
             end
+            print("no answer for", forMsg.data[1])
         end
     end
 
     self:setProviderSorting("distance_asc")
 
-    self:pingStorageProviders()
+    
+    -- self:pingStorageProviders() -- do not ping on init!
+    -- TODO add provider ping for turtles, since they do not listen to the storage channel by default
+    -- or open storage channel permanently, to listen to providers but not contribute?
+
+    -- anyways, ping on startup is a lot of messages, turtleCount*providerCount (best case)
+
 end
 
 

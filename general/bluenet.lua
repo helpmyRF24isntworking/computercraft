@@ -191,14 +191,16 @@ function bluenet.receive(protocol, waitTime)
 			--	or channel == default.channels.host ) 
 			and type(msg) == "table" 
 			--and type(msg.id) == "number" and not receivedMessages[msg.id]
-			and ( type(msg.recipient) == "number" and msg.recipient
+			and msg.recipient
+			--[[ and ( type(msg.recipient) == "number" and msg.recipient
 			and ( msg.recipient == computerId 
 				or msg.recipient == default.channels.broadcast 
 				or msg.recipient == default.channels.host 
 				or msg.recipient == default.channels.refuel 
-				or msg.recipient == default.channels.storage ) )
+				or msg.recipient == default.channels.storage ) ) --]]
 				-- WHY EVEN CHECK THE CHANNEL? only those channels are opened anyways so we wont receive any other
-			and ( protocol == nil or protocol == msg.protocol )
+			
+				and ( protocol == nil or protocol == msg.protocol )
 			-- just to make sure its a bluenet message
 			then
 				msg.distance = distance

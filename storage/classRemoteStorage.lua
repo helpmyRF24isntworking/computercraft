@@ -473,7 +473,11 @@ function RemoteStorage:requestAvailableItems(itemName, count)
     if providerCt == 0 then 
         self.availableRequestToken = nil
         self:pingStorageProviders()
-        self.node:send( storageChannel, {"REQUEST_AVAILABLE_ITEMS", { name = itemName, count = count }})
+        self.node:send( storageChannel, {"REQUEST_AVAILABLE_ITEMS", { name = itemName, count = count }}, 
+                false, false, nil, default.priorityProtocol)
+        sleep(default.shortWaitTime) -- no providers known, give it some time to respond
+        -- mainly used for turtles that dont listen to storage channel by default
+        -- could also set a special waitTime only in TurtleStorage
     else
         print("waiting for allAvailableReceived...")
         while true do

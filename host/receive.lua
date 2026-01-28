@@ -34,10 +34,14 @@ while global.running and global.receiving do
 	if event == "modem_message"
 		--and ( p2 == ownChannel or p2 == channelBroadcast or p2 == channelHost )
 		and type(msg) == "table" 
+		
 		and ( type(msg.recipient) == "number" and msg.recipient
 		and ( msg.recipient == computerId or msg.recipient == channelBroadcast
 			or msg.recipient == channelHost or msg.recipient == channelStorage) )
 			-- just to make sure its a bluenet message
+			-- we just have to check if msg.recipient exists, that basically means its a bluenet message
+			-- unless rednet has the same field, no it uses nRecipient 
+			-- soo we are safe
 		then
 			-- event, modem, channel, replyChannel, message, distance
 			global.messageCount = global.messageCount + 1
