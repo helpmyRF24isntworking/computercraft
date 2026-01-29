@@ -517,7 +517,8 @@ function Miner:error(reason,real)
 		self.checkPointer:save(self)
 	end
 	error({real=real,text=reason,func=func}) -- watch out that this is not caught by some other function
-end
+end 
+
 function Miner:addCheckTask(task, isCheckpointable, ...)
 	-- called by most functions to interrupt execution
 	-- if task[1] is nil, could be due to return self:function()
@@ -2360,6 +2361,7 @@ end
 
 function Miner:navigate(x, y, z, map, options)
 	local currentTask = self:addCheckTask({debug.getinfo(1, "n").name})
+
 	local result = true
 	local goal = vector.new(x,y,z)
 
@@ -2369,7 +2371,10 @@ function Miner:navigate(x, y, z, map, options)
 	local safeDistance = options.safeDistance or nil
 	local maxDistance = options.maxDistance or default.pathfinding.maxDistance
 	local checkValidFunc = options.checkValidFunc or checkSafe
-	local followFunc = options.followFunc or function(path, safe, stepOffset) return self:followPath(path, safe, stepOffset) end
+	local followFunc = options.followFunc or function(path, safe, stepOffset) 
+		local result = self:followPath(path, safe, stepOffset)
+		return result -- to not upset debug.getinfo
+	end
 	local stepOffset = options.stepOffset or 0 -- how many steps away from goal to stop
 
 	local checkGoal = function()

@@ -134,6 +134,9 @@ nodeStream.onRequestStreamData = function(previous)
 		if taskList.first then
 			state.task = taskList.first[1]
 			state.lastTask = taskList.last[1]
+		else
+			state.task = nil
+			state.lastTask = nil
 		end
 	else
 		state.pos = invalidPos

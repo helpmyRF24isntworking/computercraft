@@ -15,7 +15,7 @@ local type = type
 while global.running do
 
 	-- !! none of the functions called here can use os.pullEvent !!
-	local event, p1, p2, p3, msg, p5 = pullEventRaw()
+	local event, p1, p2, p3, msg, p5 = pullEventRaw("modem_message")
 	if event == "modem_message"
 		--and ( p2 == ownChannel or p2 == channelBroadcast or p2 == channelHost )
 		and type(msg) == "table" 

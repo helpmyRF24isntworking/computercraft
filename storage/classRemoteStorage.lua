@@ -109,10 +109,10 @@ function RemoteStorage:initialize()
         end
     end
 
-    self:loadConfig()
-
+    
     if not pocket then
-        -- super
+        self:loadConfig()
+        -- super:
         self:getInventories()
         self:indexInventories()
     end
