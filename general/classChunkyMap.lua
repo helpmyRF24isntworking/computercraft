@@ -54,11 +54,9 @@ function ChunkyMap:new(inMemory)
 	o.chunks = {}
 	o.chunkLogs = {}
 	o.chunkCount = 0
-	o.unloadedChunks = {}
 	o.recentOres = {}
 	
 	o.lastCleanup = 0
-	-- o.loadedChunks = {}
 	o.lastSave = 0
 	self.saveInterval = default.saveInterval
 	
@@ -444,8 +442,14 @@ function ChunkyMap:unlockChunk(chunkId)
 	self.chunks[chunkId].locked = false
 end	
 
-function ChunkyMap:getUnloadedChunks()
-	return self.unloadedChunks
+function ChunkyMap:getLoadedChunks()
+	local loadedChunks = {}
+	local loadedCt = 0
+	for chunkId,chunk in pairs(self.chunks) do 
+		loadedCt = loadedCt + 1
+		loadedChunks[loadedCt] = chunkId
+	end
+	return loadedChunks
 end
 
 function ChunkyMap:unloadChunk(chunkId)
@@ -455,7 +459,6 @@ function ChunkyMap:unloadChunk(chunkId)
 	end
 	self.chunks[chunkId] = nil	
 	self.chunkCount = self.chunkCount - 1
-	tableinsert(self.unloadedChunks,chunkId)
 	if self.onUnloadChunk then
 		self.onUnloadChunk(chunkId)
 	end

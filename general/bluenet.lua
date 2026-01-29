@@ -187,32 +187,11 @@ function bluenet.receive(protocol, waitTime)
 		--if event == "modem_message" then print(os.clock(),event, modem, channel, sender) end
 		
 		if event == "modem_message"
-			--and ( channel == ownChannel or channel == default.channels.broadcast 
-			--	or channel == default.channels.host ) 
-			and type(msg) == "table" 
-			--and type(msg.id) == "number" and not receivedMessages[msg.id]
-			and msg.recipient
-			--[[ and ( type(msg.recipient) == "number" and msg.recipient
-			and ( msg.recipient == computerId 
-				or msg.recipient == default.channels.broadcast 
-				or msg.recipient == default.channels.host 
-				or msg.recipient == default.channels.refuel 
-				or msg.recipient == default.channels.storage ) ) --]]
-				-- WHY EVEN CHECK THE CHANNEL? only those channels are opened anyways so we wont receive any other
-			
+			and type(msg) == "table" and msg.recipient
 				and ( protocol == nil or protocol == msg.protocol )
 			-- just to make sure its a bluenet message
 			then
 				msg.distance = distance
-				-- event, modem, channel, replyChannel, message, distance
-				--print("received", msg.id, msg.protocol)
-				--receivedMessages[msg.id] = os.clock() + 9.5
-				--resetTimer()
-				--cancelTimer(timer)
-				-- if osEpoch() > t then 
-					-- print("cancel old timer")
-					-- cancelTimer(timer)
-				-- end
 				return msg
 				
 		elseif event == "timer" then
@@ -238,7 +217,7 @@ function bluenet.clearReceivedMessages()
 	receivedTimer = nil
 	local time, hasMore = os.clock(), nil
 	for id, deadline in pairs(receivedMessages) do
-		if deadline <= now then receivedMessages[id] = nil
+		if deadline <= time then receivedMessages[id] = nil
 		else hasMore = true end
 	end
 	receivedTimer = hasMore and os.startTimer(10)

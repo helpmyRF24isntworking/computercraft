@@ -1,16 +1,11 @@
 
 --require("classNetworkNode")
-local utils = require("utils") -- this also sets global sleep
-
-
 require("classBluenetNode")
 local Monitor = require("classMonitor")
 local HostDisplay = require("classHostDisplay")
 --require("classMap")
-local ChunkyMap = require("classChunkyMap")
+require("classChunkyMap")
 require("classTaskGroup")
-local RemoteStorage = require("classRemoteStorage")
-
 
 local function initNode()
 	global.node = NetworkNode:new("miner",true)
@@ -21,18 +16,14 @@ end
 local function initUpdate()
 	global.nodeUpdate = NetworkNode:new("update",true)
 end
-local function initStorage()
-	global.storage = RemoteStorage:new()
-end
 
 local function initPosition()
 	local x,y,z = gps.locate()
 	if x and y and z then
-		x, y, z = math.floor(x), math.floor(y), math.floor(z)
 		global.pos = vector.new(x,y,z)
 	else
 		print("gps not working")
-		global.pos = vector.new(0,70,0) -- this is bad for turtles especially
+		global.pos = vector.new(0,70,0)
 	end
 	print("position:",global.pos.x,global.pos.y,global.pos.z)
 end
@@ -61,23 +52,15 @@ end
 -- quick boot
 parallel.waitForAll(initNode,initStream,initUpdate)
 
-
-
 initPosition()
 global.map = ChunkyMap:new(false)
-global.map:setMaxChunks(2048) --256 for operational use
+global.map:setMaxChunks(256) --256 for operational use
 global.map:setLifeTime(-1)
 global.map:load()
 global.loadTurtles()
 global.loadStations()
 loadGroups()
-global.loadAlerts()
 
-initStorage() -- init after loading the rest but before display
-
-if not pocket then -- pocket uses shellDisplay
-	global.monitor = Monitor:new()
-	global.display = HostDisplay:new(1,1,global.monitor:getWidth(),global.monitor:getHeight())
-end
-
+--global.monitor = Monitor:new(term.current())
+--global.display = HostDisplay:new(1,1,global.monitor:getWidth(),global.monitor:getHeight())
 

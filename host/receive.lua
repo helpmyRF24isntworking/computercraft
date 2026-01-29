@@ -20,7 +20,7 @@ global.messageCount = 0
 
 local updateRate = 0.1
 
-local pullEventRaw = os.pullEventRaw
+local pullEventRaw = os.pullEventRaw -- = coroutine.yield
 local type = type
 --local tmr = os.startTimer(updateRate)
 
@@ -31,18 +31,8 @@ while global.running and global.receiving do
 	
 	local event, p1, p2, p3, msg, p5 = pullEventRaw()
 	global.eventCount = global.eventCount + 1
-	if event == "modem_message"
-		--and ( p2 == ownChannel or p2 == channelBroadcast or p2 == channelHost )
-		and type(msg) == "table" 
-		
-		and ( type(msg.recipient) == "number" and msg.recipient
-		and ( msg.recipient == computerId or msg.recipient == channelBroadcast
-			or msg.recipient == channelHost or msg.recipient == channelStorage) )
-			-- just to make sure its a bluenet message
-			-- we just have to check if msg.recipient exists, that basically means its a bluenet message
-			-- unless rednet has the same field, no it uses nRecipient 
-			-- soo we are safe
-		then
+	if event == "modem_message" and type(msg) == "table" and msg.recipient then
+			
 			-- event, modem, channel, replyChannel, message, distance
 			global.messageCount = global.messageCount + 1
 			msg.distance = p5

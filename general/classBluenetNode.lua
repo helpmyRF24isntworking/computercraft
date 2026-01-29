@@ -637,6 +637,8 @@ end
 function NetworkNode:stream()
 	-- implement in while true do loop 
 
+	local sleepCount = 0
+	local doCheckValid = false
 	local streams = self.streams
 	local streamlist = self.streamlist
 	local previous = streamlist.last
@@ -644,8 +646,13 @@ function NetworkNode:stream()
 		streamlist:remove(previous)
 		if streams[previous.id] then 
 			
-			-- only send if stream wasnt broken 
 			
+			--if doCheckValid and not checkValid() then 
+			    -- no this only happens when send.lua dies
+				-- we might have received an answer, but processing it took too long 
+			--end
+
+			-- only send if stream wasnt broken 
 			local data = nil
 			if self.onRequestStreamData then
 				data = self.onRequestStreamData(previous)
@@ -676,6 +683,12 @@ function NetworkNode:stream()
 				
 				if osEpoch("local")-start > 50 then
 					-- sleep / yield to allow processing answers
+					sleepCount = sleepCount + 1
+					if sleepCount >= 5 then 
+						-- once processing takes too long, start checking validity
+						doCheckValid = true
+						print("now checking stream validity")
+					end
 					sleep(0)
 					--os.pullEvent(os.queueEvent("yield"))
 				end

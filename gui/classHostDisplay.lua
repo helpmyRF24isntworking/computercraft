@@ -168,6 +168,7 @@ function HostDisplay:initialize()
 	self.winData.btnPrintStatus = CheckBox:new(3,2, "print status", global.printStatus)
 	self.winData.btnPrintMainTime = CheckBox:new(3,3, "print main", global.printMainTime)
 	self.winData.btnPrintEvents = CheckBox:new(3,4, "print events", global.printEvents)
+	self.winData.btnPrintDisplayTime = CheckBox:new(3,5, "print display", global.printDisplayTime)
 	self.winData.btnPrintSend = CheckBox:new(25,2, "print send", global.printSend)
 	self.winData.btnPrintSendTime = CheckBox:new(25,3, "print send time", global.printSendTime)
 	self.winData.chkSlowReboot = CheckBox:new(25,4, "slow reboot", self.doSlowReboot)
@@ -178,6 +179,9 @@ function HostDisplay:initialize()
 	end
 	self.winData.btnPrintEvents.click = function()
 		global.printEvents = self.winData.btnPrintEvents.active
+	end
+	self.winData.btnPrintDisplayTime.click = function()
+		global.printDisplayTime = self.winData.btnPrintDisplayTime.active
 	end
 	self.winData.btnPrintSend.click = function()
 		global.printSend = self.winData.btnPrintSend.active
@@ -199,6 +203,7 @@ function HostDisplay:initialize()
 	self.winData:addObject(self.winData.btnPrintEvents)
 	self.winData:addObject(self.winData.btnPrintSend)
 	self.winData:addObject(self.winData.btnPrintMainTime)
+	self.winData:addObject(self.winData.btnPrintDisplayTime)
 	self.winData:addObject(self.winData.btnPrintSendTime)
 	self.winData:addObject(self.winData.chkSlowReboot)
 	self.winData:addObject(self.winData.chkSlowStart)

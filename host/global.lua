@@ -12,6 +12,7 @@ nodeUpdate = nil
 printStatus = false
 printEvents = false
 printSend = false
+printDisplayTime = false
 printMainTime = false
 minMessageDelay = 0.2 -- min time between messages to turtles
 

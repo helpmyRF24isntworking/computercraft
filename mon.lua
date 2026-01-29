@@ -17,11 +17,15 @@ function printTurtles()
 end
 
 function printEvents()
+	local streamCt = 0
+	for _,v in pairs(global.nodeStream.streams) do streamCt = streamCt + 1 end
+	print("streams          ", streamCt)
 	print("stream.events    ", global.nodeStream.events.count)
 	print("stream.messages  ", global.nodeStream.messages.count)
 	print("stream.waitlist  ", global.nodeStream.waitlist.count)
 	print("stream.streamlist", global.nodeStream.streamlist.count)
 	
+	print("global.updates   ", #global.updates)
 	print("update.events    ", global.nodeUpdate.events.count)
 	print("update.messages  ", global.nodeUpdate.messages.count)
 	print("update.waitlist  ", global.nodeUpdate.waitlist.count)

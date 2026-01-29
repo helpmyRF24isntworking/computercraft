@@ -10,20 +10,19 @@ if not global.storage then
 end
 local nodeStorage = global.storage.node
 
+
+-- FOR FUTURE: dont just filter modem_message
+-- turtles might want to use inventory_changed events
+-- if turtle then messageFilter = nil else messageFilter = "modem_message" end
+
 local pullEventRaw = os.pullEventRaw
 local type = type
 while global.running do
 
 	-- !! none of the functions called here can use os.pullEvent !!
 	local event, p1, p2, p3, msg, p5 = pullEventRaw("modem_message")
-	if event == "modem_message"
-		--and ( p2 == ownChannel or p2 == channelBroadcast or p2 == channelHost )
-		and type(msg) == "table" 
-		and ( type(msg.recipient) == "number" and msg.recipient
-		and ( msg.recipient == computerId or msg.recipient == channelBroadcast
-			or msg.recipient == channelStorage) )
-			-- just to make sure its a bluenet message
-		then
+	if event == "modem_message"	and type(msg) == "table" and msg.recipient then
+
 			-- event, modem, channel, replyChannel, message, distance
 			msg.distance = p5
 			local protocol = msg.protocol

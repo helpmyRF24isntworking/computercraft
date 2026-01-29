@@ -25,15 +25,15 @@ local osEpoch = os.epoch
 local tableinsert = table.insert
 
 nodeStream.onStreamMessage = function(msg,previous)
+	local msgData, sender = msg.data, msg.sender
 	if previous.data[1] == "MAP_UPDATE" then	
 		if global.printSend then
-			print(osEpoch(),"MAP STREAM",msg.sender)
+			print(osEpoch(),"MAP STREAM", sender)
 		end
-		turtles[msg.sender].mapBuffer = {}
+		turtles[sender].mapBuffer = {}
 	end
-	if msg.data[1] == "STATE" then
-		updates[#updates+1] = msg.data[2]
-		--table.insert(updates, msg.data[2])
+	if msgData[1] == "STATE" then
+		updates[#updates+1] = msgData[2]
 	end
 end
 
@@ -370,23 +370,30 @@ end
 
 node.onRequestAnswer = function(forMsg)
 	
-	if forMsg.data[1] == "REQUEST_CHUNK" then
+	local data, sender = forMsg.data, forMsg.sender
+	local txt = data[1]
+	if txt == "REQUEST_CHUNK" then
 		-- local start = osEpoch("local")
 		if map then
 			--print("request_chunk",textutils.serialize(forMsg.data))
-			local chunkId = forMsg.data[2]
+			local chunkId = data[2]
 			node:answer(forMsg,{"CHUNK", map:accessChunk(chunkId,false,true)})
 			-- mark the requested chunk as loaded, regardless if received?
-			if not turtles[forMsg.sender] then 
-				turtles[forMsg.sender] = {
+			
+			local turt = turtles[sender]
+			if not turt then 
+				turt = {
 				state = { online = true, timeDiff = 0, time = osEpoch() },
-				--state = { online = false, time = 0 },
 				mapLog = {},
 				mapBuffer = {},
 				loadedChunks = {}
 				}
+				turtles[sender] = turt
 			end
-			turtles[forMsg.sender].loadedChunks[chunkId] = true
+			
+			-- is this really needed? 
+			-- turt.loadedChunks[#turt.loadedChunks+1] = chunkId
+
 			--print(id, forMsg.sender,"loaded chunk",chunkId)
 			-- !!! os.pullEvent steals from receive if called by handleMessage directly !!!
 			-- os.pullEvent(os.queueEvent("yield"))
@@ -395,15 +402,15 @@ node.onRequestAnswer = function(forMsg)
 		end
 		-- print(osEpoch("local")-start, "id", forMsg.sender, "chunk request", forMsg.data[2])
 		
-	elseif forMsg.data[1] == "REQUEST_STATION" then
+	elseif txt == "REQUEST_STATION" then
 		--print(forMsg.sender, "station request")
-		local station = getStation(forMsg.sender)
+		local station = getStation(sender)
 		if station then
 			node:answer(forMsg,{"STATION",station})
 		else
 			node:answer(forMsg,{"STATIONS_FULL"})
 		end
-	-- elseif forMsg.data[1] == "REQUEST_MAP" then
+	-- elseif txt == "REQUEST_MAP" then
 		-- print("map request")
 		-- if map then
 			-- node:answer(forMsg,{"MAP", map:getMap()})
@@ -411,7 +418,7 @@ node.onRequestAnswer = function(forMsg)
 		-- else
 			-- node:answer(forMsg,{"NO_MAP"})
 		-- end
-	elseif forMsg.data[1] == "ALERT" then
+	elseif txt == "ALERT" then
 		local alert = addAlert(forMsg)
 		node:answer(forMsg, {"ALERT_RECEIVED"})
 		--handleAlert(alert)
@@ -422,142 +429,138 @@ end
 
 local function checkUpdates()
 	-- function not allowed to yield!!!
-	local printStatus = global.printStatus
-	
-	for i = 1, #updates do
-		local update = updates[i]
-		local updateId = update.id
-	
-		local turtle = turtles[updateId]
-		if not turtle then 
-			turtles[updateId] = {
-				state = update,
-				mapLog = {},
-				mapBuffer = {},
-				loadedChunks = {}
-			}
-			turtle = turtles[updateId]
-		else
-			update.online = true
-			update.timeDiff = 0
-			turtle.state = update
-		end
+	-- (other enries to updates could be made?)
+
+	local turtles = turtles
+	local updateCount = #updates
+
+	if global.printStatus then
+		print("processing updates", updateCount)
+	end
+
+	if updateCount > 0 then		
+
+		-- 1: process updates into own map, update turtle states
+		for i = 1, updateCount do
+			local update = updates[i]
+			local updateId = update.id
 		
-		-- keep track of unloaded chunks
-		-- could result in an infinite request loop, 
-		-- if the turtle just unloaded but another sent an update for this chunk
-		-- -> delay?
+			local turt = turtles[updateId]
+			if not turt then 
+				turt = { 
+					state = update,
+					mapLog = {},
+					mapBuffer = {},
+					loadedChunks = {}
+				}
+				turtles[updateId] = turt
+			else
+				update.online = true
+				update.timeDiff = 0
+				turt.state = update
+				turt.loadedChunks = update.loadedChunks
+			end
+			
+			local mapLog = update.mapLog
 
-		local loadedChunks = turtle.loadedChunks
-		local unloadedLog = update.unloadedLog
+			for i=1, #mapLog do 
+				local entry = mapLog[i]
+				local chunkId = entry[1]
+				-- at startup, this needs to read a lot of chunks from disk
+				map:setChunkData(chunkId,entry[2],entry[3],true)
+			end
+				
+		end
 
-		if unloadedLog then
-			for i=1,#unloadedLog do
-				loadedChunks[unloadedLog[i]] = nil
+		-- 2: before distribution, create an index of loaded chunks per turtle 
+		local chunkToTurtles = {}  -- { [chunkId] = { turtle1, turtle2, ... } }
+		for id, turt in pairs(turtles) do
+			local loadedChunks = turt.loadedChunks
+			for i = 1, #loadedChunks do 
+				local chunkId = loadedChunks[i]
+				local interestedTurtles = chunkToTurtles[chunkId]
+				if not interestedTurtles then
+					interestedTurtles = { turt }
+					chunkToTurtles[chunkId] = interestedTurtles
+				else
+					interestedTurtles[#interestedTurtles+1] = turt
+				end
 			end
 		end
-		
-		local mapLog = update.mapLog
-		for i=1,#mapLog do 
-			local entry = mapLog[i]
-			local chunkId = entry[1]
 
-			map:setChunkData(chunkId,entry[2],entry[3],true)
-			if printStatus then
-				print("chunkid,pos,data", chunkId,entry[2],entry[3])
-			end			
-			
-			-- turtle sent update for this chunk so it is probably loaded
-			loadedChunks[chunkId]=true
-			
-			-- save data for distribution to other turtles
-			-- alternative: not each entry but chunkwise logs
-			-- loops should be reversed: turtles then entries
-			for id,otherTurtle in pairs(turtles) do
-				-- save data for distribution to other turtles
-				if updateId ~= id then
-					if otherTurtle.loadedChunks[chunkId] then
-						tableinsert(otherTurtle.mapLog, entry)
-						-- otherTurtle.chunks[entry[1]][entry[2]] = entry[3]
+		-- 3: distribute updates to subscribed turtles
+		for i = 1, updateCount do 
+			local update = updates[i]
+			local turt = turtles[update.id]
+			local mapLog = update.mapLog
+
+			for j = 1, #mapLog do
+				local entry = mapLog[j]
+				local chunkId = entry[1]
+				
+				local interestedTurtles = chunkToTurtles[chunkId]
+				if interestedTurtles then
+					for k = 1, #interestedTurtles do
+						local otherTurtle = interestedTurtles[k]
+						if otherTurtle ~= turt then
+							local otherMapLog = otherTurtle.mapLog
+							otherMapLog[#otherMapLog+1] = entry
+						end
 					end
 				end
 			end
-			
 		end
-		
-		
-		if printStatus then
-			local pos = update.pos
-			local orientation = update.orientation
-			local task = update.task
-			local lastTask = update.lastTask
-			print("state:", update.id, pos.x, pos.y, pos.z, orientation, lastTask, task)
-		end
-		
-	end
-	updates = {}
-	
-	
-	local logs
-	
-	
-	
-	-- for i=1,#updates do
-		-- local update = updates[i]
-		
-		-- for id,turtle in pairs(turtles) do
 
-			-- for chunkId,chunkLog in pairs(update.chunkLogs) do
-				-- if turtle.loadedChunks[chunkId] then
-					-- turtle.chunkLogs[#turtle.chunkLogs+1] = chunkLog
-				-- end
-			-- end
-		-- end
-	-- end
+		updates = {}
+		global.updates = updates
+	end
+
+	-- operations count:
+	-- = nUpdates * nAvgLogEntries
+	-- + nTurtles * nAvgLoadedChunks
+	-- + nUpdates * nAvgLogEntries * nAvgInterestedTurtlesPerChunk
+
+	-- == 14.500 for 250 turtles, 250 updates, 8 avgLog, 5 avgInterested, 10 avgLoaded
+	 
+	-- modem messages = nUpdates + nTurtles = 500
+
+
+	-- ######################################################
+
+	-- compared to: nUpdates * (nTurtles-1) * avgLogEntries
+
+	-- == 498.000 checks when turtles broadcast to each other
+
+	-- modem_messages = nUpdates = 250
+
+	-- at the cost of 0 version control, unloading support etc.
 	
-	--process logs seperately to reduce nested loops ?
-	-- complexity = turtleCount*(turtleCount-1)*avgEntriesPerLog
-	-- for id,turtle in pairs(turtles) do
-	-- 	local loadedChunks = turtle.loadedChunks
-	-- 	local chunkLogs = turtle.chunkLogs
-	-- 	for i=1,#logs do 
-	-- 		local log = logs[i]
-	-- 		if not log.sender == id then
-	-- 			for k=1,#log do
-	-- 				local entry = log[k]
-	-- 				local chunkId = entry[1]
-	-- 				if loadedChunks[chunkId] then
-	-- 					if not chunkLogs[chunkId] then
-	-- 						chunkLogs[chunkId] = { entry[2] = entry[3] }
-	-- 					else
-	-- 						chunkLogs[chunkId]][entry[2]] = entry[3]
-	-- 					end
-	-- 				end
-					
-	-- 			end
-	-- 		end
-	-- 	end
-	-- end
-		
-		
-		-- for senderId,log in ipairs(logs) do
-			-- if not (senderId == id) then
-				-- for _,entry in ipairs(log) do
-					-- if turtle.loadedChunks[entry[1]] then
-						-- table.insert(turtle.maplog,entry)
-					-- end
-				-- end
-			-- end
-		-- end
-	-- end
-	
+	-- assuming on my machine, 
+	-- 1 million table inserts 						= 144 ms 
+	-- 1 million random sparse existance checks 	= 114 ms
+	-- 100.000 streams 	= 2.380 ms
+	-- 100.000 sends	= 2.050 ms
+
+	-- 1 msg = 0.0238ms 
+	-- 1 tableins = 0.000144 ms
+
+	-- extra table op cost 	= + 69,6 ms 
+	-- saved modem msg cost = - 5,95 ms 
+	-- 	                    = 63,65 ms slower than individiual sends
+
+	-- A: ~14 ms @ 500 messages, 14.500 table ops
+	-- B: ~77 ms @ 250 messages, 498.000 table ops
+
+	-- B rises exponetially with more turtles, A linearly
+
 end
 
 local function refreshState()
 	-- refresh the online state of the turtles
+	local time = osEpoch()
 	for id,turtle in pairs(turtles) do
 		local state = turtle.state
-		state.timeDiff = osEpoch() - state.time
+		state.timeDiff = time - state.time
 		if state.timeDiff > 144000 then
 			state.online = false
 		else

@@ -7,36 +7,27 @@ local osEpoch = os.epoch
 
 nodeStream.onRequestStreamData = function(previous)
 	
-	--local start = os.epoch("local")
-	
 	local turtle = turtles[previous.sender]
-	-- append the entries
 	local mapLog = turtle.mapLog
 	local mapBuffer = turtle.mapBuffer
-	if #mapLog > 0 then
-		local bufCount = #mapBuffer
-		for i = 1, #mapLog do 
+	local logCount = #mapLog
+	local bufCount = #mapBuffer
+
+	-- append the entries from mapLog to mapBuffer
+	if logCount > 0 then
+		for i = 1, logCount do 
 			mapBuffer[bufCount+i] = mapLog[i]
 		end
 		turtle.mapLog = {}
-		
 	end
 	
-	-- local entry = table.remove(turtle.mapLog)
-	-- while entry do
-		-- table.insert(turtle.mapBuffer, entry)
-		-- entry = table.remove(turtle.mapLog)
-	-- end
-	-- if global.printSend then 
-			-- print(osEpoch("local"), "sending map update", previous.sender, #mapBuffer)
-		-- end
-	if #mapBuffer > 0 and turtle.state.online then
+	if bufCount + logCount > 0 and turtle.state.online then
 		
 		if global.printSend then 
-			print(osEpoch("local"), "sending map update", id, #mapBuffer)
+			print(osEpoch("local"), "sending map update", previous.sender, "#", bufCount + logCount)
 		end
-		return {"MAP_UPDATE",mapBuffer}
-		--print("id", id, "time", timeSend .. " / " .. os.epoch("local")-start, "count", #data.mapBuffer)
+		
+		return { "MAP_UPDATE", mapBuffer }
 	end
 	
 	return nil
@@ -77,3 +68,5 @@ while global.running do
 	--os.pullEvent(os.queueEvent("yield"))
 	
 end
+
+print("stopped sending??")

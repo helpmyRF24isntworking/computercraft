@@ -92,7 +92,7 @@ nodeStream.onRequestStreamData = function(previous)
 	local state = state
 	local miner = miner
 
-	state.time = osEpoch("ingame") --ingame milliseconds
+	state.time = osEpoch() --ingame
 	
 	if miner and miner.pos then -- somethings broken
 		
@@ -118,16 +118,9 @@ nodeStream.onRequestStreamData = function(previous)
 			map.log = {}
 		end
 		
-		-- send unloadedChunks
-		if #map.unloadedChunks > 0 then 
-			local unloadedChunks = map.unloadedChunks
-			for i = 1, #unloadedChunks do
-				unloadedLog[#unloadedLog+1] = unloadedChunks[i]
-			end
-			map.unloadedChunks = {}
-		end
-		
-		state.unloadedLog = unloadedLog
+		-- send loadedChunks
+		state.loadedChunks = map:getLoadedChunks()
+
 		state.mapLog = mapLog
 		
 		local taskList = miner.taskList

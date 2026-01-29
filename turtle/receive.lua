@@ -109,8 +109,6 @@ nodeStream.onStreamMessage = function(msg,previous)
 	-- reboot is handled in NetworkNode
 	nodeStream._clearLog()
 	
-	--local start = os.epoch("local")
-	local ct = 0
 	local data = msg and msg.data
 	if data and data[1] == "MAP_UPDATE" then
 		if miner then 
@@ -118,13 +116,11 @@ nodeStream.onStreamMessage = function(msg,previous)
 			local mapLog = data[2]
 			for i = 1, #mapLog do
 				local entry = mapLog[i]
-				-- setChunkData should not result in the chunk being requested!
+				-- setChunkData does not result in the chunk being requested!
 				map:setChunkData(entry[1],entry[2],entry[3],false)
-				ct = ct + 1
 			end
 		end
 	end
-	--print(os.epoch("local")-start,"onStream", ct)
 end
 
 node.onReceive = function(msg)
@@ -152,13 +148,8 @@ local type = type
 while true do
 	
 	local event, p1, p2, p3, msg, p5 = pullEventRaw("modem_message")
-	if --( p2 == ownChannel or p2 == channelBroadcast ) 
-		type(msg) == "table"
-		and ( type(msg.recipient) == "number" and msg.recipient
-		and ( msg.recipient == computerId or msg.recipient == channelBroadcast
-			or msg.recipient == channelHost or msg.recipient == channelRefuel
-			or msg.recipient == channelStorage ) )
-		then
+	if type(msg) == "table" and msg.recipient then
+
 			msg.distance = p5
 			local protocol = msg.protocol
 			if protocol == "miner_stream" then
@@ -172,6 +163,7 @@ while true do
 			elseif protocol == "storage" or protocol == "storage_priority" then
 				nodeStorage:handleMessage(msg)
 			end
+			
 	elseif event == "terminate" then 
 		error("Terminated",0)
 	end

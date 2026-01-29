@@ -2,6 +2,8 @@
 local global = global
 local display = global.display
 local monitor = global.monitor
+local osEpoch = os.epoch
+
 
 monitor:addObject(display)
 monitor:redraw()
@@ -15,26 +17,25 @@ local function catchEvents()
 	end
 end
 
-
+-- print("display", global.sleepCountDisplay, "tmr", global.timerDisplay, "cur", global.curTimerDisplay); print("send", global.sleepCountSend, "tmr", global.timerSend, "cur", global.curTimerSend)
 while global.running and global.displaying do
-	--local start = os.epoch("local")
+
+	local start = osEpoch("local")
+
 	monitor:checkEvents()
-	--local t1 = os.epoch("local")-start
-	--start = os.epoch("local")
+
 	if frame%5 == 0 then
 		display:refresh()
-		
 	end
-	-- display:refresh()
-	-- local t2 = os.epoch("local")-start
-	-- start = os.epoch("local")
 
 	monitor:update()
+
+	if global.printDisplayTime then 
+		print(osEpoch("local") - start, "frame", frame )
+	end
 	
-	-- local t3 = os.epoch("local")-start
-	-- print("events", t1, "refresh",t2, "update",t3)
 	frame = frame + 1
-	sleep(0.05)
+	sleep()
 end
 
 print("display stopped, how?", global.running, global.displaying)
