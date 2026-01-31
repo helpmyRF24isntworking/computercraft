@@ -179,6 +179,7 @@ function TaskGroupControl:initialize()
 	self.btnDeleteGroup = Button:new("delete", 21,5,6,1)
 	
 	self.lblTask = Label:new(self.taskGroup.taskName,30,3)
+	self.lblProgress = Label:new("",30,5)
 	self.lblActiveTurtles = Label:new("0/"..self.taskGroup.groupSize,41,4)
 	self.lblStatus = Label:new(self.statusText,30,4,self.statusColor)
 	self.lblTime = Label:new("00:00.00", 41,5)
@@ -200,6 +201,7 @@ function TaskGroupControl:initialize()
 	self:addObject(self.lblTime)
 	self:addObject(self.lblStatus)
 	self:addObject(self.lblActiveTurtles)
+	self:addObject(self.lblProgress)
 	
 	self:addObject(self.btnMap)
 	self:addObject(self.btnCancelTask)
@@ -236,6 +238,10 @@ function TaskGroupControl:refresh()
 	self.lblStatus:setText(self.statusText)
 	self.lblStatus:setTextColor(self.statusColor)
 	self.lblActiveTurtles:setText(activeCount.."/"..self.taskGroup.groupSize)
+
+	local progress = self.taskGroup:getProgress()
+	local progressText = (progress and string.format("%3d%%", math.floor(progress * 100))) or ""
+	self.lblProgress:setText(progressText)
 	
 	local timeDiff = os.epoch("ingame") - self.taskGroup.startTime
 	-- 1 tick = 3600 ms

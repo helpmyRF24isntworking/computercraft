@@ -1848,6 +1848,8 @@ function Miner:stripMine(rowLength, rows, levels, rowFactor, levelFactor, offset
 --------------------
 
 
+	self:addProgressLevel("level", levels, "Y Level")
+	self:addProgressLevel("row", rows, "Rows")
 
 	if taskState.stage == 1 then
 		-- try, catch
@@ -1860,6 +1862,7 @@ function Miner:stripMine(rowLength, rows, levels, rowFactor, levelFactor, offset
 			for currentLevel = vars.currentLevel, levels do
 				vars.currentLevel = currentLevel
 				self.checkPointer:save(self)
+
 				if currentLevel%2 == 0 and rows%2 == 0 then 
 					vars.tunnelDirection = 1 * directionFactor
 				else vars.tunnelDirection = -1 * directionFactor end
@@ -1867,6 +1870,8 @@ function Miner:stripMine(rowLength, rows, levels, rowFactor, levelFactor, offset
 				for currentRow = vars.currentRow, rows do
 					vars.currentRow = currentRow
 					self.checkPointer:save(self) -- perhaps at start of for-loop
+					
+
 					self:tunnelStraight(rowLength, noInspect)
 					if currentRow < rows then
 						self:turnTo(vars.rowOrientation + vars.tunnelDirection)
@@ -1877,6 +1882,7 @@ function Miner:stripMine(rowLength, rows, levels, rowFactor, levelFactor, offset
 							self:turnTo(vars.rowOrientation)
 						end
 					end
+					self:updateProgress("row", currentRow)
 				end
 				vars.currentRow = 1 -- reset row to start at 1 again, not saved state
 				if currentLevel < levels then
@@ -1907,6 +1913,7 @@ function Miner:stripMine(rowLength, rows, levels, rowFactor, levelFactor, offset
 					
 				end
 				vars.rowOrientation = self.orientation
+				self:updateProgress("level", currentLevel)
 			end
 			
 		end)
@@ -1998,9 +2005,128 @@ function Miner:getAreaStart(start, finish)
 
 end
 
+function Miner:initProgress(taskName, hierarchy)
+	print("initProgress", taskName)
+	fs.delete("calc.txt")
+	fs.delete("out.txt")
+	local values, keyMap = {}, {}
+	for i, level in ipairs(hierarchy) do
+		level.max = math.abs(level.max)
+		if not level.label then level.label = level.key end
+		if not level.minMargin then level.minMargin = 0 end
+		if not level.maxMargin then level.maxMargin = 1 end
+		values[level.key] = 0
+		keyMap[level.key] = i
+	end
+	self.progress = {
+		task = taskName, 
+		startTime = os.epoch("utc"),
+		hierarchy = hierarchy, -- key, max, label, minMargin, maxMargin
+		values = values,
+		keyMap = keyMap,
+	}
+end
+
+function Miner:addProgressLevel(key, max, label, minMargin, maxMargin)
+	local progress = self.progress
+	if progress then 
+		max = math.abs(max)
+		local index = progress.keyMap[key]
+
+		if index then
+			local level = progress.hierarchy[index]
+			local oldMax = level.max
+			level.max = max
+			local val = progress.values[key]
+			if max > oldMax then 
+				if val == oldMax then 
+					progress.values[key] = max
+				else
+					-- scale existing value to new max
+					local percent = val/oldMax
+					progress.values[key] = percent * max
+				end
+			elseif val > max then
+				-- clip to max, reset to 0 happens in updateProgress
+				progress.values[key] = max
+			end
+			-- resets previous margins
+			level.minMargin = minMargin or 0 
+			level.maxMargin = maxMargin or 1
+
+		else
+			-- level does not exist, add new level
+			table.insert(progress.hierarchy,
+				{key = key, max = max, label = label or key, minMargin = minMargin or 0, maxMargin = maxMargin or 1})
+			progress.values[key] = 0
+			progress.keyMap[key] = #progress.hierarchy
+		end
+	end
+end
+function Miner:getOverallProgress()
+	local total = nil
+	-- return nil to indicate no progress is being tracked
+	local progress = self.progress
+	if progress then 
+		local hierarchy, values = progress.hierarchy, progress.values
+		total = 0
+		local weight = 1
+		for i = 1, #hierarchy do
+	
+			local level = hierarchy[i]
+			local key, max = level.key, level.max
+			local value = values[key] or 0
+			local minMargin, maxMargin = level.minMargin, level.maxMargin
+
+			if max > 0 then 
+				local percent = value / max
+				total = total + percent * weight
+				-- limit contribution of lower levels to overall progress
+
+				--local f = fs.open("calc.txt", "a")
+				--f.writeLine("total " .. total .. " level " .. i .. " key " .. key .. " val " .. value .. " max " .. max .. " percent " .. percent .. " weight " .. weight .. " contrib " .. (percent * weight) .. " minMargin " .. minMargin .. " maxMargin " .. maxMargin)
+				--f.close()
+				weight = weight / max * (maxMargin - minMargin)
+			end
+		end
+	end
+	-- rounding errors of 0.000001 can lead to "decreased" progress
+	return total
+end
+
+function Miner:updateProgress(key, value, allowDecrease)
+	local progress = self.progress
+	if progress then 
+
+		local values = progress.values
+		local oldVal = values[key]
+		if oldVal and ( allowDecrease or value > oldVal ) then
+		
+			values[key] = value
+
+			if not allowDecrease then 
+				-- reset lower level to 0, since they are not allowed to do so themselves
+				local index = progress.keyMap[key]
+				local hierarchy = progress.hierarchy
+
+				-- only reset next level, not all
+				local nextLevel = hierarchy[index+1]
+				if nextLevel then 
+					values[nextLevel.key] = 0
+				end
+			end
+		end
+	end
+end
+
+function Miner:clearProgress()
+	self.progress = nil
+end
+
+
 function Miner:mineArea(start, finish) 
 	local currentTask = self:addCheckTask({debug.getinfo(1, "n").name}, true)
-	-- TODO: mine area within start and finish pos
+	-- mine area within start and finish pos
 	-- 8 corners = 8 possible starting locations, pick nearest
 	-- determine how many rows and levels to mine and in which direction
 	
@@ -2020,6 +2146,8 @@ function Miner:mineArea(start, finish)
 	currentTask.taskState = taskState
 	self.checkPointer:save(self)
 
+	self:initProgress("mineArea", { { key = "stage", max = 1, label = "Stage", minMargin = 0.05, maxMargin = 0.95 } } )
+	
 	if taskState.stage == 1 then
 
 		local orientation
@@ -2051,16 +2179,17 @@ function Miner:mineArea(start, finish)
 		--self.map:load()
 		
 		print("start", start,"end",finish, "diff", diff, "levels", levels)
-		
+		self:updateProgress("stage", 0.01)
+
 		if not self:navigateToPos(start.x, start.y, start.z) then
 			print("unable to get to area")
 			self:returnHome()
 			-- save checkpoint, tasklist remove
 			-- error? could resume after error?
 		else
-		
 			self:turnTo(orientation)
-			
+
+			self:updateProgress("stage", 0.05)
 			taskState.stage = 2
 			taskState.ignorePosition = true
 			self.checkPointer:save(self)
@@ -2072,10 +2201,16 @@ function Miner:mineArea(start, finish)
 
 	-- Stage 2: Execute post-stripMine steps
 	if taskState.stage == 2 then
+
+		self:updateProgress("stage", 0.96)
 		self:returnHome()
+		self:updateProgress("stage", 0.97)
 		self:condenseInventory()
+		self:updateProgress("stage", 0.98)
 		self:dumpBadItems()
+		self:updateProgress("stage", 0.99)
 		self:transferItems()
+		self:updateProgress("stage", 1)
 		--self:getFuel()
 		--self.map:save()
 	end 
@@ -2110,6 +2245,8 @@ function Miner:tunnel(length, direction, noInspect)
 	
 	local expectedEndPos = self.pos + directionVector * length
 	local startOrientation = self.orientation
+
+	self:addProgressLevel("tunnel", length, "Blocks") -- Remove later?
 	
 	-- actually mine
 	for i=1,length do
@@ -2137,7 +2274,7 @@ function Miner:tunnel(length, direction, noInspect)
 		else
 			skipSteps = skipSteps - 1
 		end
-		
+		self:updateProgress("tunnel", i)
 	end
 	
 	if not noInspect then self:inspectMine() end
@@ -2249,7 +2386,6 @@ function Miner:excavateArea(start, finish)
 			local rowFactor, levelFactor, offset = 1, 1, 0
 			local noInspect = true -- excavate does not need inspecting
 			self:stripMine(rowLength, rows, levels, rowFactor, levelFactor, offset, noInspect)
-
 			
 		end
 	end
@@ -2348,6 +2484,16 @@ function Miner:testPathfinding(distance)
 end
 
 
+
+function Miner:setNavigateTo(x,y,z)
+	-- update the navigation goal from the outside
+	if not self.navigationGoal then
+		self.navigationGoal = vector.new(x,y,z)
+	else 
+		self.navigationGoal.x, self.navigationGoal.y, self.navigationGoal.z = x,y,z
+	end
+end
+
 function Miner:navigateToPos(x,y,z)
 	-- default miner navigation with safety override near goal
 	local options = {
@@ -2364,6 +2510,7 @@ function Miner:navigate(x, y, z, map, options)
 
 	local result = true
 	local goal = vector.new(x,y,z)
+	self.navigationGoal = goal
 
 	if not options then options = {} end
 
@@ -2375,6 +2522,7 @@ function Miner:navigate(x, y, z, map, options)
 		local result = self:followPath(path, safe, stepOffset)
 		return result -- to not upset debug.getinfo
 	end
+	local updateGoalFunc = options.updateGoalFunc or nil
 	local stepOffset = options.stepOffset or 0 -- how many steps away from goal to stop
 
 	local checkGoal = function()
@@ -2405,6 +2553,19 @@ function Miner:navigate(x, y, z, map, options)
 			local partsCount = 0
 			repeat 
 				partsCount = partsCount + 1
+
+				if updateGoalFunc then
+					local oldGoal = goal
+					goal = updateGoalFunc(oldGoal)
+					if goal ~= oldGoal then
+						print("UPDATED GOAL", oldGoal, "->", goal)
+						tryCount, partsCount = 0, 0
+						minDist = math.huge
+					end
+					self.navigationGoal = goal
+				end
+
+				
 				local path = pathFinder:aStarPart(self.pos, self.orientation, goal, map, maxDistance)
 
 				local movesToGoal

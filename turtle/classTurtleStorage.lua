@@ -40,6 +40,11 @@ end
 -- setup: initialize this and hook node into main receiving thread or open a new one for standalone storage
 
 function TurtleStorage:initialize()
+    if not turtle then 
+        print("TurtleStorage can only be used on turtles")
+        return nil
+    end
+
     if not self.node then 
         print("no node for TurtleStorage provided")
         self.node = NetworkNode:new("storage",false, true)
@@ -89,9 +94,10 @@ function TurtleStorage:initialize()
                 print("REQUEST_PROVIDER_STATE not handled")
                 -- todo instead turtle state
 
-
             elseif msg.data[1] == "PROVIDER_STATE" then 
                 self:handleProviderStateResponse(msg)
+            elseif msg.data[1] == "REQUEST_TRANSPORT_DESTINATION" then 
+                self:onRequestTransportDestination(msg)
             elseif msg.data[1] == "RESERVE_ITEMS" then
                 -- self:onReserveItems(msg, data.name, data.count)
                 print("RESERVE_ITEMS not handled")
@@ -164,6 +170,95 @@ function TurtleStorage:getItemList()
     print("getItemList not implemented for TurtleStorage")
     -- perhaps return own inventory content
     return {}
+end
+
+
+function TurtleStorage:requestTransportDestination(requester, requestingInv, oldPos)
+    local answer = self.node:send(requester, {"REQUEST_TRANSPORT_DESTINATION", 
+        { requestingInv = requestingInv, oldPos = oldPos }}, true, true, default.waitTime, default.priorityProtocol)
+    if answer and answer.data[1] == "TRANSPORT_DESTINATION" then
+        local newPos =  answer.data[2]
+        if newPos then 
+            newPos = vector.new(newPos.x, newPos.y, newPos.z)
+        else newPos = oldPos end
+        return newPos
+    else 
+        print("no dropoff request answer, using old")
+        return oldPos
+    end
+end
+
+
+function TurtleStorage:getDynamicTransportDestination(requester, requestingInv, oldPos)
+    -- ask requester for position to drop off items
+    local requestNewPosition = false
+    if requestingInv == "player" then
+        -- we need to ask player for positon
+        requestNewPosition = true
+    else
+        -- determine if requester / requestingInv is static or dynamic
+        -- no need to constantly harass requester for position if it is static
+        if self.providers[requester] then 
+            -- static requester (for now at least), in future those could be moving turtles as well
+            requestNewPosition = false
+        elseif self.turtles[requester] then 
+            -- a moving requester
+            requestNewPosition = true
+        end
+    end
+
+    if requestNewPosition then 
+        return self:requestTransportDestination(requester, requestingInv, oldPos)
+    else
+        return oldPos
+    end    
+end
+
+function TurtleStorage:requestDeliveryConfirmation(requester, reservation, requestingInv, diffList)
+
+    -- request extraction and wait for confirmation
+    -- perhaps rename to requestExtraction, if that fails, try dropping into physical inventory
+    -- answer could also not be "DELIVERY_CONFIRMED" but "DROP INTO INVENTORY" or similar
+
+    local result = false
+    local networkName = nil
+    local waitTime = default.waitTime
+    if requestingInv == "player" then 
+        waitTime = 60*2
+        networkName = nil -- "player"
+    else 
+        networkName = self.miner.getWiredNetworkName() -- not sure if it should stay there or not
+        print("networkName", networkName)
+    end
+
+    local answer, manualConfirmation
+    local requestConfirmation = function() 
+        answer = self.node:send(requester, {"ITEMS_DELIVERED", 
+        { reservation = reservation, requestingInv = networkName or requestingInv, invList = diffList }},
+        true, true, waitTime)
+    end
+
+    parallel.waitForAny( 
+        requestConfirmation, 
+        function()
+            shell.switchTab(multishell.getCurrent())
+            print("---------------------------\n     ITEMS DELIVERED\nPRESS ENTER TO CONFIRM\n---------------------------")
+            local confirmed = read()
+            manualConfirmation = true
+        end
+    )
+    if answer and answer.data[1] == "DELIVERY_CONFIRMED" then
+        print("delivery confirmed by requester", requester)
+        result = true
+    elseif manualConfirmation then 
+        print("manual delivery confirmation")
+        result = true
+    else
+        if answer then print(answer.data[1]) end
+        print("no delivery confirmation from requester", requester)
+        -- perhaps ping requester again if this happens often
+    end
+    return result
 end
 
 

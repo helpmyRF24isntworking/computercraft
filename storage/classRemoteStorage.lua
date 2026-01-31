@@ -2,6 +2,7 @@
 local ItemStorage = require("classItemStorage")
 require("classBluenetNode")
 local bluenet = require("bluenet")
+local utils = require("utils")
 
 local default = {
     waitTime = 3,
@@ -79,6 +80,8 @@ function RemoteStorage:initialize()
                 self:handleProviderStateResponse(msg)
             elseif msg.data[1] == "RESERVE_ITEMS" then
                 self:onReserveItems(msg, data.name, data.count)
+            elseif msg.data[1] == "REQUEST_TRANSPORT_DESTINATION" then 
+                self:onRequestTransportDestination(msg)
             elseif msg.data[1] == "PICKUP_ITEMS" then
                 self:onPickupItems(msg, data.reservationId)
             elseif msg.data[1] == "CANCEL_RESERVATION" then
@@ -179,8 +182,18 @@ function RemoteStorage:setRequestingPos(x,y,z)
     self.requestingPos = vector.new(x,y,z)
     self:saveConfig()
 end
+
+-- perhaps create new classPocketStorage that extends RemoteStorage?
 function RemoteStorage:getRequestingPos()
-    return self.requestingPos
+    local requestingPos = self.requestingPos
+    if pocket then 
+        requestingPos  = utils.gpsLocate()
+        if not requestingPos then
+            print("no gps available")
+            requestingPos = self.requestingPos
+        end
+    end
+    return requestingPos
 end
 function RemoteStorage:getProviderPos()
     return self.providerPos
@@ -427,15 +440,6 @@ function RemoteStorage:requestDelivery(itemName, count, toPlayer, fromProvider)
         if not pocket then
             print("toPlayer; NOT A POCKET COMPUTER")
             return
-        end
-        requestingPos = nil
-        local x,y,z
-        if gps and pocket then 
-            x, y, z = gps.locate()
-            if x and y and z then
-                x, y, z = math.floor(x), math.floor(y), math.floor(z)
-                requestingPos = vector.new(x, y, z)
-            end
         end
         if not requestingPos then
             print("toPlayer; NO GPS POSITION AVAILABLE")
@@ -694,7 +698,6 @@ function RemoteStorage:requestTransportReservations(reservations, requestingPos,
         end
     end
 
-
     -- hmmm
 
     -- send turtle to pickup location
@@ -723,6 +726,16 @@ function RemoteStorage:requestTransportReservations(reservations, requestingPos,
 
     return allTransportsAccepted
 
+end
+
+function RemoteStorage:onRequestTransportDestination(msg)
+    local data = msg.data[2]
+    local requestingInv, oldPos = data.requestingInv, data.oldPos
+    local newPos = self:getRequestingPos()
+    if not newPos then
+        newPos = oldPos
+    end
+    self.node:answer(msg, {"TRANSPORT_DESTINATION", newPos })
 end
 
 

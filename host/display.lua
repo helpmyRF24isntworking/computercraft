@@ -17,35 +17,29 @@ local function catchEvents()
 	end
 end
 
--- print("display", global.sleepCountDisplay, "tmr", global.timerDisplay, "cur", global.curTimerDisplay); print("send", global.sleepCountSend, "tmr", global.timerSend, "cur", global.curTimerSend)
 while global.running and global.displaying do
 
-	local start = osEpoch("local")
+	local printDisplayTime = global.printDisplayTime
+	local start
+
+	if printDisplayTime then 
+		start = osEpoch("local")
+	end
 
 	monitor:checkEvents()
 
 	if frame%5 == 0 then
 		display:refresh()
+
+		if printDisplayTime then 
+			print(osEpoch("local") - start, "frame", frame )
+		end
 	end
 
-	monitor:update()
+	monitor:update() -- update takes essentially no time
 
-	if global.printDisplayTime then 
-		print(osEpoch("local") - start, "frame", frame )
-	end
-	
 	frame = frame + 1
 	sleep()
 end
 
 print("display stopped, how?", global.running, global.displaying)
---if pocket then
---	-- if on pocket, pull events
---	parallel.waitForAny(
---		update(),
---		catchEvents()
---		
---	)
---else
---	update()
---end

@@ -6,6 +6,7 @@ local utils = {}
 local abs = math.abs
 local min = math.min
 local max = math.max
+local floor = math.floor
 
 function utils.loadExtension(extensionModule, targetClass)
     for name, func in pairs(extensionModule) do
@@ -17,6 +18,20 @@ end
 
 function utils.manhattanDistance(x1, y1, z1, x2, y2, z2)
     return abs(x1 - x2) + abs(y1 - y2) + abs(z1 - z2)
+end
+
+
+utils.gpsLocate = function()
+    local pos = nil
+    local x,y,z
+    if gps then 
+        x, y, z = gps.locate()
+        if x and y and z then
+            x, y, z = floor(x), floor(y), floor(z)
+            pos = vector.new(x, y, z)
+        end
+    end
+    return pos
 end
 
 local osClock = os.clock
@@ -62,12 +77,11 @@ function utils.sleep(waitTime)
 		elseif event == "terminate" then
             error("Terminated",0)
         end
+            
 	end
 end
 
 local originalCancelTimer = os.cancelTimer
-
-
 function utils.cancelTimer(timer)
     cancelledTimers[timer] = true
     print("cancelled timer", timer)

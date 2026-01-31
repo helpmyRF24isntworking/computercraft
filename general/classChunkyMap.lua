@@ -58,7 +58,14 @@ function ChunkyMap:new(inMemory)
 	
 	o.lastCleanup = 0
 	o.lastSave = 0
-	self.saveInterval = default.saveInterval
+	o.saveInterval = default.saveInterval
+
+	o.chunkLastSave = {}
+	o.chunkSaveCount = {} -- to track how often a chunk was used
+	o.fileHandles = {}
+	o.handleCount = 0
+	o.handleReuseCount = 0
+	o.maxHandles = 96 -- computer maximum of 128
 	
 	o.inMemory = inMemory or default.inMemory
 	
@@ -242,17 +249,118 @@ function ChunkyMap:save()
 	end
 end
 
+
+function ChunkyMap:getHandlePriority(chunkId)
+	local saveCount = self.chunkSaveCount[chunkId] or 0
+	local lastSave = self.chunkLastSave[chunkId] or 0
+	local time = osEpoch() - lastSave
+
+	-- combines save frequency and recency, save frequency is preferred
+	local decayFactor = math.max(0, 1 - ( time / self.saveInterval * 10 )) -- 30 save intervals to decay to 0
+	return saveCount * decayFactor
+end
+
+function ChunkyMap:decayHandlePriorities()
+	local chunkSaveCount = self.chunkSaveCount
+	for chunkId, saveCount in pairs(chunkSaveCount) do
+		saveCount = saveCount * 0.933 -- x/2 each 10 saves
+		chunkSaveCount[chunkId] = saveCount
+	end
+end
+
+function ChunkyMap:closeLeastValuableHandle()
+	local leastPriority = math.huge
+	local minId = nil
+	local fileHandles = self.fileHandles
+	
+	for chunkId,_ in pairs(fileHandles) do
+		local priority = self:getHandlePriority(chunkId)
+		if priority < leastPriority then
+			leastPriority = priority
+			minId = chunkId
+		end
+	end
+	
+	if minId then
+		local handle = fileHandles[minId]
+		if handle then
+			handle.close()
+			fileHandles[minId] = nil
+			self.handleCount = self.handleCount - 1
+		end
+	end
+end
+
+function ChunkyMap:getChunkWriteHandle(chunkId)
+	local fileHandles = self.fileHandles
+	local handle = fileHandles[chunkId]
+	if not handle then
+		if self.handleCount >= self.maxHandles then
+			self:closeLeastValuableHandle()
+		end
+		local path = default.folder .. chunkId .. ".bin"
+		handle = fs.open(path,"w")
+		fileHandles[chunkId] = handle
+		self.handleCount = self.handleCount + 1
+	else
+		self.handleReuseCount = self.handleReuseCount + 1
+	end
+	
+	self.chunkLastSave[chunkId] = osEpoch()
+	self.chunkSaveCount[chunkId] = (self.chunkSaveCount[chunkId] or 0) + 1
+	
+	return handle
+end
+
 function ChunkyMap:saveChunk(chunkId)
 	local chunk = self.chunks[chunkId]
 	if chunk then
-		local path = default.folder .. chunkId .. ".bin"
-		local f = fs.open(path,"w")
-		f.write(binarize(chunk, maxIndex))
-		f.close()
-
-		os.pullEvent(os.queueEvent("yield"))
+		local handle = self:getChunkWriteHandle(chunkId)
+		handle.write(binarize(chunk, maxIndex))
+		handle.flush()
 	end
 	--print("SAVED CHUNK", chunkId)
+end
+
+function ChunkyMap:saveChanged()
+	-- save all chunks that might have been changed
+
+	if not self.inMemory then
+		self.handleReuseCount = 0
+		local start = osEpoch("local")
+		local ct = 0
+
+		-- prioritize chunks that have open write handles
+		local saveLater = {}
+		for id,chunk in pairs(self.chunks) do
+			if chunk._lastChange > self.lastSave then
+				if self.fileHandles[id] then
+					self:saveChunk(id)
+					ct = ct + 1
+				else 
+					tableinsert(saveLater, id)
+				end
+			end
+		end
+
+		os.queueEvent("yield")
+		os.pullEvent("yield")
+
+		for i = 1, #saveLater do
+			local id = saveLater[i]
+			self:saveChunk(id)
+			ct = ct + 1
+			if i % 20 == 0 then 
+				-- sleep instead of yield to actually give others time to catch up?
+				os.queueEvent("yield")
+				os.pullEvent("yield")
+			end
+		end
+
+		self:decayHandlePriorities()
+		self.lastSave = osEpoch()
+		print("saved", ct, "/", self.chunkCount, "chunks, reused", self.handleReuseCount, "/", self.maxHandles, "handles", osEpoch("local") - start, "ms")
+	end
 end
 
 function ChunkyMap:load()
@@ -260,6 +368,8 @@ function ChunkyMap:load()
 end
 
 function ChunkyMap:loadChunk(chunkId)
+	-- could use fs.list to check existence efficiently
+
 	local result = false
 	self:cleanCache()
 	--print(textutils.serialize(debug.traceback()))
@@ -365,14 +475,14 @@ function ChunkyMap:setChunkData(chunkId,relativeId,data,real)
 	end
 
 	if self.lifeTime > 0 then 
-		if osEpoch() - self.lastCleanup > self.cleanInterval then -- TODO: halfLifeTime /2
+		if osEpoch() - self.lastCleanup > self.cleanInterval then 
 			-- to clean time based chunks while stationary
 			self:cleanCache()
 			self:saveChanged()
 		end
 	elseif not self.inMemory and osEpoch() - self.lastSave > self.saveInterval then
 		self:saveChanged()
-		-- could just as easily be called from the main loop
+		-- could just as easily be called from the main loop -- can setup a timer for that
 		-- just 1 setChunkData triggerts 2 osEpoch calls
 	end
 end
@@ -519,22 +629,6 @@ function ChunkyMap:cleanCache()
 	return cleared
 end
 
-function ChunkyMap:saveChanged()
-	-- save all chunks that might have been changed
-
-	if not self.inMemory then
-		local start = osEpoch("local")
-		local ct = 0
-		for id,chunk in pairs(self.chunks) do
-			if chunk._lastChange > self.lastSave then
-				self:saveChunk(id)
-				ct = ct + 1
-			end
-		end
-		self.lastSave = osEpoch()
-		print("Saved", ct, "Chunks", osEpoch("local") - start, "ms")
-	end
-end
 
 -- use local tables for internal use directly
 function ChunkyMap:nameToId(blockName)

@@ -120,6 +120,7 @@ local function checkForHostTransfer()
 					if global.turtles[id] then
 						global.turtles[id].needsHostNotify = true
 					end
+					print("TURTLE", id, "DID NOT ACKNOWLEDGE HOST")
 				end
 			end
 

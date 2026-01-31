@@ -4,6 +4,7 @@ local CheckBox = require("classCheckBox")
 require("classList")
 local BasicWindow = require("classBasicWindow")
 local Label = require("classLabel")
+local utils = require("utils")
 
 local default = {
 backgroundColor = colors.gray,
@@ -18,6 +19,8 @@ belowColor = colors.orange,
 homeColor = colors.magenta,
 circleRadius = 16 * 16, -- render distance of 16 chunks
 }
+
+local blitTab = BasicWindow.blitTab
 
 
 local mathRandom = math.random
@@ -275,13 +278,8 @@ function MapDisplay:setFocus(id)
 end
 
 function MapDisplay:checkUpdates()
-	local x,y,z
-	if gps and pocket then 
-		x, y, z = gps.locate()
-		if x and y and z then
-			x, y, z = math.floor(x), math.floor(y), math.floor(z)
-			global.pos = vector.new(x,y,z)
-		end
+	if pocket then 
+		global.pos = utils.gpsLocate()
 	end
 	if self.parent and self.visible then
 		local redraw = false
@@ -312,27 +310,21 @@ function MapDisplay:checkUpdates()
 end
 
 function MapDisplay:precomputeBackground()
-    self.background = {
-        text = {},
-        textColor = {},
-        backgroundColor = {}
-    }
+    self.background = {}
 	local background = self.background
 
-    self.backgroundWidth = 50 -- Fixed width of the background
-    self.backgroundHeight = 50 -- Fixed height of the background
+    self.backgroundWidth = 53 -- Fixed width of the background
+    self.backgroundHeight = 53 -- Fixed height of the background
+	local unknownColor = blitTab[default.unknownColor]
 
     for row = 1, self.backgroundHeight do
-        background[row] = {
-			text = {},
-			textColor = {},
-			backgroundColor = {}
-		}
+		local bgRow = { {}, {}, {} }
+        background[row] = bgRow
 
         for col = 1, self.backgroundWidth do
-            background[row].text[col] = randomChars[mathRandom(1, randCount)]
-            background[row].textColor[col] = mathRandom(7, 8)
-            background[row].backgroundColor[col] = colors.toBlit(default.unknownColor)
+            bgRow[1][col] = randomChars[mathRandom(1, randCount)]
+            bgRow[2][col] = mathRandom(7, 8)
+            bgRow[3][col] = unknownColor
         end
     end
 end
@@ -342,50 +334,48 @@ function MapDisplay:redraw() -- super override
 		--self:drawFilledBox(1, 1, self.width, self.height, self.backgroundColor)
 		--TODO: improve drawing speed (buffer each line and update with blit)
 		
-	
-		local blit = {
-			free = colors.toBlit(default.freeColor),
-			blocked = colors.toBlit(default.blockedColor),
-			unknown = colors.toBlit(default.unknownColor),
-			bad = colors.toBlit(default.disallowedColor)
-		}
-		
-		for row=0, self.height-1 do
-			self:setCursorPos(1, 1 + row)
-			local text, textColor, backgroundColor = {},{},{}
-			local bgRow = (self.mapZ + row * self.zoomLevel) % self.backgroundHeight + 1
-			local bg = self.background[bgRow]
+		local freeCol = blitTab[default.freeColor]
+		local blockedCol = blitTab[default.blockedColor]
+		local unknownCol = blitTab[default.unknownColor]
+		local disallowedCol = blitTab[default.disallowedColor]
 
-			for col=1, self.width do
-				local data = self.map:getData(self.mapX + (col-1)*self.zoomLevel, self.mapY, self.mapZ + row*self.zoomLevel)
+		local map = self.map
+		
+		local x, y, z, height, width = self.mapX, self.mapY, self.mapZ, self.height, self.width
+		local zoomLevel, background, bgWidth, bgHeight = self.zoomLevel, self.background, self.backgroundWidth, self.backgroundHeight
+		local text, textColor, backgroundColor = {},{},{}
+		for row=0, height-1 do
+			self:setCursorPos(1, 1 + row)
+			local bgRow = (z + row * zoomLevel) % bgHeight + 1
+			local bg = background[bgRow]
+			local bgText, bgTextColor, bgBackgroundColor = bg[1], bg[2], bg[3]
+
+			for col=1, width do
+				local data = map:getData(x + (col-1)*zoomLevel, y, z + row*zoomLevel)
 				
 				if data then
 					if data == 0 then
 						text[col] = " "
 						textColor[col] = 0
-						backgroundColor[col] = blit.free
+						backgroundColor[col] = freeCol
 					else
 						text[col] = " "
 						textColor[col] = 0
 						if data == "computercraft:turtle_advanced" then 
-							backgroundColor[col] = blit.bad
+							backgroundColor[col] = disallowedCol
 						else
-							backgroundColor[col] = blit.blocked
+							backgroundColor[col] = blockedCol
 						end
 					end
 				else
-					
-                    local bgCol = (self.mapX + (col - 1) * self.zoomLevel) % self.backgroundWidth + 1
-					text[col] = bg.text[bgCol]
-                    textColor[col] = bg.textColor[bgCol]
-					backgroundColor[col] = bg.backgroundColor[bgCol]
-					--text[col] = randomChars[mathRandom(1,randCount)]
-					--textColor[col] = mathRandom(7,8)
-					--backgroundColor[col] = blit.unknown
+                    local bgCol = (x + (col - 1) * zoomLevel) % bgWidth + 1
+					text[col] = bgText[bgCol]
+                    textColor[col] = bgTextColor[bgCol]
+					backgroundColor[col] = bgBackgroundColor[bgCol]
 				end
-				--textColor[col] = 0
 			end
-			self:blit(table.concat(text),table.concat(textColor),table.concat(backgroundColor))
+			-- self:blit(table.concat(text),table.concat(textColor),table.concat(backgroundColor))
+			self:blitTable(text, textColor, backgroundColor)
 		end
 		self:redrawOverlay()
 		-- redraw map elements
@@ -416,7 +406,7 @@ function MapDisplay:redrawOverlay()
 		if pos and self:isWithin(pos.x,nil,pos.z) then
 			local x,y = self:transformPos(pos)
 			self:setCursorPos(x,y)
-			self:blit("H",colors.toBlit(colors.black),colors.toBlit(default.homeColor))
+			self:blit("H",blitTab[colors.black],blitTab[default.homeColor])
 		end
 		
 		-- draw turtle stations
@@ -425,7 +415,7 @@ function MapDisplay:redrawOverlay()
 			if pos and self:isWithin(pos.x,nil,pos.z) then
 				local x,y = self:transformPos(pos)
 				self:setCursorPos(x,y)
-				self:blit("T",colors.toBlit(colors.black),colors.toBlit(default.homeColor))
+				self:blit("T",blitTab[colors.black],blitTab[default.homeColor])
 			end
 		end
 		for _,station in ipairs(config.stations.refuel) do
@@ -433,7 +423,7 @@ function MapDisplay:redrawOverlay()
 			if pos and self:isWithin(pos.x,nil,pos.z) then
 				local x,y = self:transformPos(pos)
 				self:setCursorPos(x,y)
-				self:blit("F",colors.toBlit(colors.black),colors.toBlit(default.homeColor))
+				self:blit("F",blitTab[colors.black],blitTab[default.homeColor])
 			end
 		end
 	end
@@ -450,7 +440,7 @@ function MapDisplay:redrawOverlay()
 				else color = default.belowColor end
 				
 				self:setCursorPos(x,y)
-				self:blit(string.sub(id,string.len(id),string.len(id)),colors.toBlit(colors.white),colors.toBlit(color))
+				self:blit(string.sub(id,string.len(id),string.len(id)),blitTab[colors.white],blitTab[color])
 				
 			end
 		end
@@ -466,8 +456,9 @@ function MapDisplay:transformPos(pos)
 end
 function MapDisplay:isWithin(x,y,z)
 	-- y can be nil if the level is irrelevant
-	if x >= self.mapX and x < self.mapX + self.width*self.zoomLevel
-	and z >= self.mapZ and z < self.mapZ + self.height*self.zoomLevel then
+	local mx, mz, zoomLevel = self.mapX, self.mapZ, self.zoomLevel
+	if x >= mx and x < mx + self.width*zoomLevel
+	and z >= mz and z < mz + self.height*zoomLevel then
 		if y then
 			if y == self.mapY then
 				return true

@@ -158,52 +158,25 @@ function Extension:pickupAndDeliverItems(reservation, dropOffPos, requester, req
     local gotItems, diffList = self:pickupReservation(reservation)
 
     if gotItems then
-            -- deliver items to requesting storage
-        if not self:navigateToPos(dropOffPos.x, dropOffPos.y, dropOffPos.z) then 
+        -- deliver items to requester (turtle, player, chest ...)
+        local options = {
+            safe = true,
+            -- safeDistance = 3, -- within 3 blocks of goal, safety is ignored if block is not disallowed
+            updateGoalFunc = function(oldGoal)
+                return self.storage:getDynamicTransportDestination(requester, requestingInv, oldGoal)
+            end,
+        }
+
+        if not self:navigate(dropOffPos.x, dropOffPos.y, dropOffPos.z, self.map, options) then 
             print("could not navigate to dropOffPos", dropOffPos.x, dropOffPos.y, dropOffPos.z)
         else
-            -- drop items into inv 
-
-            local waitTime = Miner.default.waitTime
-            if requestingInv == "player" then 
-                waitTime = 60*2
-                networkName = nil -- "player"
-            else 
-                networkName = Extension.getWiredNetworkName()
-                print("networkName", networkName)
-            end
-
-            -- if this fails use, Miner:transferItems() and dump items into a chest
-            print("delivered", data.name, data.count, "to", requester, "inv", networkName or requestingInv)
-            local answer, manualConfirmation
-            local requestConfirmation = function() 
-                answer = self.nodeStorage:send(requester, {"ITEMS_DELIVERED", 
-                { reservation = reservation, requestingInv = networkName or requestingInv, invList = diffList }},
-                true, true, waitTime)
-            end
-
-            parallel.waitForAny( 
-                requestConfirmation, 
-                function()
-                    shell.switchTab(multishell.getCurrent())
-                    print("---------------------------\n     ITEMS DELIVERED\nPRESS ENTER TO CONFIRM\n---------------------------")
-                    --os.pullEvent("key")
-                    local confirmed = read()
-                    manualConfirmation = true
-                end
-            )
-            if answer and answer.data[1] == "DELIVERY_CONFIRMED" then
-                print("delivery confirmed by requester", requester)
-            elseif manualConfirmation then 
-                print("manual delivery confirmation")
-            else
-                if answer then print(answer.data[1]) end
-                print("no delivery confirmation from requester", requester)
-                -- perhaps ping requester again if this happens often
-            end
-
+            -- confirm extraction (manual or by modem)
+            local confirmed = self.storage:requestDeliveryConfirmation(requester, reservation, requestingInv, diffList)
+            -- alternatively: drop items in inventory
         end
     end
+
+    self:returnHome()
 
 	self.taskList:remove(currentTask)
 end

@@ -20,9 +20,28 @@ local function findMonitor()
 end
 
 local min = math.min
-local stringbyte, stringchar = string.byte, string.char
+local stringbyte, stringchar, stringsub = string.byte, string.char, string.sub
 local tableconcat = table.concat
 local toBlit = colors.toBlit
+
+local blitTab = {
+    [colors.white] = "0",
+    [colors.orange] = "1",
+    [colors.magenta] = "2",
+    [colors.lightBlue] = "3",
+    [colors.yellow] = "4",
+    [colors.lime] = "5",
+    [colors.pink] = "6",
+    [colors.gray] = "7",
+    [colors.lightGray] = "8",
+    [colors.cyan] = "9",
+    [colors.purple] = "a",
+    [colors.blue] = "b",
+    [colors.brown] = "c",
+    [colors.green] = "d",
+    [colors.red] = "e",
+    [colors.black] = "f",
+}
 
 --Class Initialization
 function Monitor:new(m)
@@ -63,45 +82,49 @@ function Monitor:initialize()
 end
 
 function Monitor:resizeFrame()
-	local textColor = toBlit(self.textColor)
-	local backgroundColor = toBlit(self.backgroundColor)
-	
-	for r=1, self.height do
-		local line = self.frame[r]
-		if not line then
-			--self.frame[r] = emptyLine
-			--self.frame[r].modified = false
-			self.frame[r] = {text={}, textColor={}, backgroundColor={}}
-			line = self.frame[r]
-			for i=1, self.width do
-				line.text[i] = " "
-				line.textColor[i] = textColor
-				line.backgroundColor[i] = backgroundColor
+	local frame = self.frame
+	local width, height = self.width, self.height
+
+	local tColor = blitTab[self.textColor]
+	local bgColor = blitTab[self.backgroundColor]
+
+	for r = 1, height do
+		local line = frame[r]
+		if not line then 
+			line = { {}, {}, {} }
+			frame[r] = line
+			local text, textColor, backgroundColor = line[1], line[2], line[3]
+			for c = 1, width do
+				text[c] = " "
+				textColor[c] = tColor
+				backgroundColor[c] = bgColor
 			end
 		else
-			for i=#line.text+1, self.width do
-				line.text[i] = " "
-				line.textColor[i] = textColor
-				line.backgroundColor[i] = backgroundColor
+			local text, textColor, backgroundColor = line[1], line[2], line[3]
+			for c = #text+1, width do
+				text[c] = " "
+				textColor[c] = tColor
+				backgroundColor[c] = bgColor
 			end
 		end
 	end
-	-- for r=self.height+1, #self.frame do
-		-- self.frame[r] = nil
-	-- end
 end
 
 function Monitor:clearFrame()
-	local textColor = toBlit(self.textColor)
-	local backgroundColor = toBlit(self.backgroundColor)
+	local frame = self.frame
+	local width, height = self.width, self.height
+
+	local tColor = blitTab[self.textColor]
+	local bgColor = blitTab[self.backgroundColor]
 	
-	for r=1, self.height do
-		local line = self.frame[r]
+	for r=1, height do
+		local line = frame[r]
+		local text, textColor, backgroundColor = line[1], line[2], line[3]
 		if line then 
-			for i=1, self.width do
-				line.text[i] = " "
-				line.textColor[i] = textColor
-				line.backgroundColor[i] = backgroundColor
+			for i=1, width do
+				text[i] = " "
+				textColor[i] = tColor
+				backgroundColor[i] = bgColor
 			end
 		end
 	end
@@ -232,9 +255,10 @@ end
 function Monitor:getObjectByPos(x,y)
     local node = self.objects.first
     while node do
-        if node.width and node.height and node.visible then
-            if x >= node.x and x <= (node.x + node.width - 1)
-                and y >= node.y and y <= (node.y + node.height - 1) then
+		local nx, ny, nwidth, nheight, nvisible = node.x, node.y, node.width, node.height, node.visible
+        if nwidth and nheight and nvisible then
+            if x >= nx and x <= (nx + nwidth - 1)
+                and y >= ny and y <= (ny + nheight - 1) then
                 return node
             end
         end
@@ -319,37 +343,33 @@ end
 
 function Monitor:update()
 	-- update the changed frame regions
-	local ct = 0
-	for i = 1, min(#self.frame,self.height) do
-		local line = self.frame[i]
+	local frame = self.frame
+	local term = self.term
+	for i = 1, min(#frame, self.height) do
+		local line = frame[i]
+		local lnText, lnTextColor, lnBackgroundColor = line[1], line[2], line[3]
 		if line.modified then 
-			self.term.setCursorPos(1,i)
-			self.term.blit(tableconcat(line.text),
-				tableconcat(line.textColor),
-				tableconcat(line.backgroundColor))
+			term.setCursorPos(1,i)
+			term.blit(tableconcat(lnText),
+				tableconcat(lnTextColor),
+				tableconcat(lnBackgroundColor))
 			line.modified = false
-			ct = ct + 1
 		end
 	end
-	-- if ct > 0 then 
-		-- print(os.epoch("local")/1000, "updated", ct)
-	-- end
 end
 
-function Monitor:blit(text,textColor, backgroundColor)
+
+function Monitor:blit(text, textColor, backgroundColor)
 	local line = self.frame[self.curY]
-	if line then 
-	
-		local text = {stringbyte(text,1,#text)}
-		local textColor = {stringbyte(textColor,1,#textColor)}
-		local backgroundColor = {stringbyte(backgroundColor,1,#backgroundColor)}
-		
+	if line then 		
+		local lnText, lnTextColor, lnBackgroundColor = line[1], line[2], line[3]
 		local cx = self.curX-1
+
 		for i=self.curX, min(#text+cx, self.width) do
 			local charPos = i-cx
-			line.text[i] = stringchar(text[charPos])
-			line.textColor[i] = stringchar(textColor[charPos])
-			line.backgroundColor[i] = stringchar(backgroundColor[charPos])
+			lnText[i] = stringsub(text, charPos, charPos)
+			lnTextColor[i] = stringsub(textColor, charPos, charPos)
+			lnBackgroundColor[i] = stringsub(backgroundColor, charPos, charPos)
 		end
 		line.modified = true
 	end
@@ -359,12 +379,14 @@ function Monitor:blitTable(text, textColor, backgroundColor)
 	-- text, textColor, backgroundColor should be table of chars
 	local line = self.frame[self.curY]
 	if line then 
+		local lnText, lnTextColor, lnBackgroundColor = line[1], line[2], line[3]
 		local cx = self.curX-1
+
 		for i=self.curX, min(#text+cx, self.width) do
 			local charPos = i-cx
-			line.text[i] = text[charPos]
-			line.textColor[i] = textColor[charPos]
-			line.backgroundColor[i] = backgroundColor[charPos]
+			lnText[i] = text[charPos]
+			lnTextColor[i] = textColor[charPos]
+			lnBackgroundColor[i] = backgroundColor[charPos]
 		end
 		line.modified = true
 	end
@@ -374,15 +396,18 @@ function Monitor:write(text)
 
 	local line = self.frame[self.curY]
 	if line then 
-	
-		local chars = {stringbyte(text, 1, #text)}
-		local textColor = toBlit(self.textColor)
-		local backgroundColor = toBlit(self.backgroundColor)
+		local lnText, lnTextColor, lnBackgroundColor = line[1], line[2], line[3]
+
+		local tColor = blitTab[self.textColor]
+		local bgColor = blitTab[self.backgroundColor]
+
 		local cx = self.curX-1
-		for i=self.curX, min(#chars+cx, self.width) do
-			line.text[i] = stringchar(chars[i-cx])
-			line.textColor[i] = textColor
-			line.backgroundColor[i] = backgroundColor
+
+		for i=self.curX, min(#text+cx, self.width) do
+			local charPos = i-cx
+			lnText[i] = stringsub(text, charPos, charPos)
+			lnTextColor[i] = tColor
+			lnBackgroundColor[i] = bgColor
 		end
 		line.modified = true
 		
@@ -393,42 +418,29 @@ function Monitor:drawText(x,y,text,textColor,backgroundColor)
 	-- no real performance impact 1 ms
 	local line = self.frame[y]
 	if line then 
+		local lnText, lnTextColor, lnBackgroundColor = line[1], line[2], line[3]
 
-		local chars = {stringbyte(text, 1, #text)}
 		if not textColor then
 			textColor = defaultTextColor
 		end
-		local textColor = toBlit(textColor)
+		local textColor = blitTab[textColor]
 		
 		if backgroundColor then 
-			backgroundColor = toBlit(backgroundColor)
+			backgroundColor = blitTab[backgroundColor]
 		end
+
 		local cx = x-1
-		for i=x, min(#chars+cx, self.width) do
-			line.text[i] = stringchar(chars[i-cx])
-			line.textColor[i] = textColor
+		for i=x, min(#text+cx, self.width) do
+			local charPos = i-cx
+			lnText[i] = stringsub(text, charPos, charPos)
+			lnTextColor[i] = textColor
 			if backgroundColor then
-				line.backgroundColor[i] = backgroundColor
+				lnBackgroundColor[i] = backgroundColor
 			end
 		end
 		line.modified = true
 	end
 
-
-    -- self:setCursorPos(x,y)
-	-- if not color then
-		-- color = defaultTextColor
-	-- end
-	-- local backgroundColor = self:getBackgroundColorByPos(x,y)
-	-- if not backgroundColor then
-		-- backgroundColor = defaultBackgroundColor
-	-- end
-	-- self:setBackgroundColor(backgroundColor)
-    -- self:setTextColor(color)
-	-- self:setCursorPos(x,y)
-	-- self:write(text)
-    -- --TODO: check backgroundColor for each char (with blit)
-    -- self:restoreColor()
 end
 
 function Monitor:drawLine(x,y,endX,endY,color)
@@ -443,195 +455,164 @@ function Monitor:drawBox(x,y,width,height,color, boderWidth, backgroundColor)
 
 	if not borderWidth then borderWidth = defaultBoderWidth end
 	if not backgroundColor then backgroundColor = defaultBackgroundColor end
-	local backgroundColor = toBlit(backgroundColor)
 
 	--TODO: borderWidth, different values
+	
+	local frame = self.frame
+	local selfwidth, selfheight = self.width, self.height
 
-	-- 4-5/13 ms for drawBox and drawFilled
-	
-	-- color = toBlit(color)
-    -- for c=1,height do
-		-- self:setCursorPos(x,y+c-1)
-        -- if c == 1 or c == height then
-			-- local text, textColor, backgroundColor = {},{},{}
-            -- for ln=1,width do
-				-- text[ln] = " "
-				-- textColor[ln] = 0
-				-- backgroundColor[ln] = color
-            -- end
-			-- self:blitTable(text,textColor,backgroundColor)
-        -- else
-            -- self:blitTable({" "},{"0"},{color})
-            -- if width > 1 then
-                -- self:setCursorPos(x+width-1, y+c-1)
-                -- self:blitTable({" "},{"0"},{color})
-            -- end
-        -- end
-    -- end
-	
-	--if 1 == 1 then return nil end
-	
-	
-	local startX = min(x,self.width)
+	local tColor = blitTab[color]
+	local bgColor = blitTab[backgroundColor]
+
+	local startX = min(x, selfwidth)
 	local maxX = x+width-1
-	local endX = min(maxX, self.width)
+	local endX = min(maxX, selfwidth)
 	local sy = y < 1 and 1 or y
 
-	local frame = self.frame
 	
 	if false then
+		-- uses full characters to draw the border
 		local color = toBlit(color)
 		local ly = y-1
-		for cy=sy,min(height+ly,self.height) do
+		for cy = sy, min(height+ly, selfheight) do
 			local line = frame[cy]
+			local lnText, lnTextColor, lnBackgroundColor = line[1], line[2], line[3]
+
 			if cy-y == 0 or cy-ly == height then
 				for ln=x, endX do
-					line.text[ln] = " "
-					line.textColor[ln] = 0
-					line.backgroundColor[ln] = color
+					lnText[ln] = " "
+					lnTextColor[ln] = "0"
+					lnBackgroundColor[ln] = tColor
 				end
 			else
-				line.text[startX] = " "
-				line.textColor[startX] = "0"
-				line.backgroundColor[startX] = color
+				lnText[startX] = " "
+				lnTextColor[startX] = "0"
+				lnBackgroundColor[startX] = tColor
 				if width > 1 and maxX <= endX then
-					line.text[maxX] = " "
-					line.textColor[maxX] = "0"
-					line.backgroundColor[maxX] = color
+					lnText[maxX] = " "
+					lnTextColor[maxX] = "0"
+					lnBackgroundColor[maxX] = tColor
 				end
 			end
 			line.modified = true
 		end
 	else
-		local color = toBlit(color)
+		-- uses special characters to draw the border
 		local ly = y-1
-		for cy=sy,min(height+ly,self.height) do
+
+		for cy = sy, min(height+ly, selfheight) do
+
 			local line = frame[cy]
+			local lnText, lnTextColor, lnBackgroundColor = line[1], line[2], line[3]
+
 			if cy-y == 0 or cy-ly == height then
 				for ln=x, endX do
 					if cy-y == 0 then
-						if ln==x then 
-							line.text[ln] = " "
-							line.textColor[ln] = color
-							line.backgroundColor[ln] = color
+						-- top line
+						if ln == x then 
+							lnText[ln] = " "
+							lnTextColor[ln] = tColor
+							lnBackgroundColor[ln] = tColor
 							--line.text[ln] = "\129"
 							--line.textColor[ln] = toBlit(self:getBackgroundColor())
 							--line.backgroundColor[ln] = color
 						elseif ln == endX then
-							line.text[ln] = " "
-							line.textColor[ln] = color
-							line.backgroundColor[ln] = color
+							lnText[ln] = " "
+							lnTextColor[ln] = tColor
+							lnBackgroundColor[ln] = tColor
 							--line.text[ln] = "\130"
 							--line.textColor[ln] = toBlit(self:getBackgroundColor())
 							--line.backgroundColor[ln] = color
 						else
-							line.text[ln] = "\143" --"\131"
-							line.textColor[ln] = color
-							line.backgroundColor[ln] = backgroundColor
+							lnText[ln] = "\143" --"\131"
+							lnTextColor[ln] = tColor
+							lnBackgroundColor[ln] = bgColor
 						end
 					else
+						-- bottom line
 						if ln==x then 
-							line.text[ln] = " "
-							line.textColor[ln] = color
-							line.backgroundColor[ln] = color
+							lnText[ln] = " "
+							lnTextColor[ln] = tColor
+							lnBackgroundColor[ln] = tColor
 							--line.text[ln] = "\144"
 							--line.textColor[ln] = toBlit(self:getBackgroundColor())
 							--line.backgroundColor[ln] = color
 						elseif ln == endX then
-							line.text[ln] = " "
-							line.textColor[ln] = color
-							line.backgroundColor[ln] = color
+							lnText[ln] = " "
+							lnTextColor[ln] = tColor
+							lnBackgroundColor[ln] = tColor
 							--line.text[ln] = "\159"
 							--line.textColor[ln] = color
 							--line.backgroundColor[ln] = toBlit(self:getBackgroundColor())
 						else
-							line.text[ln] = "\131"
-							line.textColor[ln] = backgroundColor
-							line.backgroundColor[ln] = color
+							lnText[ln] = "\131"
+							lnTextColor[ln] = bgColor
+							lnBackgroundColor[ln] = tColor
 						end
 					end
 				end
 			else
-				line.text[startX] = " "
-				line.textColor[startX] = color
-				line.backgroundColor[startX] = color
+				lnText[startX] = " "
+				lnTextColor[startX] = tColor
+				lnBackgroundColor[startX] = tColor
+
 				if width > 1 and maxX <= endX then
-					line.text[maxX] = " "
-					line.textColor[maxX] = color
-					line.backgroundColor[maxX] = color
+					lnText[maxX] = " "
+					lnTextColor[maxX] = tColor
+					lnBackgroundColor[maxX] = tColor
 				end
 			end
 			line.modified = true
 		end
 	end
-	
-	-- self:setBackgroundCol()
-    -- local old = term.redirect(self)
-    -- paintutils.drawBox(x,y,x+width-1,y+height-1,color)
-    -- term.redirect(old)
-	-- self:restoreBackgroundColor()
 
 end
 
 function Monitor:drawFilledBox(x,y,width,height,color)
-	-- three options to draw a box
 	
-	-- color = toBlit(color)
-    -- for c=1,height do
-		-- self:setCursorPos(x,y+c-1)
-		-- local text, textColor, backgroundColor = {},{},{}
-		-- for ln=1,width do
-			-- text[ln] = " "
-			-- textColor[ln] = 0
-			-- backgroundColor[ln] = color
-		-- end
-		-- self:blitTable(text, textColor, backgroundColor)
-	-- end
-	
-	--if 1 == 1 then return nil end
+	local frame = self.frame
+	local selfwidth, selfheight = self.width, self.height
 
-	-- print("drawFilledBox", x,y,width,height,color)
-	
-	local startX = min(x,self.width)
+	local bgColor = blitTab[color]
+
 	local maxX = x+width-1
-	local endX = min(maxX, self.width)
+	local endX = min(maxX, selfwidth)
 	local sy = y < 1 and 1 or y
 	
-	
-	local color = toBlit(color)
-    for cy=sy,min(height+y-1,self.height) do
-		local line = self.frame[cy]
+    for cy = sy, min(height+y-1, selfheight) do
+		local line = frame[cy]
+		local lnText, lnTextColor, lnBackgroundColor = line[1], line[2], line[3]
 		for ln=x,endX do
-			line.text[ln] = " "
-			line.textColor[ln] = 0
-			line.backgroundColor[ln] = color
+			lnText[ln] = " "
+			lnTextColor[ln] = "0"
+			lnBackgroundColor[ln] = bgColor
 		end
 		line.modified = true
 	end
-	
-	-- self:setBackgroundCol()
-    -- local old = term.redirect(self)
-    -- paintutils.drawFilledBox(x,y,x+width-1,y+height-1,color)
-    -- term.redirect(old)
-	-- self:restoreBackgroundColor()
+
 end
 
 function Monitor:drawCircle(x,y,radius,color)
     -- Bresenham / midpoint circle algorithm
     if not radius or radius <= 0 then return end
+
+	local frame = self.frame
     local w,h = self.width, self.height
+
     local cx, cy = math.floor(x), math.floor(y)
     local r = math.floor(radius + 0.5)
-    local col = toBlit(color)
-
-    local frame = self.frame
+    local col = blitTab[color]
+    
     local function plot(px, py)
         if px < 1 or px > w or py < 1 or py > h then return end
         local line = frame[py]
         if not line then return end
-        line.text[px] = " "
-        line.textColor[px] = col
-        line.backgroundColor[px] = col
+
+		local lnText, lnTextColor, lnBackgroundColor = line[1], line[2], line[3]
+        lnText[px] = " "
+        lnTextColor[px] = col
+        lnBackgroundColor[px] = col
+
         line.modified = true
     end
 

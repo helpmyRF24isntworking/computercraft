@@ -205,25 +205,26 @@ function TurtleControl:initialize()
 	
 	--self.winSimple.lblPosition = Label:new(self.data.pos,30,1)
 	
-	
+	local data = self.data
 	-- detail
-	self.frmId = Frame:new(self.data.id .. " - " .. self.data.label ,1,1,self.width,self.height,self.borderColor)
+	self.frmId = Frame:new(data.id .. " - " .. data.label ,1,1,self.width,self.height,self.borderColor)
 	self.btnCollapse = Button:new("-",1,1,3,1)
 	-- row 1 - 16
-	self.lblX = Label:new("X  " .. self.data.pos.x,3,3)
-	self.lblY = Label:new("Y  " .. self.data.pos.y,3,4)
-	self.lblZ = Label:new("Z  " .. self.data.pos.z,3,5)
+	self.lblX = Label:new("X  " .. data.pos.x,3,3)
+	self.lblY = Label:new("Y  " .. data.pos.y,3,4)
+	self.lblZ = Label:new("Z  " .. data.pos.z,3,5)
 	self.btnMap = Button:new("map",12,3,5,1)
 	self.btnCallHome = Button:new("home",12,5,5,1)
 	-- row 17 - 27
-	self.lblTaskLast = Label:new(self.data.lastTask,20,3)
-	self.lblTask = Label:new(self.data.task,20,4)
+	self.lblProgress = Label:new("",29,2)
+	self.lblTaskLast = Label:new(data.lastTask,20,3)
+	self.lblTask = Label:new(data.task,20,4)
 	self.btnAddTask = Button:new("add",20,5,6,1, colors.purple)
 	self.btnCancelTask = Button:new("cancel",27,5,6,1)
 	self.btnDeleteTurtle = Button:new("delete turtle",20,5,13,1)
 	-- row 28 - 
-	self.lblFuel = Label:new(      "fuel      " .. self.data.fuelLevel,36,3)
-	self.lblEmptySlots = Label:new("slots     " .. self.data.emptySlots,36,4)
+	self.lblFuel = Label:new(      "fuel      " .. data.fuelLevel,36,3)
+	self.lblEmptySlots = Label:new("slots     " .. data.emptySlots,36,4)
 	self.lblOnline = Label:new(self.onlineText,36,5,self.onlineColor)
 	self.lblTime = Label:new("00:00.00", 46,5)
 	
@@ -244,6 +245,7 @@ function TurtleControl:initialize()
 	self.winDetail:addObject(self.lblTime)
 	self.winDetail:addObject(self.lblOnline)
 	self.winDetail:addObject(self.lblEmptySlots)
+	self.winDetail:addObject(self.lblProgress)
 
 	self.winDetail:addObject(self.btnCollapse)
 	self.winDetail:addObject(self.btnAddTask)
@@ -257,33 +259,37 @@ function TurtleControl:initialize()
 end
 
 function TurtleControl:refreshPos()
-	self.lblX:setText("X  " .. self.data.pos.x)
-	self.lblY:setText("Y  " .. self.data.pos.y)
-	self.lblZ:setText("Z  " .. self.data.pos.z)
+	local pos = self.data.pos
+	self.lblX:setText("X  " .. pos.x)
+	self.lblY:setText("Y  " .. pos.y)
+	self.lblZ:setText("Z  " .. pos.z)
 end
 
 function TurtleControl:refresh()
 	self:refreshPos()
 
+	local data = self.data
 	if self.collapsed then
 		--self.winSimple.lblId:setText(self.data.id .. " - " .. self.data.label)
-		self.winSimple.lblTask:setText(self.data.lastTask or "no task")
+		self.winSimple.lblTask:setText(data.lastTask or "no task")
 		self.winSimple.lblOnline:setText(self.onlineText)
 		self.winSimple.lblOnline:setTextColor(self.onlineColor)
 	else
-		self.lblTaskLast:setText(self.data.lastTask or "no task")
-		self.lblTask:setText(self.data.task)
+		self.lblTaskLast:setText(data.lastTask or "no task")
+		self.lblTask:setText(data.task)
 
 		self.lblFuel:setTextColor(self.fuelColor)
-		self.lblFuel:setText("fuel      " .. self.data.fuelLevel)
-		self.lblEmptySlots:setText("slots     " .. self.data.emptySlots.."/16")
+		self.lblFuel:setText("fuel      " .. data.fuelLevel)
+		self.lblEmptySlots:setText("slots     " .. data.emptySlots.."/16")
+		local progressText = ( data.progress and string.format("%3d%%", math.floor((data.progress) * 100)) ) or ""
+		self.lblProgress:setText(progressText)
 
 		-- 1 tick = 3600 ms
 		-- 1 day = 24000 ticks
 		-- 1 real second = 72000 ms
-		local seconds = math.floor(self.data.timeDiff/72000)%60
-		local minutes = math.floor(self.data.timeDiff/72000/60)
-		local ticks = math.floor((self.data.timeDiff % 72000)/3600/20*100)
+		local seconds = math.floor(data.timeDiff/72000)%60
+		local minutes = math.floor(data.timeDiff/72000/60)
+		local ticks = math.floor((data.timeDiff % 72000)/3600/20*100)
 		local lastSeen = string.format("%02d:%02d.%02d",minutes,seconds,ticks)
 		self.lblTime:setText(lastSeen)
 		self.lblOnline:setText(self.onlineText)
@@ -291,13 +297,14 @@ function TurtleControl:refresh()
 		self.lblOnline:setTextColor(self.onlineColor)
 		
 		
-		self.btnAddTask:setEnabled(self.data.online)
-		self.btnCancelTask:setEnabled(self.data.online)
-		self.btnCallHome:setEnabled(self.data.online)
+		self.btnAddTask:setEnabled(data.online)
+		self.btnCancelTask:setEnabled(data.online)
+		self.btnCallHome:setEnabled(data.online)
 		
-		self.btnAddTask.visible = self.data.online
-		self.btnCancelTask.visible = self.data.online
-		self.btnDeleteTurtle.visible = not self.data.online
+		self.btnAddTask.visible = data.online
+		self.btnCancelTask.visible = data.online
+		self.btnDeleteTurtle.visible = not data.online
+		self.lblProgress.visible = data.online
 	end
 end
 

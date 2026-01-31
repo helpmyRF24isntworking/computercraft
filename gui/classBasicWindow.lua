@@ -31,6 +31,7 @@ local blitTab = {
 }
 
 local BasicWindow = {}
+BasicWindow.blitTab = blitTab
 
 function BasicWindow:new(x,y,width,height,complex)
 	local o = o or {}
@@ -288,9 +289,10 @@ function BasicWindow:getObjectByPos(x,y)
 	y = y - self.y + self.scrollY
     local node = self.objects.first
     while node do
-        if node.width and node.height and node.visible then
-            if x >= node.x and x <= (node.x + node.width - 1)
-                and y >= node.y and y <= (node.y + node.height - 1) then
+		local nx, ny, nwidth, nheight, nvisible = node.x, node.y, node.width, node.height, node.visible
+        if nwidth and nheight and nvisible then
+            if x >= nx and x <= (nx + nwidth - 1)
+                and y >= ny and y <= (ny + nheight - 1) then
                 return node
             end
         end
@@ -415,6 +417,11 @@ end
 function BasicWindow:blit(text,textColor,backgroundColor)
 	--if self.parent then
 		self.parent:blit(text,textColor,backgroundColor)
+	--end
+end
+function BasicWindow:blitTable(text,textColor,backgroundColor)
+	--if self.parent then
+		self.parent:blitTable(text,textColor,backgroundColor)
 	--end
 end
 

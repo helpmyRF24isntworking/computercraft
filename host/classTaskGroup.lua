@@ -49,6 +49,32 @@ function TaskGroup:generateUUID()
 	end)
 end
 
+function TaskGroup:getProgress()
+	-- weigh the progress of all turtles according to their assigned area volume
+	local totalVolume = 0
+	local accumulatedProgress = 0
+	local assignments = self.assignments
+	local turtles = self.turtles
+	if assignments then
+		for _,assignment in ipairs(assignments) do
+			local turtle = turtles[assignment.turtleId]
+			local progress = turtle.state.progress or 0
+			local area = assignment.area
+			local volume = (math.abs(area.start.x - area.finish.x)+1) *
+				(math.abs(area.start.y - area.finish.y)+1) *
+				(math.abs(area.start.z - area.finish.z)+1)
+			totalVolume = totalVolume + volume
+			accumulatedProgress = accumulatedProgress + (progress * volume)
+		end
+	end
+	if totalVolume > 0 then
+		return accumulatedProgress / totalVolume
+	else
+		return 0
+	end
+end
+
+
 function TaskGroup:getActiveTurtles()
 	local count = 0
 	if self.assignments then

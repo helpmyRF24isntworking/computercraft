@@ -11,7 +11,6 @@ local label = os.getComputerLabel() or id
 
 local waitTime = 3 -- to not overload the host
 local mapLog = {}
-local unloadedLog = {}
 local osEpoch = os.epoch
 
 nodeStream.onStreamBroken = function(previous)
@@ -21,7 +20,6 @@ end
 -- called by onStreamMessage
 nodeStream._clearLog = function()
 	mapLog = {}
-	unloadedLog = {}
 end
 
 
@@ -102,8 +100,8 @@ nodeStream.onRequestStreamData = function(previous)
 		
 		state.fuelLevel = miner:getFuelLevel()
 		state.emptySlots = miner:getEmptySlots()
+		state.progress = miner:getOverallProgress()
 		
-		local unloadedLog = unloadedLog
 		local mapLog = mapLog
 
 		--state.inventory = miner:
@@ -136,6 +134,7 @@ nodeStream.onRequestStreamData = function(previous)
 		state.orientation = -1
 		state.fuelLevel = -1
 		state.emptySlots = -1
+		state.progress = nil
 		state.stuck = true
 		if global.err then
 			state.lastTask = global.err.func
@@ -167,7 +166,7 @@ while true do
 	nodeStream:stream()
 	nodeStream:checkWaitList()
 	nodeStorage:checkWaitList() -- !! should not be done in send but in main, main is blocking however
-	sleep(0.2) --0.2
+	sleep(0.2)
 end
 
 print("how did we end up here...")
