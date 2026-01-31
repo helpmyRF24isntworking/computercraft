@@ -16,8 +16,7 @@ local channelStorage = bluenet.default.channels.storage
 local computerId = os.getComputerID()
 local osEpoch = os.epoch
 
-
-
+local MinerTaskAssignment = require("classMinerTaskAssignment")
 
 -- ################ start refueling logic
 
@@ -123,19 +122,42 @@ nodeStream.onStreamMessage = function(msg,previous)
 	end
 end
 
+node.onRequestAnswer = function(msg)
+
+	if msg.data[1] == "TASK_ASSIGNMENT" then 
+		local task = MinerTaskAssignment:fromData(msg.data[2])
+		if task then 
+			if miner then 
+				miner:addTaskAssignment(task)
+				task:confirmQueued(msg, node)
+			else
+				task:reject(msg, node, "no miner object")
+			end
+		else
+			node:answer(msg, {"TASK_REJECTED", "invalid task data"})
+			print(textutils.serialize(msg.data[2]))
+		end
+	elseif msg.data[1] == "CANCEL_TASK" then
+		local taskId = msg.data[2]
+		if miner then 
+			local ok = miner:cancelTask(taskId, msg)
+			if not ok then
+				node:answer(msg, {"TASK_CANCEL_FAILED", taskId})
+			end
+		else
+			node:answer(msg, {"TASK_CANCEL_FAILED", taskId})
+		end
+	end
+end
+
 node.onReceive = function(msg)
 	-- reboot is handled in NetworkNode
-	if msg and msg.data then
-		if msg.data[3] then 
-			--print("received:", msg.data[1], msg.data[2], unpack(msg.data[3]))
-		else 
-			--print("received:", msg.data[1], msg.data[2]) 
-		end
+	if msg and msg.data and not msg.answer then
 		
 		if msg.data[1] == "STOP" then
 			if miner then 
 				miner.stop = true
-			end
+			end		
 		else
 			global.addTask(msg.data)
 		end
@@ -163,7 +185,7 @@ while true do
 			elseif protocol == "storage" or protocol == "storage_priority" then
 				nodeStorage:handleMessage(msg)
 			end
-			
+
 	elseif event == "terminate" then 
 		error("Terminated",0)
 	end

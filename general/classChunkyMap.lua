@@ -303,6 +303,9 @@ function ChunkyMap:getChunkWriteHandle(chunkId)
 		fileHandles[chunkId] = handle
 		self.handleCount = self.handleCount + 1
 	else
+		-- some old data might remain in the file if new data is smaller
+		-- unbinarize reads data length from header though, so this is fine
+		handle.seek("set", 0)
 		self.handleReuseCount = self.handleReuseCount + 1
 	end
 	
@@ -319,8 +322,16 @@ function ChunkyMap:saveChunk(chunkId)
 		handle.write(binarize(chunk, maxIndex))
 		handle.flush()
 	end
-	--print("SAVED CHUNK", chunkId)
+	print("SAVED CHUNK", chunkId)
 end
+
+-- TODO: if bored: create chunks of chunks to reduce file handle usage
+-- e.g. 3x3x3 chunks saved in one file, using file.seek to access individual chunks
+-- but this requires rewriting the whole rest of file when one chunk changes 
+-- (at least if it takes more space than before, could add padding between chunks
+--  -> rewrite is only needed if pad is exceeded to shift chunks coming afterwards )
+-- also: keep a logfile opened for very sudden crashes, which we can read from on startup
+-- to replay and have the best possible consistency
 
 function ChunkyMap:saveChanged()
 	-- save all chunks that might have been changed
@@ -333,14 +344,14 @@ function ChunkyMap:saveChanged()
 		-- prioritize chunks that have open write handles
 		local saveLater = {}
 		for id,chunk in pairs(self.chunks) do
-			if chunk._lastChange > self.lastSave then
+			--if chunk._lastChange > self.lastSave then
 				if self.fileHandles[id] then
 					self:saveChunk(id)
 					ct = ct + 1
 				else 
 					tableinsert(saveLater, id)
 				end
-			end
+			--end
 		end
 
 		os.queueEvent("yield")

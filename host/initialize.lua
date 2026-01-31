@@ -8,7 +8,7 @@ local Monitor = require("classMonitor")
 local HostDisplay = require("classHostDisplay")
 --require("classMap")
 local ChunkyMap = require("classChunkyMap")
-require("classTaskGroup")
+local TaskGroup = require("classTaskGroup")
 local RemoteStorage = require("classRemoteStorage")
 
 

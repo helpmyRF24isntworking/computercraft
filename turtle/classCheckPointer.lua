@@ -1,4 +1,6 @@
 require("classList")
+local utils = require("utils")
+local MinerTaskAssignment = require("classMinerTaskAssignment")
 
 local default = {
 	fileName = "runtime/checkpoint.txt",
@@ -23,7 +25,7 @@ function CheckPointer:new(o)
 	
 	o.fileName = default.fileName
 	o.index = 0
-	o.checkpoint = { }
+	o.checkpoint = nil
 	
     return o
 end
@@ -67,6 +69,30 @@ function CheckPointer:executeTasks(miner)
 
 	-- restore the miner position
 	local pos, orientation = self.checkpoint.pos, self.checkpoint.orientation
+
+	-- restore task assignment
+	local taskAssignment = self.checkpoint.assignment
+	if taskAssignment then
+		local assignment = MinerTaskAssignment:fromData(taskAssignment)
+		if assignment then
+			local currentAssignment = miner:getTaskAssignment()
+			if currentAssignment then
+				print("WARNING: turtle already has a task assignment")
+			end
+			miner:addTaskAssignment(assignment, 1) -- add as first assignment
+			-- TODO: assignment:notifyResumed()
+
+			-- how do we add all the checkpointed tasks to the assignment?
+			-- e.g.
+			-- stripMine ( args )
+			-- mineArea ( args )
+			-- -> these tasks must be added to the assignment's task list
+			-- maybe rework the taskassignment anyways to hold lists of funcitons 
+			-- then we can also execute more complex tasks like deliverItems -> returnHome -> etc. 
+			-- we can do so anyways with the queue but its not as nice
+			-- requires tracking individual tasks progress though and saving what steps are done etc.
+		end
+	end
 	
 	for k, task in ipairs(self.checkpoint.tasks) do
 		if k == 1 and not task.taskState.ignorePosition then 
@@ -79,12 +105,25 @@ function CheckPointer:executeTasks(miner)
 		end
 		local func = task.func
 		local args = task.taskState.args
-		miner[func](miner, table.unpack(args, 1, args.n))
+		-- miner[func](miner, table.unpack(args, 1, args.n))
+		-- alternatively: add tasks to global taskList and let main loop handle it
+		-- global.addTask( { func, table.unpack(args, 1, args.n) }) ??
+		utils.callObjectFunction(miner, func, args)
 	end
 
 	-- remove the checkpoint file after restoration
 	fs.delete(self.fileName)
 	return true
+end
+
+local function getTaskAssignment(miner)
+	local assignmentData 
+	local assignment = miner:getTaskAssignment()
+	if assignment then
+		local noCheckpoint = true
+		assignmentData = assignment:toSerializableData(noCheckpoint)
+	end
+	return assignmentData
 end
 
 local function getCheckpointableTasks(taskList)
@@ -103,28 +142,40 @@ local function getCheckpointableTasks(taskList)
     return checkpointableTasks
 end
 
+function CheckPointer:getLastSavedCheckpoint()
+	-- use to get the most recent stable checkpoint
+	return self.checkpoint
+end
+
+function CheckPointer:getCheckpoint(miner)
+	-- ONLY CALL THIS AT SPECIFIC POINTS WHERE THE MINER IS IN A CONSISTENT STATE
+	local checkpoint = {
+		tasks = getCheckpointableTasks(miner.taskList),
+		pos = miner.pos,
+		orientation = miner.orientation,
+		assignment = getTaskAssignment(miner),
+	}
+	if #checkpoint.tasks == 0 then 
+		checkpoint = nil
+	end
+	return checkpoint
+end
+
 function CheckPointer:save(miner)
 
-    local checkpoint = {
-        tasks = getCheckpointableTasks(miner.taskList),
-        pos = miner.pos,
-        orientation = miner.orientation,
-    }
+	local checkpoint = self:getCheckpoint(miner)
 
-	if #checkpoint.tasks == 0 then
+	if not checkpoint or #checkpoint.tasks == 0 then
 		fs.delete(self.fileName)
+		self.checkpoint = nil
 	else
-		--if not self.file then
-			self.file = fs.open(self.fileName, "w")
-		--end
-		self.file.write(textutils.serialize(checkpoint))
+		-- assignment and checkpoint share args -> serialization error
+		self.file = fs.open(self.fileName, "w")
+		self.file.write(textutils.serialize(checkpoint, { allow_repetitions = true }))
 		self.file.close()
-		--self.file.flush()
 
-		--print("CHP:", checkpoint.tasks[1].func)
-		-- flush appends the file
+		self.checkpoint = checkpoint
 	end
-    
 end
 
 function CheckPointer:close()

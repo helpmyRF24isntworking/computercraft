@@ -100,7 +100,10 @@ nodeStream.onRequestStreamData = function(previous)
 		
 		state.fuelLevel = miner:getFuelLevel()
 		state.emptySlots = miner:getEmptySlots()
+		-- state.progress = miner:getOverallProgress() include in assignment?
+		-- might be interesting if no assignment exists, though this should not happen often
 		state.progress = miner:getOverallProgress()
+		state.assignment = miner:getAssignmentState()
 		
 		local mapLog = mapLog
 
@@ -140,7 +143,7 @@ nodeStream.onRequestStreamData = function(previous)
 			state.lastTask = global.err.func
 			state.task = global.err.text
 		else
-			state.lastTask = "ERROR"
+			state.lastTask = "ERROR: NO MINER"
 			state.task = ""
 		end
 		state.mapLog = {}

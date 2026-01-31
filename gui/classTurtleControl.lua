@@ -4,6 +4,7 @@ local Label = require("classLabel")
 local BasicWindow = require("classBasicWindow")
 local Frame = require("classFrame")
 local TaskSelector = require("classTaskSelector")
+local TaskAssignment = require("classTaskAssignment")
 
 local default = {
 	colors = {
@@ -40,6 +41,11 @@ function TurtleControl:new(x,y,data,node)
 	o.hostDisplay = nil
 	o.collapsed = true
 	o.win = nil
+
+	self.task = TaskAssignment:new(o.data and o.data.id, nil)
+	self.task:setNode(node)
+	-- TODO: add task to self.taskManager once it really is to be started
+
 	o:initialize()
 
 	
@@ -50,10 +56,13 @@ end
 
 function TurtleControl:setNode(node)
 	self.node = node
+	self.task:setNode(node)
 end
 
 function TurtleControl:setData(data)
 	if data then
+		self.task:setTurtleId(data.id)
+		
 		self.data = data
 		
 		if self.data.stuck then
@@ -121,6 +130,7 @@ end
 
 function TurtleControl:addTask()
 	self.taskSelector = TaskSelector:new(self.x+19,self.y-1)
+	self.taskSelector:setTask(self.task)
 	self.taskSelector:setNode(self.node)
 	self.taskSelector:setData(self.data)
 	self.taskSelector:setHostDisplay(self.hostDisplay)
@@ -132,6 +142,7 @@ end
 function TurtleControl:cancelTask()
 	if self.node then
 		self.node:send(self.data.id, {"STOP"})
+		-- self.taskManager:cancelCurrentTurtleTask(self.data.id)
 	end
 end
 
@@ -145,6 +156,9 @@ end
 function TurtleControl:callHome()
 	if self.node then
 		self.node:send(self.data.id, {"DO", "returnHome"})
+		self.taskManager:callTurtleHome(self.data.id) -- abstraction?
+		self.taskManager:addTaskToTurtle(self.data.id, "returnHome", {}) -- more generic
+		-- assignment to return home? yes but can be handled by the manager
 	end
 end
 

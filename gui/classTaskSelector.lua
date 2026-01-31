@@ -26,7 +26,7 @@ function TaskSelector:new(x,y,width,height)
 
 	o.node = node or nil
 	o.mapDisplay = mapDisplay or nil 
-	o.taskName = nil
+	o.task = nil
 	
 	o:initialize()
 	return o
@@ -48,6 +48,10 @@ function TaskSelector:initialize()
 	self:addObject(self.btnNavigateToPos)
 	self:addObject(self.btnDigToPos)
 	self:addObject(self.btnReboot)
+end
+
+function TaskSelector:setTask(task)
+	self.task = task
 end
 
 function TaskSelector:setNode(node)
@@ -89,7 +93,7 @@ end
 
 function TaskSelector:mineArea()
 	if self.node then
-		self.taskName = "mineArea"
+		self.task:setFunction("mineArea")
 		self:selectArea()
 	end
 end
@@ -122,7 +126,10 @@ function TaskSelector:onAreaSelected(x, y, z)
 	
 	if #self.positions == 2 then
 		-- area selected
-		self.node:send(self.data.id, {"DO", self.taskName, {self.positions[1] ,self.positions[2]}}) 
+		self.task:setFunctionArguments({self.positions[1] ,self.positions[2]})
+		self.task:setArea(self.positions[1], self.positions[2])
+		self.task:start()
+
 		self:close()
 		self:closeMap()
 	end
@@ -131,7 +138,10 @@ end
 function TaskSelector:onPositionSelected(x,y,z)
 	if x and z then
 		if y == nil then y = default.yLevel.top end
-		self.node:send(self.data.id, {"DO",self.taskName,{x,y,z}})
+		local pos = vector.new(x,y,z)
+		self.task:setFunctionArguments({pos})
+		self.task:setPos(pos)
+		self.task:start()
 	else
 		-- cancel position selection
 	end
@@ -142,21 +152,22 @@ end
 	
 function TaskSelector:navigateToPos()
 	if self.node then
-		self.taskName = "navigateToPos"
+		self.task:setFunction("navigateToPos")
 		self:selectPosition()
 	end
 end
 
 function TaskSelector:digToPos()
 	if self.node then
-		self.taskName = "digToPos"
+		self.task:setFunction("digToPos")
 		self:selectPosition()
 	end
 end
 
 function TaskSelector:reboot()
 	if self.node then
-		self.node:send(self.data.id, {"REBOOT"},false,false)
+		self.node:send(self.data.id, {"REBOOT"},false, false)
+		-- self.taskManager:rebootTurtle(self.data.id)
 		self:close()
 	end
 end

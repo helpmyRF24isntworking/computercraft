@@ -3,7 +3,7 @@ local Label = require("classLabel")
 local Window = require("classWindow")
 local Frame = require("classFrame")
 local ChoiceSelector = require("classChoiceSelector")
-require("classTaskGroup")
+local TaskGroup = require("classTaskGroup")
 
 local default = {
 	colors = {

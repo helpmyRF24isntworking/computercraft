@@ -7,6 +7,11 @@ local abs = math.abs
 local min = math.min
 local max = math.max
 local floor = math.floor
+local mathrandom = math.random
+
+local tableinsert = table.insert
+local stringgsub = string.gsub
+local stringformat = string.format
 
 function utils.loadExtension(extensionModule, targetClass)
     for name, func in pairs(extensionModule) do
@@ -32,6 +37,25 @@ utils.gpsLocate = function()
         end
     end
     return pos
+end
+
+function utils.generateUUID(simple)
+    if simple then
+        return mathrandom(1, 2147483647)
+    else 
+        local template ='xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'
+        return stringgsub(template, '[xy]', function (c)
+            local v = (c == 'x') and mathrandom(0, 0xf) or mathrandom(8, 0xb)
+            return stringformat('%x', v)
+        end)
+    end
+end
+
+
+function utils.callObjectFunction(obj, funcName, args)
+    if not args then args = {} end
+    local func = "return function(obj,funcName,args) local res = table.pack(obj:"..funcName.."(table.unpack(args))) return table.unpack(res) end"
+    return load(func)()(obj, funcName, args)
 end
 
 local osClock = os.clock

@@ -1,57 +1,64 @@
 
+local utils = require("utils")
+
+
 local tasks = global.tasks
 local list = global.list
 local miner = global.miner
 
-function openTab(task_2, task_3)
+function openTab(fileName, args)
 	--TODO: error handling has to be done by the file itself
-	if not task_3 then
-		shell.openTab("runtime/"..task_2)
+	if not args then
+		shell.openTab("runtime/"..fileName)
 	else
-		shell.openTab("runtime/"..task_2, unpack(task_3))
+		shell.openTab("runtime/"..fileName, table.unpack(args))
 	end
 end
-function callMiner(task_2, task_3)
+function callMiner(funcName, args)
 	if miner then
-		if not task_3 then
-			local func = "return function(miner,task_2) miner:"..task_2.."() end"
-			loadstring(func)()(miner,task_2)
-			--miner[task_2](miner)
-		else
-			-- debug.getinfo not working when using miner[functionName]()
-			--miner[task_2](miner, unpack(task_3))
-			local func = "return function(miner,task_2,task_3) miner:"..task_2.."(unpack(task_3)) end"
-			loadstring(func)()(miner,task_2,task_3)
-		end
+		utils.callObjectFunction(miner, funcName, args)
 	end
 end
-function shellRun(task_2, task_3)
+function shellRun(fileName, args)
 	--TODO: error handling has to be done by the file itself
-	if not task_3 then
-		shell.run("runtime/"..task_2)
+	if not args then
+		shell.run("runtime/"..fileName)
 	else
-		shell.run("runtime/"..task_2, unpack(task_3))
+		shell.run("runtime/"..fileName, table.unpack(args))
 	end
 end
 print("waiting for tasks...")
 while true do
+
+	local nextTask = miner:getNextTaskAssignment()
+	if nextTask then
+		global.err = nil
+		miner:setTaskAssignment(nextTask)
+		nextTask:execute()
+	end
+
 	while #tasks > 0 do
 		local status,err = nil,nil
-		task = table.remove(tasks, 1)
-		if task[1] == "RUN" then
-			--status,err = pcall(shellRun,task[2],task[3])
+		local task = table.remove(tasks, 1)
+		local command, funcName, args = task[1], task[2], task[3]
+
+		if command == "RUN" then
+			--status,err = pcall(shellRun,funcName,args)
 			global.err = nil
-			openTab(task[2],task[3])
-		elseif task[1] == "DO" then
+			openTab(funcName,args)
+		elseif command == "DO" then
 			global.err = nil
-			status,err = pcall(callMiner,task[2],task[3])
+			status,err = pcall(callMiner,funcName,args)
 			global.handleError(err,status)
 
-		elseif task[1] == "UPDATE" then
+		elseif command == "UPDATE" then
 			shell.run("update.lua")
 		else
 			print("something else")
 		end
 	end
 	sleep(0.2)
+
+	-- TODO: we have two queues now, one for direct tasks, one for task assignments
+	-- ...
 end

@@ -14,12 +14,12 @@ turtleStorage = nil
 
 handleError = function(err,status)
 	if not status then
-		if err.real == nil then
+		if err.text == nil then
 			-- unknown error
 			global.err = {}
 			global.err.text = err
 			global.err.func = ""
-		elseif err.real == false then
+		elseif err.fake then
 			-- error on purpose to cancel running programs
 			-- global.err = err
 			global.err = nil
@@ -28,7 +28,7 @@ handleError = function(err,status)
 			global.err = err
 		end
 		if global.err then
-			print(global.err.real, global.err.func, global.err.text)
+			print(global.err.fake, global.err.func, global.err.text)
 		end
 	else
 		-- clear previous errors

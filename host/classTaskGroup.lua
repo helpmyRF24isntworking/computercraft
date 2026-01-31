@@ -2,6 +2,8 @@
 -- class to split a single mining task into multiple
 -- according to how many turtles are available
 
+local utils = require("utils")
+
 local default = {
 	groupSize = 5,
 	width = 20,
@@ -12,7 +14,8 @@ local default = {
 	}
 }
 
-TaskGroup = {}
+local TaskGroup = {}
+TaskGroup.__index = TaskGroup
 
 function TaskGroup:new(turtles, groupSize, obj)
 	local o = obj or {
@@ -25,7 +28,6 @@ function TaskGroup:new(turtles, groupSize, obj)
 		startTime = os.epoch("ingame"),
 	}
 	setmetatable(o, self)
-	self.__index = self
 	
 	o.turtles = turtles or nil
 	
@@ -38,15 +40,7 @@ end
 
 function TaskGroup:initialize()
 	self:setGroupSize(self.groupSize)
-	self.id = self:generateUUID()
-end
-
-function TaskGroup:generateUUID()
-	local template ='xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'
-	return string.gsub(template, '[xy]', function (c)
-		local v = (c == 'x') and math.random(0, 0xf) or math.random(8, 0xb)
-		return string.format('%x', v)
-	end)
+	self.id = utils.generateUUID()
 end
 
 function TaskGroup:getProgress()
@@ -512,3 +506,5 @@ function TaskGroup:splitAAAAAArea(rowMargin, levelMargin)
 	end
 	return areas
 end
+
+return TaskGroup

@@ -195,6 +195,7 @@ function Miner:new()
 	o.lookingAt = vector.new(0,0,0)
 	o.map = ChunkyMap:new(true)
 	o.taskList = List:new()
+	o.taskAssignments = {}
 	o.vectors = vectors
 	o.checkPointer = CheckPointer:new()
 	o.statusCount = 0
@@ -258,7 +259,7 @@ function Miner:initPosition()
 		self.pos = vector.new(x,y,z)
 	else
 		--gps not working
-		self:error("GPS UNAVAILABLE",true)
+		self:error("GPS UNAVAILABLE")
 		-- self.pos = vector.new(0,70,0)
 	end
 	print("position:",self.pos.x,self.pos.y,self.pos.z)
@@ -296,7 +297,7 @@ function Miner:initOrientation()
 	end
 	if not newPos then
 		self:sendAlert()
-		self:error("ORIENTATION NOT DETERMINABLE",true)
+		self:error("ORIENTATION NOT DETERMINABLE")
 		self.orientation = 0
 	else
 		-- print(newPos, self.pos, turns, self.orientation)
@@ -505,18 +506,66 @@ function Miner:returnHome()
 	return result
 end
 
-function Miner:error(reason,real)
+
+--- TASK QUEUE AND ASSIGNMENT STUFF
+function Miner:setTaskAssignment(taskAssignment)
+	self.currentTaskAssignment = taskAssignment
+	taskAssignment:setGlobals(self, self.node)
+end
+function Miner:getTaskAssignment()
+	return self.currentTaskAssignment
+end 
+function Miner:getAssignmentState()
+	if self.currentTaskAssignment then
+		return self.currentTaskAssignment:toState()
+	end
+	return nil
+end
+function Miner:addTaskAssignment(taskAssignment, pos)
+	taskAssignment:setGlobals(self, self.node)
+	if pos then
+		table.insert(self.taskAssignments, pos, taskAssignment)
+	else
+		table.insert(self.taskAssignments, taskAssignment)
+	end
+	return true
+end
+function Miner:getNextTaskAssignment()
+	return table.remove(self.taskAssignments,1)
+end
+function Miner:cancelTaskAssignment(taskId, msg)
+	if not taskId then return false end
+	local taskAssignment = self.currentTaskAssignment
+	if taskAssignment and taskAssignment.id == taskId then
+		self.currentTaskAssignment = nil
+	end
+
+	for i, ta in ipairs(self.taskAssignments) do
+		if ta:getId() == taskId then
+			taskAssignment = table.remove(self.taskAssignments,i)
+		end
+	end
+
+	if taskAssignment then
+		return taskAssignment:onCancel(msg)
+	end
+	return false
+end
+
+function Miner:error(reason, fake)
 	-- TODO: create image of current Miner to load later on
 	-- self:save()
 
 	if self.taskList.count > 0 then func = "ERR:"..self.taskList.first[1]
 	else func = "ERR:unknown" end
+	
+	local checkpoint = self.checkPointer:getLastSavedCheckpoint()
 	self.taskList:clear()
-	-- OPTI: optional: delete Checkpoint / save after clearing taskList
-	if real ~= true then
+	if fake then
+		-- delete Checkpoint file / save after clearing taskList
 		self.checkPointer:save(self)
 	end
-	error({real=real,text=reason,func=func}) -- watch out that this is not caught by some other function
+	error({fake=fake,text=reason,func=func,checkpoint=checkpoint}) -- watch out that this is not caught by some other function
 end 
 
 function Miner:addCheckTask(task, isCheckpointable, ...)
@@ -525,7 +574,7 @@ function Miner:addCheckTask(task, isCheckpointable, ...)
 
 	if self.stop then
 		self.stop = false
-		self:error("stopped",false)
+		self:error("stopped",true)
 	end
 
 	if isCheckpointable and self.taskList.first
@@ -632,7 +681,7 @@ function Miner:checkMinedTurtle()
 				sleep(5) -- give it some time to fuck off before continuing with whatever
 				return true
 			else 
-				self:error("FAILED TO RESTART TURTLE",true)
+				self:error("FAILED TO RESTART TURTLE")
 				return false
 			end
 		end
@@ -668,7 +717,7 @@ function Miner:offloadItemsAtHome()
 		if self:getEmptySlots() < 2 then
 			-- catch this in stripmine e.g.
 			self.cleaningInventory = false
-			self:error("INVENTORY_FULL",true)
+			self:error("INVENTORY_FULL")
 		else
 			-- do nothing and return to task
 			self:navigateToPos(startPos.x, startPos.y, startPos.z)
@@ -815,7 +864,7 @@ function Miner:refuel(simple)
 		elseif turtle.getFuelLevel() == 0 then
 			-- ran out of fuel
 			self:sendAlert()
-			self:error("NEED FUEL, STUCK",true)
+			self:error("NEED FUEL, STUCK")
 		else
 			if not simple then -- for initializing
 			--if self:getCostHome() * 2 > turtle.getFuelLevel() then
@@ -825,9 +874,9 @@ function Miner:refuel(simple)
 					if not self:returnHome() and turtle.getFuelLevel() == 0 then
 						-- could not refuel, ran out on the way back home
 						self:sendAlert()
-						self:error("NEED FUEL, STUCK",true)
+						self:error("NEED FUEL, STUCK")
 					else
-						self:error("NEED FUEL",true) -- -> terminates stripMine etc.
+						self:error("NEED FUEL") -- -> terminates stripMine etc.
 					end
 				else
 					refueled = true
@@ -1884,6 +1933,9 @@ function Miner:stripMine(rowLength, rows, levels, rowFactor, levelFactor, offset
 					end
 					self:updateProgress("row", currentRow)
 				end
+
+				-- move to next level
+				self:disableProgressUpdates()
 				vars.currentRow = 1 -- reset row to start at 1 again, not saved state
 				if currentLevel < levels then
 					-- move up
@@ -1910,8 +1962,9 @@ function Miner:stripMine(rowLength, rows, levels, rowFactor, levelFactor, offset
 							self:tunnelStraight(offset, noInspect)
 						end
 					end
-					
 				end
+				self:enableProgressUpdates()
+
 				vars.rowOrientation = self.orientation
 				self:updateProgress("level", currentLevel)
 			end
@@ -2006,9 +2059,10 @@ function Miner:getAreaStart(start, finish)
 end
 
 function Miner:initProgress(taskName, hierarchy)
+	self:enableProgressUpdates()
 	print("initProgress", taskName)
-	fs.delete("calc.txt")
-	fs.delete("out.txt")
+	--fs.delete("calc.txt")
+	--local f = fs.open("calc.txt", "w"); f.writeLine("INIT PROGRESS " .. taskName); f.close()
 	local values, keyMap = {}, {}
 	for i, level in ipairs(hierarchy) do
 		level.max = math.abs(level.max)
@@ -2089,14 +2143,23 @@ function Miner:getOverallProgress()
 				weight = weight / max * (maxMargin - minMargin)
 			end
 		end
+		-- rounding errors of 0.000001 can lead to "decreased" progress
+		if total > 100 then 
+			print("TOTAL > 100, consider disableUpdates " .. total)
+		end
 	end
-	-- rounding errors of 0.000001 can lead to "decreased" progress
 	return total
 end
 
+function Miner:disableProgressUpdates()
+	self.doProgressUpdates = false
+end
+function Miner:enableProgressUpdates()
+	self.doProgressUpdates = true
+end
 function Miner:updateProgress(key, value, allowDecrease)
 	local progress = self.progress
-	if progress then 
+	if progress and self.doProgressUpdates then 
 
 		local values = progress.values
 		local oldVal = values[key]
@@ -2105,11 +2168,11 @@ function Miner:updateProgress(key, value, allowDecrease)
 			values[key] = value
 
 			if not allowDecrease then 
-				-- reset lower level to 0, since they are not allowed to do so themselves
 				local index = progress.keyMap[key]
 				local hierarchy = progress.hierarchy
 
-				-- only reset next level, not all
+				-- reset next lower level (this cascades, so all lower levels get reset)
+				-- l3 resets l4, l2 resets l3, l1 resets l2 -> all but l1 are 0 -> never over 100%
 				local nextLevel = hierarchy[index+1]
 				if nextLevel then 
 					values[nextLevel.key] = 0
@@ -2374,7 +2437,7 @@ function Miner:excavateArea(start, finish)
 			-- save checkpoint, tasklist remove
 			-- error? could resume after error?
 			self.checkPointer:save(self) -- next time turtle will try again
-			self:error("UNABLE TO REACH AREA", true)
+			self:error("UNABLE TO REACH AREA")
 		else
 		
 			self:turnTo(orientation)
@@ -2424,7 +2487,7 @@ function Miner:recoverTurtle(id, pos)
 			self:dumpBadItems()
 			if self:getEmptySlots() == 0 then
 				-- cannot recover turtle
-				-- self:error("NO FREE INVENTORY SLOTS TO RECOVER TURTLE", true)
+				-- self:error("NO FREE INVENTORY SLOTS TO RECOVER TURTLE")
 				print("NO FREE INVENTORY SLOTS TO RECOVER TURTLE")
 				result = false
 			end
@@ -2436,7 +2499,7 @@ function Miner:recoverTurtle(id, pos)
 	
 	if not self:navigateToPos(pos.x, pos.y+1, pos.z) then
 		print("UNABLE TO REACH TURTLE")
-		--self:error("UNABLE TO REACH TURTLE", true)
+		--self:error("UNABLE TO REACH TURTLE")
 		result = false
 	else
 		-- mine turtle
@@ -2448,7 +2511,7 @@ function Miner:recoverTurtle(id, pos)
 			self:checkMinedTurtle()
 		else
 			print("Block", block)
-			-- self:error("NO TURTLE FOUND TO RECOVER", true)
+			-- self:error("NO TURTLE FOUND TO RECOVER")
 			print("NO TURTLE FOUND TO RECOVER")
 			result = false
 		end
