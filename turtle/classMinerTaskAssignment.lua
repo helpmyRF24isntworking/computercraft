@@ -15,7 +15,7 @@ function MinerTaskAssignment:fromData(data)
 	local o = data
 	-- sanity check
 	if not o or not o.id or not o.funcName then
-		print("invalid task assignment data")
+		print("INVALID TASK ASSIGNMENT DATA")
 		return nil
 	end
 	
@@ -24,6 +24,7 @@ function MinerTaskAssignment:fromData(data)
 	if not o.status then o.status = "new" end
 	-- keep track of how often task was attempted
 	if not o.attempts then o.attempts = 0 end
+    if not o.turtleId then o.turtleId = os.getComputerID() end
 
 	return o
 end
@@ -57,6 +58,7 @@ function MinerTaskAssignment:toSerializableData(noCheckpoint)
     -- checkpoint and assignment can have same args
 	return {
 		id = self.id,
+        turtleId = self.turtleId,
 		groupId = self.groupId,
 		taskName = self.taskName,
 		vars = self.vars,
@@ -69,6 +71,7 @@ function MinerTaskAssignment:toSerializableData(noCheckpoint)
 		error = self.error,
 		returnVals = self.returnVals,
 		checkpoint = not noCheckpoint and self.checkpoint,
+        attempts = self.attempts,
 
 	}
 end
@@ -89,26 +92,37 @@ function MinerTaskAssignment:toState()
 	-- get basic assignment info for state message to host 
 	return { 
 		id = self.id,
+        turtleId = self.turtleId,
 		groupId = self.groupId,
 		status = self.status,
 		-- progress = self.miner:getOverallProgress(),
 	}
 end
 
+function MinerTaskAssignment:setCheckpoint(checkpoint)
+    -- shallow copy without assignment to avoid circular reference
+    if checkpoint then
+        local copy = {}
+        for k,v in pairs(checkpoint) do
+            copy[k] = v
+        end
+        copy.assignment = nil
+        self.checkpoint = copy
+    end
+end
+
 function MinerTaskAssignment:getCheckpoint()
 	-- get current state from miner
 	-- do not get the most current checkPoint in case it is corrupted by an error,
 	-- use the last saved one
-	self.checkpoint = self.miner.checkPointer:getLastSavedCheckpoint()
+	local checkpoint = self.miner.checkPointer:getLastSavedCheckpoint()
 	-- but remove the assignment from the checkpoint?
 	-- TODO: in that case we need to enable adding a new assignment to a checkpoint from host side
 	-- if we want to continue the task on another turtle
 	-- but host does not have classCheckpointer, nor this version of classTaskAssignment
 	-- though he doesnt need to and can just add the checkpoint to a startMessage
 	-- special message for continuing a prevoiusly cancelled checkpoint!
-    if self.checkpoint then
-	    self.checkpoint.assignment = nil
-    end
+    self:setCheckpoint(checkpoint)
 	-- WATCH OUT: if task was cancelled on purpose, checkpoint is cleared and saved!
 	return self.checkpoint
 end
@@ -120,8 +134,7 @@ function MinerTaskAssignment:confirmCancelled(msg)
         node:answer(msg, {"TASK_CANCELLED", self:toSerializableData()})
     end
 end
-function MinerTaskAssignment:onCancel(msg)
-    -- only relevant if task is running
+function MinerTaskAssignment:onCancel(msg)    -- only relevant if task is running
     if self.status == "running" then
         -- task was cancelled by host
         self:getCheckpoint()
@@ -143,8 +156,17 @@ function MinerTaskAssignment:informHost()
 			"TASK_STATE",
 			self:toSerializableData()
 		}
-		node:send(node.host, msgData)
+		local answer = node:send(node.host, msgData, true, true)
+        if answer and answer.data[1] == "TASK_STATE_ACK" then 
+            -- can safely delete assignment if its done or whatever
+            return true
+        else 
+            -- save state somewhere until host can be informed
+            print("no ack from host for task state")
+            return false
+        end
 	end
+    return false
 end
 
 function MinerTaskAssignment:handleError(ok, err, funcName)
@@ -184,21 +206,43 @@ end
 
 function MinerTaskAssignment:execute()
 	self.returnVals = nil
-	self.checkpoint = nil
 	self.attempts = self.attempts + 1
 	local miner = self.miner
-    miner:setTaskAssignment(self)
+    miner:setTaskAssignment(self) -- also clears progress
     self.status = "running"
-    -- execute assigned function
-	local ok, err = pcall(function()
-		self.returnVals = table.pack(utils.callObjectFunction(miner, self.funcName, self.args))
-	end)
+    self:informHost() -- inform host that task is starting
+    self.miner.stop = false -- reset stop flag
+
+    local ok,err
+    if self:isResumable() then
+        -- TODO: maybe? on reboot confirm continuation of task -> no need, host thinks they are running anyways
+        -- see CheckPointer:restoreTaskAssignment() to set flags for this
+
+        -- restore from checkpoint 
+        local checkPointer = miner.checkPointer
+        if checkPointer then 
+            -- let checkpointer handle restoration
+            ok, err = pcall(function()
+                self.returnVals = checkPointer:executeTasks(miner)
+            end)
+        else
+            print("no checkpointer available for restoration")
+            self.status = "error"
+        end
+    else
+        -- start task from new
+        print("miner:"..self.funcName, table.unpack(self.args or {}))
+        -- execute assigned function
+        ok, err = pcall(function()
+            self.returnVals = table.pack(utils.callObjectFunction(miner, self.funcName, self.args))
+        end)
+    end
 
     -- err = { fake, text, func, checkpoint }
 	self:handleError(ok, err, self.funcName)
 
 	if not ok then
-		print("error:", textutils.serialize(err))
+		print("error:", textutils.serialize(err, { allow_repetitions = true }))
 
         if err and err.fake then
             if self.status == "cancelled" then 
@@ -206,18 +250,13 @@ function MinerTaskAssignment:execute()
                 return true
             else
                 -- another fake error? 
-                if err.checkpoint then 
-                    self.checkpoint = err.checkpoint
-                end
+                self:setCheckpoint(err.checkpoint)
                 self.status = "stopped"
             end
         else
             -- try and get saved checkpoint or from error
             if not self:getCheckpoint() then 
-               if err.checkpoint then 
-                    self.checkpoint = err.checkpoint
-                    self.checkpoint.assignment = nil
-               end
+                self:setCheckpoint(err.checkpoint)
             end
             self.error = err
             self.status = "error"
@@ -226,7 +265,7 @@ function MinerTaskAssignment:execute()
         self.status = "completed"
     end
 	-- inform host about completion / error
-	self:informHost()
+    self:informHost()
 	return ok
 end
 

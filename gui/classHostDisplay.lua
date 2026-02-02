@@ -23,6 +23,7 @@ local default = {
 	},
 }
 local global = global
+local taskManager = global.taskManager
 
 local HostDisplay = BasicWindow:new()
 
@@ -608,6 +609,7 @@ function HostDisplay:beforeTerminate()
 	global.saveTurtles()
 	global.saveStations()
 	global.saveGroups()
+	global.taskManager:save()
 end
 
 function HostDisplay:reboot()

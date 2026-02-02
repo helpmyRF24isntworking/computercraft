@@ -271,16 +271,19 @@ local utilsSerialize = {
 	unbinarize = function(data)
 
 		local chunk = {}
+		local unpack = string.unpack
 
 		if data and #data > 13 then -- min header size
 			-- read header
-			local partsLength, partCount,indexBytes, strCount, index = string.unpack("<I4I4I1I4", data, 1)
+			local partsLength, partCount, indexBytes, strCount, index = unpack("<I4I4I1I4", data, 1)
 			-- read parts
 			
+			print("len", #data, "partsLength", partsLength, "partCount", partCount, "indexBytes", indexBytes, "strCount", strCount,  "idx", index)
+
 			if partCount > 0 then
 
 				local format = "<" .. string.rep("I" .. indexBytes .. "I2", partCount)
-				local unpackedParts = {string.unpack(format, data, index)}
+				local unpackedParts = {unpack(format, data, index)}
 				
 				index = index + partsLength
 
@@ -288,7 +291,7 @@ local utilsSerialize = {
 				local strMap = {}
 				for i = 1, strCount do
 					local strVal
-					strVal, index = string.unpack("z", data, index)
+					strVal, index = unpack("z", data, index)
 					strMap[i] = strVal
 				end
 

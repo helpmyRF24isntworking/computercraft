@@ -43,7 +43,6 @@ function MapDisplay:new(x,y,width,height,map)
 	
 	o.backgroundColor = default.backgroundColor
 	
-	--(275, 70, -177)
 	o.mapX = 0
 	o.mapY = 0
 	o.mapZ = 0
@@ -295,6 +294,7 @@ function MapDisplay:checkUpdates()
 				
 			end
 		elseif pocket and self.focusPocket then 
+			local x, y, z = global.pos.x, global.pos.y, global.pos.z
 			if self.mapMidX ~= x or self.mapMidY ~= y or self.mapMidZ ~= z then
 				self:setMid(x,y,z)
 				redraw = true

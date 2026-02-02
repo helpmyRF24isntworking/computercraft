@@ -104,15 +104,17 @@ function utils.sleep(waitTime)
             
 	end
 end
+_G.sleep = utils.sleep
 
+
+-- cancelTimer not needed
 local originalCancelTimer = os.cancelTimer
 function utils.cancelTimer(timer)
     cancelledTimers[timer] = true
-    print("cancelled timer", timer)
+    -- print("cancelled timer", timer)
     originalCancelTimer(timer)
 end
 
 _G.os.cancelTimer = utils.cancelTimer
-_G.sleep = utils.sleep
 
 return utils

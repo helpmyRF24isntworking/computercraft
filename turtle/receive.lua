@@ -140,12 +140,22 @@ node.onRequestAnswer = function(msg)
 	elseif msg.data[1] == "CANCEL_TASK" then
 		local taskId = msg.data[2]
 		if miner then 
-			local ok = miner:cancelTask(taskId, msg)
+			local ok = miner:cancelTaskAssignment(taskId, msg)
 			if not ok then
 				node:answer(msg, {"TASK_CANCEL_FAILED", taskId})
 			end
 		else
 			node:answer(msg, {"TASK_CANCEL_FAILED", taskId})
+		end
+	elseif msg.data[1] == "REQUEST_TASK_STATE" then
+		local task
+		if miner then 
+			task = miner:getTaskAssignment()
+		end
+		if task then 
+			node:answer(msg, {"TASK_STATE", task:toSerializableData()})
+		else
+			node:answer(msg, {"NO_TASK"})
 		end
 	end
 end

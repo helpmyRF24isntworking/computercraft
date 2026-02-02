@@ -10,6 +10,7 @@ local map = global.map
 local turtles = global.turtles
 local updates = global.updates
 local alerts = global.alerts
+local taskManager = global.taskManager
 
 local fileExpiration = 1000 * 5 -- 30s
 local files = {}
@@ -410,18 +411,14 @@ node.onRequestAnswer = function(forMsg)
 		else
 			node:answer(forMsg,{"STATIONS_FULL"})
 		end
-	-- elseif txt == "REQUEST_MAP" then
-		-- print("map request")
-		-- if map then
-			-- node:answer(forMsg,{"MAP", map:getMap()})
-			-- os.pullEvent(os.queueEvent("yield"))
-		-- else
-			-- node:answer(forMsg,{"NO_MAP"})
-		-- end
+
 	elseif txt == "ALERT" then
 		local alert = addAlert(forMsg)
 		node:answer(forMsg, {"ALERT_RECEIVED"})
 		--handleAlert(alert)
+	elseif taskManager:isTaskMessage(forMsg) then 
+		taskManager:handleMessage(forMsg)
+
 	end
 end
 
@@ -476,14 +473,16 @@ local function checkUpdates()
 		local chunkToTurtles = {}  -- { [chunkId] = { turtle1, turtle2, ... } }
 		for id, turt in pairs(turtles) do
 			local loadedChunks = turt.loadedChunks
-			for i = 1, #loadedChunks do 
-				local chunkId = loadedChunks[i]
-				local interestedTurtles = chunkToTurtles[chunkId]
-				if not interestedTurtles then
-					interestedTurtles = { turt }
-					chunkToTurtles[chunkId] = interestedTurtles
-				else
-					interestedTurtles[#interestedTurtles+1] = turt
+			if loadedChunks then
+				for i = 1, #loadedChunks do 
+					local chunkId = loadedChunks[i]
+					local interestedTurtles = chunkToTurtles[chunkId]
+					if not interestedTurtles then
+						interestedTurtles = { turt }
+						chunkToTurtles[chunkId] = interestedTurtles
+					else
+						interestedTurtles[#interestedTurtles+1] = turt
+					end
 				end
 			end
 		end

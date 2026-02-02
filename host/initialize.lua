@@ -10,6 +10,7 @@ local HostDisplay = require("classHostDisplay")
 local ChunkyMap = require("classChunkyMap")
 local TaskGroup = require("classTaskGroup")
 local RemoteStorage = require("classRemoteStorage")
+local TaskManager = require("classTaskManager")
 
 
 local function initNode()
@@ -58,6 +59,15 @@ local function loadGroups(fileName)
 	end
 end
 
+
+local function initTaskManager()
+	loadGroups()
+	global.taskManager = TaskManager:new(global.node)
+	global.taskManager:setGroups(global.taskGroups)
+	global.taskManager:setTurtles(global.turtles)
+end
+
+
 -- quick boot
 parallel.waitForAll(initNode,initStream,initUpdate)
 
@@ -70,7 +80,9 @@ global.map:setLifeTime(-1)
 global.map:load()
 global.loadTurtles()
 global.loadStations()
-loadGroups()
+
+initTaskManager()
+print(global.taskManager)
 global.loadAlerts()
 
 initStorage() -- init after loading the rest but before display

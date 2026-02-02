@@ -7,6 +7,7 @@ local default = {
 }
 
 local CheckPointer = {}
+CheckPointer.__index = CheckPointer
 
 local tpack = table.pack
 local tableinsert = table.insert
@@ -14,14 +15,7 @@ local tableinsert = table.insert
 function CheckPointer:new(o)
     o = o or {}
     setmetatable(o, self)  
-	self.__index = self
-	
-	-- Function Caching
-    for k, v in pairs(self) do
-        if type(v) == "function" then
-            o[k] = v  -- Directly assign method to object
-        end
-    end
+
 	
 	o.fileName = default.fileName
 	o.index = 0
@@ -64,12 +58,7 @@ function CheckPointer:load(miner)
 	return true
 end
 
-function CheckPointer:executeTasks(miner)
-	print("CONTINUE FROM CHECKPOINT")
-
-	-- restore the miner position
-	local pos, orientation = self.checkpoint.pos, self.checkpoint.orientation
-
+function CheckPointer:restoreTaskAssignment(miner)
 	-- restore task assignment
 	local taskAssignment = self.checkpoint.assignment
 	if taskAssignment then
@@ -79,7 +68,10 @@ function CheckPointer:executeTasks(miner)
 			if currentAssignment then
 				print("WARNING: turtle already has a task assignment")
 			end
+			assignment:setCheckpoint(self.checkpoint)
 			miner:addTaskAssignment(assignment, 1) -- add as first assignment
+			-- miner:setTaskAssignment(assignment)
+			return true
 			-- TODO: assignment:notifyResumed()
 
 			-- how do we add all the checkpointed tasks to the assignment?
@@ -91,29 +83,40 @@ function CheckPointer:executeTasks(miner)
 			-- then we can also execute more complex tasks like deliverItems -> returnHome -> etc. 
 			-- we can do so anyways with the queue but its not as nice
 			-- requires tracking individual tasks progress though and saving what steps are done etc.
+			-- requires not rewriting taskassignment but creating a wrapper class that holds multiple taskassignments
+
+			-- also for the checkpoint this is no issue, since the taskAssignment can hold a checkpoint
+			-- on execute check if checkpoint exists and continue from there
+		else
+			-- not much we can do about it, checkpoint will be executed anyways if possible
 		end
 	end
-	
+	return false
+end
+
+function CheckPointer:executeTasks(miner)
+	print("CONTINUE FROM CHECKPOINT")
+	-- Throws error
+
+	-- restore the miner position
+	local pos, orientation = self.checkpoint.pos, self.checkpoint.orientation
+	local returnVals = nil
 	for k, task in ipairs(self.checkpoint.tasks) do
 		if k == 1 and not task.taskState.ignorePosition then 
 			-- only restore Position if needed
 			if not miner:navigateToPos(pos.x, pos.y, pos.z) then 
-				print("checkpoint position not reachable")
-				return false
+				error("cannot reach checkpoint position")
 			end
 			miner:turnTo(orientation)
 		end
 		local func = task.func
 		local args = task.taskState.args
-		-- miner[func](miner, table.unpack(args, 1, args.n))
-		-- alternatively: add tasks to global taskList and let main loop handle it
-		-- global.addTask( { func, table.unpack(args, 1, args.n) }) ??
-		utils.callObjectFunction(miner, func, args)
+		returnVals = table.pack(utils.callObjectFunction(miner, func, args))
 	end
 
 	-- remove the checkpoint file after restoration
 	fs.delete(self.fileName)
-	return true
+	return returnVals
 end
 
 local function getTaskAssignment(miner)

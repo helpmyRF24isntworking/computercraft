@@ -54,6 +54,67 @@ function TaskAssignment:new(turtleId, groupId, obj)
 	return o
 end
 
+function TaskAssignment:fromData(data)
+	return TaskAssignment:new(nil,nil,data)
+end
+
+function TaskAssignment:onCompleted()
+	print("task completed", self.id)
+	-- maybe do something on completion?
+end
+function TaskAssignment:onExecutionStart()
+	print("task started execution", self.id)
+	-- maybe do something on start?
+end
+
+function TaskAssignment:getStatus()
+	return self.status
+end
+function TaskAssignment:setStatus(status)
+	local oldStatus = self.status
+	self.status = status
+	if status ~= oldStatus then
+		self:onStatusChange(oldStatus, status)
+	end
+end
+function TaskAssignment:onStatusChange(old, new)
+	print("task status changed", old, "->", new)
+
+	if new == "completed" then
+		-- maybe do something on completion?
+		self:onCompleted()
+	elseif new == "error" then
+		-- log error?
+	elseif new == "cancelled" then
+		-- log cancellation?
+	elseif new == "running" then 
+		-- started running
+		self:onExecutionStart()
+	elseif new == "queued" then
+		-- queued for execution
+	elseif new == "rejected" then
+		-- log rejection?
+	elseif new == "no_answer" then
+		-- no start answer
+	elseif new == "cancel_failed" then
+		-- log cancel failure?
+	elseif new == "stopped" then 
+		-- log stopped?
+	
+	end
+end
+
+function TaskAssignment:updateFromData(data)
+
+	for k,v in pairs(data) do
+		if k == "status" then
+			self:setStatus(v)
+		else
+			self[k] = v
+		end
+	end
+end
+
 function TaskAssignment:initialize()
 	self.id = utils.generateUUID()
 end
@@ -62,6 +123,9 @@ function TaskAssignment:setTaskManager(taskManager)
 	self.taskManager = taskManager
 end
 
+function TaskAssignment:getTurtleId()
+	return self.turtleId
+end
 function TaskAssignment:getId()
 	return self.id
 end
@@ -127,6 +191,7 @@ function TaskAssignment:setGroup(group)
 	self:setGroupId(group.id)
 end
 function TaskAssignment:setTurtleId(turtleId)
+	print("set turtleId", turtleId)
 	self.turtleId = turtleId
 end
 function TaskAssignment:setTurtle(turtle)
@@ -172,23 +237,23 @@ function TaskAssignment:start(node)
 		return false
 	end
 
-	print(textutils.serialize(self:toTurtleMessage()))
+	-- print(textutils.serialize(self:toTurtleMessage()))
 
 	local answer = node:send(self.turtleId, self:toTurtleMessage(), true, true)
 	if answer then 
 		print("task answer", self.turtleId, self.id, answer.data[1])
 		if answer.data[1] == "TASK_QUEUED" then 
-			self.status = "queued"
+			self:setStatus("queued")
 			return true
 		elseif answer.data[1] == "TASK_REJECTED" then
 			local reason = answer.data[2] or "no reason"
 			print("Turtle rejected task", self.turtleId, self.id, reason)
-			self.status = "rejected"
+			self:setStatus("rejected")
 			return false
 		end
 	else 
 		print("no task answer", self.turtleId, self.id)
-		self.status = "no_answer"
+		self:setStatus("no_answer")
 		return false
 	end
 end
@@ -215,20 +280,39 @@ function TaskAssignment:cancel(node)
 					-- task was not yet started
 				end
 			end
-			self.status = "cancelled"
+			self:setStatus("cancelled")
 			return true
 
 		elseif answer.data[1] == "TASK_CANCEL_FAILED" then
 			print("Turtle failed to cancel task", self.turtleId, self.id)
-			self.status = "cancel_failed"
+			self:setStatus("cancel_failed")
 			return false
 		end
 	else
 		print("no cancel answer", self.turtleId, self.id)
-		self.status = "cancel_failed"
+		self:setStatus("cancel_failed")
 		return false
 	end
 end
+
+function TaskAssignment:toSerializableData()
+	local data = {
+		id = self.id,
+		groupId = self.groupId,
+		turtleId = self.turtleId,
+		taskName = self.taskName,
+		vars = self.vars,
+		funcName = self.funcName,
+		args = self.args,
+		created = self.created,
+		checkpoint = self.checkpoint,
+		status = self.status,
+		progress = self.progress,
+		returnValues = self.returnValues,
+	}
+	return data
+end
+
 
 function TaskAssignment:toTurtleMessage()
 	return {
@@ -236,6 +320,7 @@ function TaskAssignment:toTurtleMessage()
 		{
 			id = self.id,
 			groupId = self.groupId,
+			turtleId = self.turtleId,
 			taskName = self.taskName,
 			vars = self.vars,
 			funcName = self.funcName,

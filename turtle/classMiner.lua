@@ -245,8 +245,16 @@ function Miner:finishInitialization()
 
 	if existsCheckpoint then
 		if self.checkPointer:load(self) then
-			if not self.checkPointer:executeTasks(self) then
-				self:error("CHECKPOINT NOT EXECUTED")
+			if not self.checkPointer:restoreTaskAssignment(self) then
+				print("CHECKPOINT TASK ASSIGNMENT NOT RESTORED")
+				-- no valid taskAssignment in checkpoint, execute raw tasks from checkpoint
+				-- could also create a pseudo taskAssignment and add it to queue like with a "real" one -> YES TODO
+				local ok, err = pcall( function() self.checkPointer:executeTasks(self) end )
+				if not ok then
+					self:error("CHECKPOINT TASKS NOT EXECUTED")
+				end
+			else
+				print("CHECKPOINT RESTORED")
 			end
 		end
 	end
@@ -511,6 +519,7 @@ end
 function Miner:setTaskAssignment(taskAssignment)
 	self.currentTaskAssignment = taskAssignment
 	taskAssignment:setGlobals(self, self.node)
+	self:clearProgress()
 end
 function Miner:getTaskAssignment()
 	return self.currentTaskAssignment
@@ -541,12 +550,12 @@ function Miner:cancelTaskAssignment(taskId, msg)
 	end
 
 	for i, ta in ipairs(self.taskAssignments) do
-		if ta:getId() == taskId then
+		if ta.id == taskId then
 			taskAssignment = table.remove(self.taskAssignments,i)
 		end
 	end
 
-	if taskAssignment then
+	if taskAssignment.id == taskId then
 		return taskAssignment:onCancel(msg)
 	end
 	return false

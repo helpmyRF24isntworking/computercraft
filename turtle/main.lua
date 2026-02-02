@@ -60,5 +60,5 @@ while true do
 	sleep(0.2)
 
 	-- TODO: we have two queues now, one for direct tasks, one for task assignments
-	-- ...
+	-- merge them into one 
 end
