@@ -33,7 +33,6 @@ while true do
 	local nextTask = miner:getNextTaskAssignment()
 	if nextTask then
 		global.err = nil
-		miner:setTaskAssignment(nextTask)
 		nextTask:execute()
 	end
 

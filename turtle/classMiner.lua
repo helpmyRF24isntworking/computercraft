@@ -55,6 +55,7 @@ local mineBlocks = {
 ["minecraft:tuff"]=true,
 ["minecraft:deepslate"]=true,
 ["minecraft:cobbled_deepslate"]=true,
+["minercraft:calcite"]=true,
 -- own array with fluids / allowedBlocks
 ["minecraft:water"]=true,
 ["minecraft:lava"]=true,
@@ -244,7 +245,9 @@ function Miner:finishInitialization()
 	self.taskList:remove(currentTask)
 
 	if existsCheckpoint then
+		
 		if self.checkPointer:load(self) then
+				
 			if not self.checkPointer:restoreTaskAssignment(self) then
 				print("CHECKPOINT TASK ASSIGNMENT NOT RESTORED")
 				-- no valid taskAssignment in checkpoint, execute raw tasks from checkpoint
@@ -555,7 +558,7 @@ function Miner:cancelTaskAssignment(taskId, msg)
 		end
 	end
 
-	if taskAssignment.id == taskId then
+	if taskAssignment and taskAssignment.id == taskId then
 		return taskAssignment:onCancel(msg)
 	end
 	return false
@@ -722,6 +725,7 @@ function Miner:offloadItemsAtHome()
 	local startOrientation = self.orientation
 
 	if self:returnHome() then
+		self:dumpBadItems(true) -- REMOVE; DROP ALL ITEMS: ONLY FOR TESTING SO I DONT HAVE TO CLEAR THE CHESTS
 		self:transferItems()
 		if self:getEmptySlots() < 2 then
 			-- catch this in stripmine e.g.
@@ -2493,7 +2497,7 @@ function Miner:recoverTurtle(id, pos)
 	if self:getEmptySlots() == 0 then
 		self:condenseInventory()
 		if self:getEmptySlots() == 0 then
-			self:dumpBadItems()
+			self:dumpBadItems() 
 			if self:getEmptySlots() == 0 then
 				-- cannot recover turtle
 				-- self:error("NO FREE INVENTORY SLOTS TO RECOVER TURTLE")

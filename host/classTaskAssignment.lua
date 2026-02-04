@@ -243,6 +243,28 @@ function TaskAssignment:setNode(node)
 	self.node = node
 end
 
+
+function TaskAssignment:isResumable()
+	local status = self.status
+	if status ~= "completed" and status ~= "deleted" then
+		local chk = self.checkpoint
+		if chk and chk.tasks and #chk.tasks > 0 then
+			return true
+		else
+			return false
+		end
+	else
+		return false
+	end
+end
+function TaskAssignment:resume()
+	if self:isResumable() then
+		return self:start()
+	else
+		return false
+	end
+end
+
 function TaskAssignment:start(node)
 	-- send to turtle for execution
 	local node = node or self.node
@@ -250,10 +272,13 @@ function TaskAssignment:start(node)
 		print("cannot start task, no turtleId set", self.id)
 		return false
 	end
+	if self.status == "completed" or self.status == "deleted" then
+		print("cannot start task, already completed or deleted", self.turtleId, self.id)
+		return true
+	end
 
-	-- print(textutils.serialize(self:toTurtleMessage()))
-
-	local answer = node:send(self.turtleId, self:toTurtleMessage(), true, true)
+	local data = { "TASK_ASSIGNMENT", self:toSerializableData() }
+	local answer = node:send(self.turtleId, data, true, true)
 	if answer then 
 		print("task answer", self.turtleId, self.id, answer.data[1])
 		if answer.data[1] == "TASK_QUEUED" then 
@@ -279,6 +304,11 @@ function TaskAssignment:cancel(node)
 
 	-- answer might not come directly if turtle is busy
 	local node = node or self.node
+
+	if self.status == "completed" or self.status == "deleted" then
+		print("cannot cancel task, already completed or deleted", self.turtleId, self.id)
+		return true
+	end
 
 	local answer = node:send(self.turtleId, {"CANCEL_TASK", self.id}, true, true)
 	if answer then 
@@ -325,23 +355,6 @@ function TaskAssignment:toSerializableData()
 		returnValues = self.returnValues,
 	}
 	return data
-end
-
-
-function TaskAssignment:toTurtleMessage()
-	return {
-		"TASK_ASSIGNMENT",
-		{
-			id = self.id,
-			groupId = self.groupId,
-			turtleId = self.turtleId,
-			taskName = self.taskName,
-			vars = self.vars,
-			funcName = self.funcName,
-			args = self.args,
-			created = self.created,
-		}
-	}
 end
 
 return TaskAssignment

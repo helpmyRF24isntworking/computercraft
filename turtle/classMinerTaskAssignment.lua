@@ -112,7 +112,11 @@ function MinerTaskAssignment:setCheckpoint(checkpoint)
     if checkpoint then
         local copy = {}
         for k,v in pairs(checkpoint) do
-            copy[k] = v
+			if type(v) ~= "function" then
+            	copy[k] = v
+			else
+				print("check func", k, v)
+			end
         end
         copy.assignment = nil
         self.checkpoint = copy
@@ -229,6 +233,10 @@ function MinerTaskAssignment:execute()
         -- restore from checkpoint 
         local checkPointer = miner.checkPointer
         if checkPointer then 
+			if not checkPointer.checkpoint then 
+				-- use the checkpoint from the assignment if none is set
+				checkPointer:setCheckpoint(self.checkpoint)
+			end
             -- let checkpointer handle restoration
             ok, err = pcall(function()
                 self.returnVals = checkPointer:executeTasks(miner)
@@ -250,7 +258,6 @@ function MinerTaskAssignment:execute()
 	self:handleError(ok, err, self.funcName)
 
 	if not ok then
-		print("error:", textutils.serialize(err, { allow_repetitions = true }))
 
         if err and err.fake then
             if self.status == "cancelled" then 
@@ -269,6 +276,9 @@ function MinerTaskAssignment:execute()
             self.error = err
             self.status = "error"
         end
+		err.checkpoint = nil -- just for printing
+		-- print("error:", textutils.serialize(err, { allow_repetitions = true }))
+
     else
         self.status = "completed"
     end

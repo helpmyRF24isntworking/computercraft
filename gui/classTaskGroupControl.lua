@@ -4,6 +4,7 @@ local Label = require("classLabel")
 local BasicWindow = require("classBasicWindow")
 local Frame = require("classFrame")
 local TaskSelector = require("classTaskSelector")
+local ChoiceSelector = require("classChoiceSelector")
 
 local default = {
 	colors = {
@@ -112,6 +113,27 @@ function TaskGroupControl:openMap()
 	end
 end
 
+function TaskGroupControl:openOptions()
+	local choices = { "call home", "reboot" }
+	if self.taskGroup:isResumable() then 
+		table.insert(choices,1,"resume task")
+	end
+	
+	local choiceSelector = ChoiceSelector:new(self.x + self.btnOptions.x - 1, self.y + self.btnOptions.y-5, 16, 6, choices)
+	choiceSelector.onChoiceSelected = function(choice)
+		if choice == "call home" then
+			self:callHome()
+		elseif choice == "reboot" then
+			self.taskGroup:reboot()
+		elseif choice == "resume task" then
+			self.taskGroup:resume()
+		end
+	end
+	
+	self.parent:addObject(choiceSelector)
+	self.parent:redraw()
+	return true
+end
 function TaskGroupControl:callHome()
 	self.taskGroup:addTaskToTurtles("returnHome",{})
 end
@@ -155,7 +177,8 @@ function TaskGroupControl:initialize()
 	
 	-- row 17 - 27
 	self.btnMap = Button:new("map",21,3,6,1)
-	self.btnCallHome = Button:new("home",21,4,6,1)
+	--self.btnCallHome = Button:new("home",21,4,6,1)
+	self.btnOptions = Button:new("opts", 21,4,6,1)
 	
 	self.btnCancelTask = Button:new("cancel",21,5,6,1)
 	self.btnDeleteGroup = Button:new("delete", 21,5,6,1)
@@ -168,8 +191,9 @@ function TaskGroupControl:initialize()
 	
 	self.btnMap.click = function() self:openMap() end
 	self.btnCancelTask.click = function() self:cancelTask() end
-	self.btnCallHome.click = function() self:callHome() end
+	--self.btnCallHome.click = function() self:callHome() end
 	self.btnDeleteGroup.click = function() return self:deleteGroup() end
+	self.btnOptions.click = function() return self:openOptions() end
 	
 	self:addObject(self.frmId)
 	
@@ -187,7 +211,8 @@ function TaskGroupControl:initialize()
 	
 	self:addObject(self.btnMap)
 	self:addObject(self.btnCancelTask)
-	self:addObject(self.btnCallHome)
+	--self:addObject(self.btnCallHome)
+	self:addObject(self.btnOptions)
 	self:addObject(self.btnDeleteGroup)
 	
 	self.btnDeleteGroup.visible = false
@@ -215,7 +240,7 @@ function TaskGroupControl:refresh()
 	local status = group:getStatus()
 
 	local activeCount = group:getActiveTurtles()
-	self.active = (status == "started")
+	self.active = (status == "started" or status == "resumed" or status == "partially_started" or status == "partially_resumed")
 	if self.active then
 		self.statusColor = default.colors.good
 	elseif status == "completed" then 

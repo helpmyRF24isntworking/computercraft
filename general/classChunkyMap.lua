@@ -344,15 +344,16 @@ local pad_byte = string.char(0xFF)
 
 function ChunkyMap:readChunk(chunkId)
 	local fileId = self:chunkIdToFileId(chunkId)
+	-- do not reuse handles for reading, this messes things up
 	local handle = fs.open(default.folder .. fileId .. ".bin", "r")
-	-- we could hold the handle as long as we have space in cache 
 
 	if handle then
 		-- read header 
 		local headerDescr = handle.read(headDescrLen)
 		local subHeadLen, subHeadCount, maxCount, fileLength = string.unpack(headDescrFormat, headerDescr, 1)
 		if maxCount ~= maxChunksPerFile then
-			error("WARNING: unexpected max chunk count " .. maxCount .. " expected " .. maxChunksPerFile)
+			print("header:", "subHeadLen", subHeadLen, "subHeadCount", subHeadCount, "maxCount", maxCount, "fileLength", fileLength)
+			error("WARNING: unexpected max chunk count " .. maxCount .. " expected " .. maxChunksPerFile .. " chunk " .. chunkId .. " file " .. fileId)
 		end
 
 		local headerData = handle.read(subHeadLen * subHeadCount)
@@ -420,7 +421,7 @@ function ChunkyMap:saveChunk(chunkId)
 		local subHeadLen, subHeadCount, maxCount, fileLength = string.unpack(headDescrFormat, headerDescr, 1)
 
 		if maxCount ~= maxChunksPerFile then
-			error("WARNING: unexpected max chunk count " .. maxCount .. " expected " .. maxChunksPerFile)
+			error("WARNING: unexpected max chunk count " .. maxCount .. " expected " .. maxChunksPerFile .. " chunk " .. chunkId .. " file " .. fileId)
 		end
 
 		handle.seek("set", headDescrLen) -- optional

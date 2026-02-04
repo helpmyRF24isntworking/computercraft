@@ -58,19 +58,30 @@ function CheckPointer:load(miner)
 	return true
 end
 
+local function getTaskAssignment(miner)
+	local assignmentData 
+	local assignment = miner:getTaskAssignment()
+	if assignment then
+		local noCheckpoint = true
+		assignmentData = assignment:toSerializableData(noCheckpoint)
+	end
+	return assignmentData
+end
+
 function CheckPointer:restoreTaskAssignment(miner)
 	-- restore task assignment
 	local taskAssignment = self.checkpoint.assignment
 	if taskAssignment then
 		local assignment = MinerTaskAssignment:fromData(taskAssignment)
 		if assignment then
+			
 			local currentAssignment = miner:getTaskAssignment()
 			if currentAssignment then
 				print("WARNING: turtle already has a task assignment")
 			end
 			assignment:setCheckpoint(self.checkpoint)
 			miner:addTaskAssignment(assignment, 1) -- add as first assignment
-			-- miner:setTaskAssignment(assignment)
+			self.checkpoint.assignment = assignment:toSerializableData(true)
 			return true
 			-- TODO: assignment:notifyResumed()
 
@@ -92,6 +103,11 @@ function CheckPointer:restoreTaskAssignment(miner)
 		end
 	end
 	return false
+end
+
+function CheckPointer:setCheckpoint(checkpoint)
+	-- to restore a checkpoint sent by the host 
+	self.checkpoint = checkpoint
 end
 
 function CheckPointer:executeTasks(miner)
@@ -119,15 +135,6 @@ function CheckPointer:executeTasks(miner)
 	return returnVals
 end
 
-local function getTaskAssignment(miner)
-	local assignmentData 
-	local assignment = miner:getTaskAssignment()
-	if assignment then
-		local noCheckpoint = true
-		assignmentData = assignment:toSerializableData(noCheckpoint)
-	end
-	return assignmentData
-end
 
 local function getCheckpointableTasks(taskList)
 	 -- save only checkpointable tasks

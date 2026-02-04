@@ -48,6 +48,7 @@ end
 function TaskGroup:initialize()
 	self:setGroupSize(self.groupSize)
 	self.id = utils.generateUUID()
+	self.shortId = string.sub(self.id,1,4)
 end
 
 function TaskGroup:setTaskManager(taskManager)
@@ -87,6 +88,16 @@ function TaskGroup:setStatus(status)
 		if self.onCancelled then self.onCancelled(self) end
 	end
 end
+
+function TaskGroup:isResumable()
+	local status = self.status
+	if status ~= "completed" then
+		return true
+	else
+		return false
+	end
+end
+
 function TaskGroup:getStatus()
 	return self.status
 end
@@ -117,35 +128,6 @@ function TaskGroup:reassignTasks()
 		return false
 	end
 	return true
-end
-
-function TaskGroup:start()
-	self.time.started = os.epoch("ingame")
-	print(self.time.started, "starting tasks for group", self.id, "func", self.funcName)
-	for _,task in ipairs(self.tasks) do
-
-		local ok = task:start()
-		if self.slowStart then
-			sleep(default.slowStartDelay)
-		end
-	end
-	
-	local rejectedTasks = self:getTasksWithStatus("rejected")
-	local unansweredTasks = self:getTasksWithStatus("no_answer")
-	if #rejectedTasks > 0 then
-		print("some tasks were rejected:", #rejectedTasks, "/", #self.tasks)
-	end
-	if #unansweredTasks > 0 then
-		print("some tasks got no answer:", #unansweredTasks, "/", #self.tasks)
-	end
-	local result = self:reassignTasks()
-	if not result then
-		self:setStatus("partially_started")
-	else
-		self:setStatus("started")
-	end
-	self.taskManager:saveGroups()
-	return result
 end
 
 function TaskGroup:onTaskCompleted(task)
@@ -212,6 +194,15 @@ function TaskGroup:getAssignedTurtles()
 		end
 	end
 	return count, result
+end
+
+function TaskGroup:reboot()
+	-- reboot all turtles in this group
+	local count, turts = self:getAssignedTurtles()
+	for _,turt in pairs(turts) do
+		print("rebooting turtle", turt.state.id, "for task group", self.id)
+		self.taskManager:rebootTurtle(turt.state.id)
+	end
 end
 
 function TaskGroup:getActiveTurtles()
@@ -300,11 +291,60 @@ function TaskGroup:getArea()
 end
 
 
+function TaskGroup:start()
+	print("starting tasks for group", self.shortId, "func", self.funcName)
+
+	self.time.started = os.epoch("ingame")
+	for _,task in ipairs(self.tasks) do
+		local ok = task:start()
+		if self.slowStart then
+			sleep(default.slowStartDelay)
+		end
+	end
+	
+	local startFailed = self:getTasksWithStatus("rejected", "no_answer")
+	if #startFailed > 0 then
+		print("some tasks could not be started", #startFailed, "/", #self.tasks)
+	end
+	local result = self:reassignTasks()
+	if not result then
+		self:setStatus("partially_started")
+	else
+		self:setStatus("started")
+	end
+	self.taskManager:saveGroups()
+	return result
+end
+
+function TaskGroup:resume()
+	self.time.completed = nil
+	print("resuming tasks for group", self.shortId, "func", self.funcName)
+
+	self.time.started = os.epoch("ingame")
+	for _,task in ipairs(self.tasks) do
+		local ok = task:resume()
+		if self.slowStart then
+			sleep(default.slowStartDelay)
+		end
+	end
+	
+	local startFailed = self:getTasksWithStatus("rejected", "no_answer")
+	if #startFailed > 0 then
+		print("some tasks could not be resumed", #startFailed, "/", #self.tasks)
+	end
+	local result = self:reassignTasks()
+	if not result then
+		self:setStatus("partially_resumed")
+	else
+		self:setStatus("resumed")
+	end
+	self.taskManager:saveGroups()
+	return result
+end
+
 function TaskGroup:cancel()
 	for _,task in ipairs(self.tasks) do
-		task:cancel()
-		-- taskManager:cancelTask?
-		-- self:removeTask(task) --? sure?
+		local ok = task:cancel()
 	end
 	self:setStatus("cancelled")
 end
@@ -312,7 +352,7 @@ end
 function TaskGroup:delete()
 	local status = self.status
 	if status ~= "new" and status ~= "completed" then
-		print("deleting running group", self.id, status)
+		print("deleting running group", self.shortId, status)
 	end
 	if self.taskManager then
 		self.taskManager:removeGroup(self)
@@ -351,6 +391,7 @@ end
 function TaskGroup:addTaskToTurtles(funcName, args)
 	-- basic assign and execute function e.g. to call them home
 	-- perhaps replace with proper  call home logic from taskmanager
+	-- do not add the tasks to the list of tasks for this group, as they are not part of the main task
 	local count, assignedTurtles = self:getAssignedTurtles()
 	print("new task", funcName, "for", count, "turtles", #assignedTurtles)
 	for _,turtle in ipairs(assignedTurtles) do
@@ -359,6 +400,9 @@ function TaskGroup:addTaskToTurtles(funcName, args)
 		task:setFunctionArguments(args)
 		task:setFunction(funcName)
 		print("new task", funcName, "for turtle", turtle.state.id)
+		task.onCompleted = function()
+			task:delete()
+		end
 		task:start()
 	end
 end

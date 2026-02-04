@@ -158,7 +158,9 @@ function TaskManager:saveGroups()
 end
 
 function TaskManager:getTurtleTasks(turtleId)
-    return self.turtleTasks[turtleId]
+    -- TODO: do not use table, but check task list
+    -- otherwise we have to keep the list updated all the time
+    return nil --self.turtleTasks[turtleId]
 end
 
 function TaskManager:getCurrentTurtleTask(turtleId)
@@ -265,10 +267,12 @@ function TaskManager:rebootTurtle(turtleId)
     local tasksCancelled = true
     local turtleTasks = self:getTurtleTasks(turtleId)
     -- maybe also request turtle task
-    for id, task in pairs(turtleTasks) do
-        -- prepare tasks for reboot -- put them on ice, but dont delete them
-        if not self:cancelTask(task) then 
-            tasksCancelled = false
+    if turtleTasks then
+        for id, task in pairs(turtleTasks) do
+            -- prepare tasks for reboot -- put them on ice, but dont delete them
+            if not self:cancelTask(task) then 
+                tasksCancelled = false
+            end
         end
     end
     if tasksCancelled then

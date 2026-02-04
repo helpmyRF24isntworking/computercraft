@@ -308,6 +308,16 @@ local function getStation(id)
 end
 
 local function addAlert(msg)
+	-- check for duplicate alerts for same turtle, only keep newest
+	for i,alert in ipairs(alerts.open) do
+		if alert.id == msg.sender then
+			-- add existing alert to handled
+			table.remove(alerts.open,i)
+			table.insert(alerts.handled, alert)
+			break
+		end
+	end
+	-- add new alert to open
 	local state = msg.data[2]
 	local alert = { lastHandledTime = osEpoch("utc"), time = osEpoch("utc"), id = msg.sender, state = state }
 	alerts.open[#alerts.open+1] = alert
@@ -326,15 +336,10 @@ local function handleAlert(alert)
 
 		if id ~= alert.id and state.online and not state.task and not state.stuck then
 			-- turtle is available to help
-			local answer, forMsg = node:send(id, {"DO", "recoverTurtle", {alert.id, alert.state.pos}}, true, true, 0.1)
-			if answer then 
-				if answer.data[1] == "RECEIVED" then 
-					print("Turtle", answer.sender, "accepted recovery task for", alert.state.id)
-					result = true
-					break
-				else
-					print("received other", answer.data[1])
-				end
+			local task = taskManager:addTaskToTurtle(id, "recoverTurtle", {alert.id, alert.state.pos})
+			if task then 
+				print("Turtle", id, "accepted recovery task for", alert.state.id)
+				result = true
 			end
 		end
 	end

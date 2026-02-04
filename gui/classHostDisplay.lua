@@ -295,6 +295,7 @@ function HostDisplay:initialize()
 	
 	self.winGroups:addObject(self.winGroups.lblName)
 	self.winGroups:addObject(self.winGroups.btnAdd)
+	self.winGroups:addScrollbar(true)
 	-- initial redraw
 	-- self:redraw()
 
