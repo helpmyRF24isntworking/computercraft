@@ -100,10 +100,14 @@ nodeStream.onRequestStreamData = function(previous)
 		
 		state.fuelLevel = miner:getFuelLevel()
 		state.emptySlots = miner:getEmptySlots()
-		-- state.progress = miner:getOverallProgress() include in assignment?
-		-- might be interesting if no assignment exists, though this should not happen often
-		state.progress = miner:getOverallProgress()
-		state.assignment = miner:getAssignmentState()
+
+		local assignment = miner:getAssignmentState()
+		state.assignment = assignment
+		if assignment then
+			state.progress = assignment.progress
+		else
+			state.progress = miner:getOverallProgress()
+		end
 		
 		local mapLog = mapLog
 

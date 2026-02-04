@@ -58,6 +58,11 @@ function TaskAssignment:fromData(data)
 	return TaskAssignment:new(nil,nil,data)
 end
 
+function TaskAssignment:initialize()
+	self.id = utils.generateUUID()
+end
+
+
 function TaskAssignment:onCompleted()
 	print("task completed", self.id)
 	-- maybe do something on completion?
@@ -81,8 +86,10 @@ function TaskAssignment:onStatusChange(old, new)
 	print("task status changed", old, "->", new)
 
 	if new == "completed" then
-		-- maybe do something on completion?
-		self:onCompleted()
+
+		if self.onCompleted then self.onCompleted(self) end
+		if self.group then self.group:onTaskCompleted(self) end
+
 	elseif new == "error" then
 		-- log error?
 	elseif new == "cancelled" then
@@ -100,7 +107,9 @@ function TaskAssignment:onStatusChange(old, new)
 		-- log cancel failure?
 	elseif new == "stopped" then 
 		-- log stopped?
-	
+	elseif new == "deleted" then
+		-- log deletion?
+
 	end
 end
 
@@ -114,9 +123,32 @@ function TaskAssignment:updateFromData(data)
 		end
 	end
 end
+function TaskAssignment:updateFromState(state, time)
+	-- to avoid pairs loop
+	self.progress = state.progress or self.progress
+	self:setStatus(state.status)
+	self.lastUpdate = time
+end
 
-function TaskAssignment:initialize()
-	self.id = utils.generateUUID()
+function TaskAssignment:getProgress()
+	-- weigh the progress of all turtles according to their assigned area volume
+	return self.progress
+end
+
+
+
+function TaskAssignment:delete()
+	-- for newly created tasks that are not sent to turtles yet
+	if self:getStatus() ~= "new" then
+		print("deleting task that is not new:", self.id, self:getStatus())
+	end
+	if self.taskManager then
+		self.taskManager:removeTask(self)
+	end
+	if self.group then 
+		self.group:removeTask(self)
+	end
+	self:setStatus("deleted")
 end
 
 function TaskAssignment:setTaskManager(taskManager)
@@ -150,27 +182,6 @@ end
 
 
 
-function TaskAssignment:getProgress()
-	-- weigh the progress of all turtles according to their assigned area volume
-
-	local turt = self.turtle
-	if turt then
-		return turt.state.progress or 0
-	else
-		-- get turtle reference? 
-		-- !! should classAssignment be available both on host monitoring
-		-- and turtle execution side? 
-		-- host creates the assignment, sends to turtle, turtle executes and updates state
-		-- turtle sends state back with progress to host using id to assign to groups
-		
-		-- common things between host and turtle: turtle.state ...
-
-		-- how do we differentiate host and turtle side code?
-		-- maybe have separate classes for hostAssignment and turtleAssignment inheriting from classAssignment?
-		return 0
-	end
-end
-
 
 function TaskAssignment:isActive()
 	local turtle = self.turtle
@@ -188,15 +199,16 @@ function TaskAssignment:setGroupId(groupId)
 end
 function TaskAssignment:setGroup(group)
 	self.group = group
-	self:setGroupId(group.id)
+	self:setGroupId(group and group.id)
 end
 function TaskAssignment:setTurtleId(turtleId)
-	print("set turtleId", turtleId)
 	self.turtleId = turtleId
 end
 function TaskAssignment:setTurtle(turtle)
+	-- TODO: check if turtle changed (reassigned)
+	-- inform taskManager about this as well (or remove turtleTasks from manager...)
 	self.turtle = turtle
-	self:setTurtleId(turtle.state.id)
+	self:setTurtleId(turtle and turtle.state.id)
 end
 function TaskAssignment:setVariables(vars)
 	self.vars = vars
@@ -212,12 +224,14 @@ function TaskAssignment:setArea(start,finish)
 	start = vector.new(start.x, start.y, start.z)
 	finish = vector.new(finish.x, finish.y, finish.z)
 	self.vars.area = { start = start, finish = finish }
+	self.args = { start, finish }
 end
 function TaskAssignment:getArea()
 	return self.vars.area
 end
 function TaskAssignment:setPos(pos)
 	self.vars.pos = vector.new(pos.x, pos.y, pos.z)
+	self.args = { pos.x , pos.y , pos.z }
 end
 function TaskAssignment:getPos()
 	return self.vars.pos

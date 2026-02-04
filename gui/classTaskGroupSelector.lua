@@ -3,7 +3,6 @@ local Label = require("classLabel")
 local Window = require("classWindow")
 local Frame = require("classFrame")
 local ChoiceSelector = require("classChoiceSelector")
-local TaskGroup = require("classTaskGroup")
 
 local default = {
 	colors = {
@@ -26,7 +25,7 @@ local default = {
 
 local TaskGroupSelector = Window:new()
 
-function TaskGroupSelector:new(x,y,turtles,node,taskGroups,slowStart)
+function TaskGroupSelector:new(x,y, taskManager, slowStart)
 	local o = o or Window:new(x,y,width or default.width ,height or default.height ) or {}
 	setmetatable(o, self)
 	self.__index = self
@@ -34,12 +33,10 @@ function TaskGroupSelector:new(x,y,turtles,node,taskGroups,slowStart)
 	o:setBackgroundColor(default.colors.background)
 	o:setBorderColor(default.colors.border)
 	
-	o.turtles = turtles or nil
-	o.node = node or nil
 	o.mapDisplay = nil 
 	o.positions = {}
 	o.taskGroup = nil
-	o.taskGroups = taskGroups
+	o.taskManager = taskManager
 	o.slowStart = slowStart
 	
 	o.taskName = "mineArea"
@@ -55,7 +52,7 @@ function TaskGroupSelector:onResize() -- super overwrite
 end
 function TaskGroupSelector:initialize()
 	
-	self.taskGroup = TaskGroup:new(self.turtles)
+	self.taskGroup = self.taskManager:createGroup()
 	
 	self.frm = Frame:new("new group - "..string.sub(self.taskGroup.id,1,4), 1,1,self.width,self.height,default.borderColor)
 	
@@ -183,7 +180,7 @@ end
 
 function TaskGroupSelector:splitArea()
 	if #self.positions == 2 then
-		self.taskGroup.taskName = self.taskName
+		self.taskGroup:setFunction(self.taskName)
 		self.taskGroup:setArea(self.positions[1], self.positions[2])
 		self.taskGroup:splitArea()
 	end
@@ -203,40 +200,17 @@ function TaskGroupSelector:setToBottom()
 	end
 end
 
+
+
 function TaskGroupSelector:startTasks()
-	if self.node then 
-		self.taskGroup.taskName = self.taskName
-		self:splitArea()
-		for _,assignment in ipairs(self.taskGroup:getAssignments()) do
-			self.node:send(assignment.turtleId, {
-					"DO", self.taskName, 
-				{assignment.area.start ,assignment.area.finish}}) 
+	self.taskGroup:setFunction(self.taskName)
+	self:splitArea()
+	self.taskGroup:start()
 
-			if self.slowStart then
-				sleep(default.slowStartDelay)
-				-- try to avoid overloading a lot of conflicting turtles at once
-				-- pathfinding leads to same paths being chosen and a lot of rerouting
-			end
-		end
-		self:close()
-	end
-	self:addToGlobal()
+	self:close()
 end
 
-function TaskGroupSelector:addToGlobal()
-	self.taskGroups[self.taskGroup.id] = self.taskGroup
-	global.saveGroups()
-end
 
---- RANDOM
-
-function TaskGroupSelector:setNode(node)
-	self.node = node
-end
-function TaskGroupSelector:setTurtles(turtles)
-	self.turtles = turtles
-	self.taskGroup:setTurtles(turtles)
-end
 
 function TaskGroupSelector:setHostDisplay(hostDisplay)
 	self.hostDisplay = hostDisplay

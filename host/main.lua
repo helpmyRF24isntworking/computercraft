@@ -209,11 +209,7 @@ nodeUpdate.onRequestAnswer = function(forMsg)
 		global.processOnlyNodeUpdate = true -- stop processing other messages
 
 		-- save all current data to disk
-		global.map:save()
-		global.saveConfig() -- optional but whatever
-		global.saveStations()
-		global.saveGroups()
-		global.saveAlerts()
+		global.beforeTerminate()
 
 		nodeUpdate:answer(forMsg, {"HOST_TRANSFER_PREPARE_OK"})
 
@@ -330,7 +326,7 @@ local function handleAlert(alert)
 
 		if id ~= alert.id and state.online and not state.task and not state.stuck then
 			-- turtle is available to help
-			local answer, forMsg = node:send(id, {"DO", "recoverTurtle", {alert.id, alert.state.pos}}, true, true, 1)
+			local answer, forMsg = node:send(id, {"DO", "recoverTurtle", {alert.id, alert.state.pos}}, true, true, 0.1)
 			if answer then 
 				if answer.data[1] == "RECEIVED" then 
 					print("Turtle", answer.sender, "accepted recovery task for", alert.state.id)
@@ -436,6 +432,7 @@ local function checkUpdates()
 	end
 
 	if updateCount > 0 then		
+		local tasks = taskManager:getTasks()
 
 		-- 1: process updates into own map, update turtle states
 		for i = 1, updateCount do
@@ -457,6 +454,18 @@ local function checkUpdates()
 				turt.state = update
 				turt.loadedChunks = update.loadedChunks
 			end
+
+			-- update task states
+			local assignment = update.assignment
+			if assignment then
+				local task = tasks[assignment.id]
+				if task then
+					task:updateFromState(assignment, update.time)
+				else
+					--print("received update for unknown task", assignment.id)
+				end
+			end
+
 			
 			local mapLog = update.mapLog
 

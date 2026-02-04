@@ -3,6 +3,7 @@
 -- according to how many turtles are available
 
 local utils = require("utils")
+local TaskAssignment = require("classTaskAssignment")
 
 local default = {
 	groupSize = 5,
@@ -17,19 +18,25 @@ local default = {
 local TaskGroup = {}
 TaskGroup.__index = TaskGroup
 
-function TaskGroup:new(turtles, groupSize, obj)
+function TaskGroup:new(turtles, obj)
 	local o = obj or {
+		funcName = nil,
 		taskName = nil,
-		--.tasks = {}
+		tasks = {},
 		area = nil,
 		groupSize = groupSize or default.groupSize or nil,
-		assignments = nil,
 		id = nil,
-		startTime = os.epoch("ingame"),
+		time = {
+			created = os.epoch("ingame"),
+			started = nil,
+			completed = nil,
+		},
+		status = "new",
 	}
 	setmetatable(o, self)
 	
 	o.turtles = turtles or nil
+	if not o.tasks then o.tasks = {} end
 	
 	if not obj then 
 		o:initialize()
@@ -43,42 +50,183 @@ function TaskGroup:initialize()
 	self.id = utils.generateUUID()
 end
 
+function TaskGroup:setTaskManager(taskManager)
+	self.taskManager = taskManager
+end
+
+function TaskGroup:getTasksWithStatus(...)
+	local t = table.pack(...)
+	local status = {}
+	for _,s in ipairs(t) do
+		status[s] = true
+	end
+	local result = {}
+	for _,task in ipairs(self.tasks) do
+		if status[task.status] then
+			table.insert(result, task)
+		end
+	end
+	return result
+end
+
+
+
+function TaskGroup:setStatus(status)
+	local old = self.status
+	self.status = status
+	if status == "started" then 
+		-- create callbacks?
+		if self.onStarted then self.onStarted(self) end
+	elseif status == "partially_started" then
+		if self.onPartiallyStarted then self.onPartiallyStarted(self) end
+	elseif status == "completed" then
+		self.time.completed = os.epoch("ingame")
+		if self.onCompleted then self.onCompleted(self) end
+	elseif status == "cancelled" then
+		self.time.completed = os.epoch("ingame")
+		if self.onCancelled then self.onCancelled(self) end
+	end
+end
+function TaskGroup:getStatus()
+	return self.status
+end
+
+function TaskGroup:reassignTasks()
+	-- reassign tasks that were rejected or got no answer
+	local tasksToReassign = self:getTasksWithStatus("rejected", "no_answer")
+	if #tasksToReassign == 0 then
+		return true
+	end
+	print("reassigning", #tasksToReassign, "tasks for group", self.id)
+	
+	local count, availableTurtles = self:getAvailableTurtles()
+	
+	for i,task in ipairs(tasksToReassign) do
+		if i > count then
+			print("not enough available turtles to reassign all tasks")
+			return false
+		end
+		local turtle = availableTurtles[i]
+		print("reassigning task", task.id, "to turtle", turtle.state.id)
+		task:setTurtle(turtle)
+		task:start()
+	end
+	local unassigned = self:getTasksWithStatus("rejected", "no_answer")
+	if #unassigned > 0 then
+		print("some tasks could not be reassigned:", #unassigned, "/", #tasksToReassign)
+		return false
+	end
+	return true
+end
+
+function TaskGroup:start()
+	self.time.started = os.epoch("ingame")
+	print(self.time.started, "starting tasks for group", self.id, "func", self.funcName)
+	for _,task in ipairs(self.tasks) do
+
+		local ok = task:start()
+		if self.slowStart then
+			sleep(default.slowStartDelay)
+		end
+	end
+	
+	local rejectedTasks = self:getTasksWithStatus("rejected")
+	local unansweredTasks = self:getTasksWithStatus("no_answer")
+	if #rejectedTasks > 0 then
+		print("some tasks were rejected:", #rejectedTasks, "/", #self.tasks)
+	end
+	if #unansweredTasks > 0 then
+		print("some tasks got no answer:", #unansweredTasks, "/", #self.tasks)
+	end
+	local result = self:reassignTasks()
+	if not result then
+		self:setStatus("partially_started")
+	else
+		self:setStatus("started")
+	end
+	self.taskManager:saveGroups()
+	return result
+end
+
+function TaskGroup:onTaskCompleted(task)
+	-- check if all tasks are completed
+	local completed = self:getTasksWithStatus("completed")
+	if #completed == #self.tasks then
+		print("all tasks completed for group", self.id)
+		self:setStatus("completed")
+	end
+end
+
 function TaskGroup:getProgress()
 	-- weigh the progress of all turtles according to their assigned area volume
 	local totalVolume = 0
 	local accumulatedProgress = 0
-	local assignments = self.assignments
-	local turtles = self.turtles
-	if assignments then
-		for _,assignment in ipairs(assignments) do
-			local turtle = turtles[assignment.turtleId]
-			local progress = turtle.state.progress or 0
-			local area = assignment.area
-			local volume = (math.abs(area.start.x - area.finish.x)+1) *
-				(math.abs(area.start.y - area.finish.y)+1) *
-				(math.abs(area.start.z - area.finish.z)+1)
-			totalVolume = totalVolume + volume
-			accumulatedProgress = accumulatedProgress + (progress * volume)
+	local tasks = self.tasks
+	local isTrackable = false
+
+	if tasks then
+		for _,task in ipairs(tasks) do
+			local progress = task:getProgress()
+			if progress then 
+				isTrackable = true
+			else
+				progress = 0
+			end
+			
+			local area = task:getArea()
+			if area then
+				local asx, asz, asy, afx, afz, afy = area.start.x, area.start.z, area.start.y, area.finish.x, area.finish.z, area.finish.y
+				local volume = (math.abs(asx - afx)+1) *
+					(math.abs(asy - afy)+1) *
+					(math.abs(asz - afz)+1)
+				totalVolume = totalVolume + volume
+				accumulatedProgress = accumulatedProgress + (progress * volume)
+			else
+				-- track navigation progress or non-area based tasks
+			end
 		end
 	end
-	if totalVolume > 0 then
-		return accumulatedProgress / totalVolume
+	if isTrackable then 
+		if totalVolume > 0 then
+			return accumulatedProgress / totalVolume
+		else
+			return 0
+		end
 	else
-		return 0
+		-- no trackable tasks 
+		return nil
 	end
 end
 
+function TaskGroup:getAssignedTurtles()
+	local count, result = 0, {}
+	local turts = {}
+	if self.tasks then
+		for _,task in ipairs(self.tasks) do
+			local turt = task.turtle
+			if not turts[task.turtleId] and turt then
+				count = count + 1
+				turts[task.turtleId] = turt
+			end
+			table.insert(result, task.turtle)
+		end
+	end
+	return count, result
+end
 
 function TaskGroup:getActiveTurtles()
 	local count = 0
-	if self.assignments then
-		for _,assignment in ipairs(self.assignments) do
-			local turtle = self.turtles[assignment.turtleId]
-			if not turtle or not turtle.state.online 
-				or turtle.state.task == nil then
-				-- inactive
-			else
-				count = count + 1
+	if self.tasks then
+		for _,task in ipairs(self.tasks) do
+			if task.status == "running" then -- and os.epcoh() - task.lastUpdate > xxx then 
+				local turtle = self.turtles[task.turtleId]
+				if not turtle or not turtle.state.online then
+				else
+					local ass = turtle.state.assignment
+					if ass and ass.id == task.id then
+						count = count + 1
+					end
+				end
 			end
 		end
 	end
@@ -97,12 +245,29 @@ function TaskGroup:getAvailableTurtles()
 	return count, result
 end
 
+function TaskGroup:setTaskName(taskName)
+	self.taskName = taskName
+	for _,task in ipairs(self.tasks) do
+		task:setTaskName(taskName)
+	end
+end
+
+function TaskGroup:setFunction(funcName)
+	self.funcName = funcName
+	if not self.taskName then
+		self.taskName = funcName
+	end
+	for _,task in ipairs(self.tasks) do
+		task:setFunction(funcName)
+	end
+end
+
 function TaskGroup:countAvailableTurtles()
 	local ct, turtles = self:getAvailableTurtles()
 	return ct
 end
 function TaskGroup:setGroupSize(groupSize)
-	availableCount, availableTurtles = self:getAvailableTurtles()
+	local availableCount, availableTurtles = self:getAvailableTurtles()
 	if not groupSize then
 		-- use default groupSize
 		if availableCount >= default.groupSize then
@@ -135,28 +300,120 @@ function TaskGroup:getArea()
 end
 
 
+function TaskGroup:cancel()
+	for _,task in ipairs(self.tasks) do
+		task:cancel()
+		-- taskManager:cancelTask?
+		-- self:removeTask(task) --? sure?
+	end
+	self:setStatus("cancelled")
+end
+
+function TaskGroup:delete()
+	local status = self.status
+	if status ~= "new" and status ~= "completed" then
+		print("deleting running group", self.id, status)
+	end
+	if self.taskManager then
+		self.taskManager:removeGroup(self)
+	end
+	self:setStatus("deleted")
+	self:deleteTasks()
+end
+
+function TaskGroup:deleteTasks()
+	for _,task in ipairs(self.tasks) do
+		task:delete()
+	end
+	self.tasks = {}
+end
+
+function TaskGroup:removeTask(task)
+	for i,t in ipairs(self.tasks) do
+		if t.id == task.id then
+			table.remove(self.tasks, i)
+			return
+		end
+	end
+	task:setGroup(nil)
+end
+
+function TaskGroup:createTask(turtleId)
+	local task = self.taskManager:createTask(turtleId, self.id)
+	task:setFunction(self.funcName)
+	task:setTaskName(self.taskName)
+	table.insert(self.tasks, task)
+	return task
+end
+
+
+
+function TaskGroup:addTaskToTurtles(funcName, args)
+	-- basic assign and execute function e.g. to call them home
+	-- perhaps replace with proper  call home logic from taskmanager
+	local count, assignedTurtles = self:getAssignedTurtles()
+	print("new task", funcName, "for", count, "turtles", #assignedTurtles)
+	for _,turtle in ipairs(assignedTurtles) do
+		print("new task", funcName, "for turtle", turtle.state.id)
+		local task = self:createTask(turtle.state.id)
+		task:setFunctionArguments(args)
+		task:setFunction(funcName)
+		print("new task", funcName, "for turtle", turtle.state.id)
+		task:start()
+	end
+end
+
 
 function TaskGroup:assignAreas(areas)
 	-- assign the splitted areas to available turtles
-	self.assignments = {}
+	self:deleteTasks()
 	local count, turtles = self:getAvailableTurtles()
 	if count < #areas then 
 		print("more areas than available turtles")
 	end
 	for i,area in ipairs(areas) do
-		local assignment = {
-			turtleId = turtles[i].state.id,
-			area = area,
-		}
-		table.insert(self.assignments, assignment)
+		local turtleId = turtles[i].state.id
+		local task = self:createTask(turtleId)
+		task:setArea(area.start, area.finish)
 	end
-	return self.assignments
+	return self.tasks
 end
 
-function TaskGroup:getAssignments()
-	return self.assignments
+function TaskGroup:reattachTasks(allTasks)
+	-- reconnect existing tasks to this group
+
+	for i, task in ipairs(self.tasks) do
+		local realTask = allTasks[task.id]
+		if realTask then
+			self.tasks[i] = realTask
+			realTask:setGroup(self)
+		else
+			print("could not reattach task", task.id, "to group", self.id)
+		end
+	end
 end
 
+function TaskGroup:getTasks()
+	return self.tasks
+end
+
+function TaskGroup:toSerializableData()
+	local excluded = {
+		turtles = true,
+		taskManager = true,
+		tasks = true,
+	}
+	local data = { tasks = {} }
+	for k, v in pairs(self) do
+		if not excluded[k] then
+			data[k] = v
+		end
+	end
+	for _,task in ipairs(self.tasks) do
+		table.insert(data.tasks, { id = task.id })
+	end
+	return data
+end
 
 
 function TaskGroup.approximate3dDivisions(n)

@@ -60,7 +60,14 @@ function saveTurtles(fileName)
 	local f = fs.open(fileName,"w")
 	f.write("{\n")
 	for id,turtle in pairs(global.turtles) do
+		local task = turtle.state.assignment
+		if task and task.toSerializableData then
+			turtle.state.assignment = task:toSerializableData()
+		end
 		f.write("[ "..id.." ] = { state = "..textutils.serialise(turtle.state).."\n},\n")
+		if task then
+			turtle.state.assignment = task
+		end
 		print("written", id)
 	end
 	f.write("}")
@@ -74,15 +81,17 @@ function loadTurtles(fileName)
 	if f then
 		global.turtles = textutils.unserialize( f.readAll() )
 		f.close()
-		for id,turtle in pairs(global.turtles) do
-			if not turtle.state then
-				turtle.state = { online = false, time = 0}
-			else
-				turtle.state.online = false
+		if global.turtles then 
+			for id,turtle in pairs(global.turtles) do
+				if not turtle.state then
+					turtle.state = { online = false, time = 0}
+				else
+					turtle.state.online = false
+				end
+				turtle.mapLog = {}
+				turtle.mapBuffer = {}
+				turtle.loadedChunks = {}
 			end
-			turtle.mapLog = {}
-			turtle.mapBuffer = {}
-			turtle.loadedChunks = {}
 		end
 	else
 		print("FILE DOES NOT EXIST", fileName)
@@ -315,6 +324,15 @@ function setRefuelQueue(x,y,z,maxDistance)
 		origin = vector.new(x,y,z),
 		maxDistance = maxDistance or 8
 	}
+end
+
+function beforeTerminate()
+	global.map:save()
+	global.saveConfig() -- optional but whatever
+	global.saveTurtles()
+	global.saveStations()
+	global.taskManager:save()
+	global.saveAlerts()
 end
 
 -- function autoGenerateStations(amount, facing)

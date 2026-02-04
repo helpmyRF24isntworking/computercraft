@@ -4,8 +4,8 @@ local nameToId = translation.nameToId
 local idToName = translation.idToName
 
 local utilsSerialize = require("utilsSerialize")
-local binarize = utilsSerialize.binarize
-local unbinarize = utilsSerialize.unbinarize
+local binarize = utilsSerialize.binarizeStreamDict
+local unbinarize = utilsSerialize.unbinarizeStreamDict
 
 local default =  {
 	bedrockLevel = -60,
@@ -24,6 +24,7 @@ local default =  {
 	saveInterval = 72000*20,
 }
 
+local minIndex = 1
 local maxIndex = default.chunkSize^3
 local chunkSize = default.chunkSize
 local chunkOffsetY = math.ceil(64/default.chunkSize)
@@ -339,6 +340,7 @@ local headDescrLen = 9
 local headDescrFormat = "<I1I2I2I4" -- idLength, idsCount, maxCount, fileLength
 local subHeadLen = 18
 local subHeadFormat = "I6I4I4I4" 	-- id, startPos, length, padding
+local pad_byte = string.char(0xFF)
 
 function ChunkyMap:readChunk(chunkId)
 	local fileId = self:chunkIdToFileId(chunkId)
@@ -356,17 +358,11 @@ function ChunkyMap:readChunk(chunkId)
 		local headerData = handle.read(subHeadLen * subHeadCount)
 		local format = "<" .. string.rep(subHeadFormat, subHeadCount)
 		local headerTab = {string.unpack(format, headerData, 1)}
-
-		if fs.getSize(default.folder .. fileId .. ".bin") ~= fileLength then
-			print("FILE SIZE MISMATCH", fileId, "fsSize", fs.getSize(default.folder .. fileId .. ".bin"), "fileLength", fileLength)
-			sleep(30000)
-		end
-
-		--print("HEADDESCR", "hdlen", subHeadLen, "hdcount", subHeadCount, "maxCount", maxCount, "filelen", fileLength)
+		
 		for i = 1, subHeadCount do
 			local hdId = (i-1)*4 + 1
 			local id = headerTab[hdId]
-			-- print("SUBHEAD", "id", id, "startPos", headerTab[hdId + 1], "length", headerTab[hdId + 2], "pad", headerTab[hdId + 3])
+
 			if id == chunkId then
 				
 				-- found existing chunk entry
@@ -378,7 +374,6 @@ function ChunkyMap:readChunk(chunkId)
 				handle.close()
 				print("READ CHUNK", chunkId, "start", startPos, "len", len, "pad", padding, "FROM FILE", fileId, "readLen", chunkData and #chunkData)
 				local chunk = unbinarize(chunkData)
-				-- print("READ CHUNK", chunkId, "start", startPos, "len", len, "pad", padding, "FROM FILE", fileId)
 				return chunk
 			end
 		end
@@ -392,21 +387,13 @@ local log
 
 function ChunkyMap:saveChunk(chunkId)
 
-	local ok,err = pcall(function()
-
 	local fileId = self:chunkIdToFileId(chunkId)
 	local handle, isNewFile = self:getFileHandle(fileId)
-	local chunkData = binarize(self.chunks[chunkId], maxIndex)
+	local chunkData = binarize(self.chunks[chunkId], minIndex, maxIndex)
 	local len = #chunkData
 
 	local minPadding = 256
 	local paddingFactor = 0.15
-	local pad_byte = string.char(0xFF)
-
-	if not log then
-		log = fs.open("save_log.txt", "a")
-		log.writeLine("---- NEW LOG ----")
-	end
 
 	if isNewFile then
 		local subHeadCount = 1
@@ -421,8 +408,8 @@ function ChunkyMap:saveChunk(chunkId)
 		handle.write(headerData)
 		handle.seek("set", startPos)
 		handle.write(chunkData)
-		-- print("SAVED NEW CHUNK", chunkId, "len", len, "padding", padding, "TO NEW FILE", fileId, "len", fileLength)
 		handle.flush()
+		-- print("SAVED NEW CHUNK", chunkId, "len", len, "padding", padding, "TO NEW FILE", fileId, "len", fileLength)
 		return
 	else
 
@@ -431,37 +418,19 @@ function ChunkyMap:saveChunk(chunkId)
 		handle.seek("set", 0)
 		local headerDescr = handle.read(headDescrLen)
 		local subHeadLen, subHeadCount, maxCount, fileLength = string.unpack(headDescrFormat, headerDescr, 1)
-		print("HEADERS:", "subHeadLen", subHeadLen, "subHeadCount", subHeadCount, "maxCount", maxCount, "fileLength", fileLength)
+
 		if maxCount ~= maxChunksPerFile then
 			error("WARNING: unexpected max chunk count " .. maxCount .. " expected " .. maxChunksPerFile)
-		end
-	
-		if fileLength ~= fs.getSize(default.folder .. fileId .. ".bin") then
-			handle.seek("set", 0)
-			local all = handle.readAll()
-			print("slight mismatch", fileId, "all", #all, "fileLength", fileLength, "fsSize", fs.getSize(default.folder .. fileId .. ".bin"))
-
-			-- fileLength = #all -- maybe this works? not really true though
-
-			--sleep(30000)
-			-- error("WARNING: file length mismatch in chunk file " .. fileId .. ", expected " .. fileLength .. " got " .. fs.getSize(default.folder .. fileId .. ".bin"))
 		end
 
 		handle.seek("set", headDescrLen) -- optional
 		local headerData = handle.read(subHeadLen * subHeadCount)
 		local format = "<" .. string.rep(subHeadFormat, subHeadCount)
-		-- print("format", format, "#headerData", #headerData)
 		local headerTab = {string.unpack(format, headerData, 1)}
-		headerTab[#headerTab] = nil -- remove index entry
 		
-		local fileSize = fs.getSize(default.folder .. fileId .. ".bin")
-		print("file", fileId, "size", fileSize, "fileLength", fileLength)
-
 		for i = 1, subHeadCount do
 			local hdId = (i-1)*4 + 1
 			local id = headerTab[hdId]
-
-			print(i, "/", subHeadCount, "SUBHEAD", "id", id, "start", headerTab[hdId + 1], "length", headerTab[hdId + 2], "pad", headerTab[hdId + 3])
 
 			if id == chunkId then
 				-- found existing chunk entry
@@ -469,15 +438,10 @@ function ChunkyMap:saveChunk(chunkId)
 				local oldLen = headerTab[hdId + 2]
 				local padding = headerTab[hdId + 3]
 				
-				print("SUBHEAD", "id", id, "startPos", headerTab[hdId + 1], "length", headerTab[hdId + 2], "pad", headerTab[hdId + 3], "dataLen", len)
-				local ofl = fileLength
-
 				if len <= ( oldLen + padding ) or i == subHeadCount then
-
 					-- can overwrite in place
+
 					-- rewrite header
-					-- need to also update length if its the last one
-					
 					local newPadding = oldLen + padding - len
 
 					if i == subHeadCount then
@@ -490,42 +454,26 @@ function ChunkyMap:saveChunk(chunkId)
 
 					headerTab[hdId + 2] = len
 					headerTab[hdId + 3] = newPadding
-
-					print("newPadding", newPadding, " -> len", len, "<=", oldLen + padding, "fileLength", fileLength, "ofl", ofl, "#hdTab", #headerTab) --, "hd", textutils.serialize(headerTab))
+					
 					handle.seek("set", headDescrLen)
 					local newHeaderData = string.pack(format, table.unpack(headerTab))
 					handle.write(newHeaderData)
 					-- overwrite chunk data
 					handle.seek("set", startPos)
 					handle.write(chunkData)
-					-- print("OVERWROTE CHUNK", chunkId, "len", len, "pad", headerTab[hdId + 3], "oldLen", oldLen, "oldPad", padding, "IN FILE", fileId, "len", fileLength)
 					handle.flush()
-
-					local nfl = fs.getSize(default.folder .. fileId .. ".bin")
-					if fileLength ~= nfl or fileLength < 0 then
-						print(i, "/", subHeadCount, "SIZE MISMATCH", "fileLen", fileLength, "old", ofl, "new", nfl, "fileId", fileId)
-						sleep(30000)
-					end
-
+					-- print("OVERWROTE CHUNK", chunkId, "len", len, "pad", headerTab[hdId + 3], "oldLen", oldLen, "oldPad", padding, "IN FILE", fileId, "len", fileLength)
 					return
 				else
-					-- SOMEWHERE WE MESS UP CALCULATING THE FILELENGTH BADLY
+					--TODO:
+					-- when a small chunk at start of file triggers a shift, and the file is big (toRead > 50.000 bytes)
+					-- instead write the chunk to end of file and free up the current space as additional padding for previous chunk
+					-- though now binarize is the bottleneck
+
 					-- need to shift chunks that come after this one
 					-- read rest of file
-					print("i", i, "subHeadCount", subHeadCount, "fileLen", fileLength, "fileSize", fileSize)
 					local nextPos = startPos + oldLen + padding
-					local toRead = fileSize - nextPos
-					--local toRead = fileLength - nextPos
-
-					if toRead < 0 then 
-						handle.seek("set", 0)
-						local all = handle.readAll()
-						print("slight mismatch", fileId, "all", #all, "fileLength", fileLength, "fsSize", fs.getSize(default.folder .. fileId .. ".bin"))
-
-						print("readlen", toRead, "filelen", fileLength, "nextpos", nextPos, "start", startPos, "oldLen", oldLen, "padding", padding, "chunkId", chunkId, "fileId", fileId)
-						print("EEEEEEEEERRRRRRRROR")
-						sleep(30000)
-					end
+					local toRead = fileLength - nextPos
 
 					-- read remaining data if exists (chunks can be "" at eof)
 					local restData
@@ -535,29 +483,26 @@ function ChunkyMap:saveChunk(chunkId)
 					end
 
 					-- write data and add some new padding to reduce future shifts
-					-- maxBytes = maxIndex * ~4, though usually much less
 					local newPadding = math.max(minPadding, math.floor(len * paddingFactor))
 					handle.seek("set", startPos)
 					handle.write(chunkData)
 
-					-- no need to actually write padding bytes -- though it is nice for comparing fs.size with fileLength
-					handle.write(string.rep(pad_byte, newPadding))
+					-- physical padding -- only needed for file size consistency
+					-- handle.write(string.rep(pad_byte, newPadding))
 
 					if restData then 
 						handle.seek("set", startPos + len + newPadding)
 						handle.write(restData)
 					end
 
-					local offset = ( len + newPadding) - ( oldLen + padding )
-
 					-- update header
 					headerTab[hdId + 2] = len
 					headerTab[hdId + 3] = newPadding
+
 					-- shift following chunks
+					local offset = ( len + newPadding) - ( oldLen + padding )
 					for k = i+1, subHeadCount do
 						local hdId2 = (k-1)*4 + 1
-
-						print(k, "/", subHeadCount, "SHIFTING SUBHEAD", "id", headerTab[hdId2], "oldStart", headerTab[hdId2 + 1], "newStart", headerTab[hdId2 + 1] + offset, "length", headerTab[hdId2 + 2], "pad", headerTab[hdId2 + 3])
 						headerTab[hdId2 + 1] = headerTab[hdId2 + 1] + offset
 					end
 					local newFileLength = fileLength + offset
@@ -566,34 +511,24 @@ function ChunkyMap:saveChunk(chunkId)
 					handle.write(headerDescr)
 					local newHeaderData = string.pack(format, table.unpack(headerTab))
 					handle.write(newHeaderData)
-					print("SHIFTED AFTER CHUNK", chunkId, "pos", startPos, "len", len, "pad", newPadding, "oldLen", oldLen, "oldPad", padding, "restLen", restData and #restData, "toRead", toRead, "off", offset, "IN FILE", fileId, "len", newFileLength)
 					handle.flush()
-
-					local nfl = fs.getSize(default.folder .. fileId .. ".bin")
-					if newFileLength ~= nfl or newFileLength < 0 then
-						print(i, "/", subHeadCount, "SIZE MISMATCH 2", "fileLen", newFileLength, "old", ofl, "new", nfl, "fileId", fileId)
-						sleep(30000)
-					end
+					print("SHIFTED", chunkId, "pos", startPos, "len", len, "pad", newPadding, "toRead", toRead, "off", offset, "IN FILE", fileId)
 					return
 				end
 			end
 		end
 		
-		local ofl = fileLength
-		if true then
-			-- add padding to previous last chunk
-			local lastHdId = (subHeadCount -1) * 4 + 1
-			local lastPadding = headerTab[lastHdId + 3]
-			-- if lastPadding < 0 then lastPadding = 0 end not needed
-			local lastLen = headerTab[lastHdId + 2]
-			local neededPad = math.max(minPadding - lastPadding, math.floor(lastLen * paddingFactor) - lastPadding)
-			if neededPad > 0 then 
-				-- physically write new padding
-				handle.seek("set", fileLength)
-				handle.write(string.rep(pad_byte, neededPad))
-				fileLength = fileLength + neededPad
-				headerTab[lastHdId + 3] = lastPadding + neededPad
-			end
+		-- add padding to previous last chunk
+		local lastHdId = (subHeadCount -1) * 4 + 1
+		local lastPadding = headerTab[lastHdId + 3]
+		local lastLen = headerTab[lastHdId + 2]
+		local neededPad = math.max(minPadding - lastPadding, math.floor(lastLen * paddingFactor) - lastPadding)
+		if neededPad > 0 then 
+			-- physically write new padding -- only needed for file size consistency
+			-- handle.seek("set", fileLength)
+			-- handle.write(string.rep(pad_byte, neededPad))
+			fileLength = fileLength + neededPad
+			headerTab[lastHdId + 3] = lastPadding + neededPad
 		end
 
 		-- new chunk entry at eof
@@ -608,44 +543,17 @@ function ChunkyMap:saveChunk(chunkId)
 		headerTab[hdId] = chunkId
 		headerTab[hdId + 1] = newStartPos
 		headerTab[hdId + 2] = len
-		headerTab[hdId + 3] = 0 -- no padding at eof
+		headerTab[hdId + 3] = 0
 		
-		print(table.unpack(headerTab))
-		print("subheadCount", subHeadCount, "len", len, "chunkId", chunkId, "fileId", fileId)
-		print("startPos", newStartPos, "newFileLength", newFileLength)
-		for k, v in pairs(headerTab) do
-			if k % 4 == 1 then
-				print(k, "/", subHeadCount, "SUBHEAD", "id", headerTab[k], "start", headerTab[k + 1], "length", headerTab[k + 2], "pad", headerTab[k + 3])
-			end
-			if v < 0 then 
-				
-				print("NEGATIVE VALUE", k, v)
-				sleep(30000)
-			end
-		end
 		format = format .. subHeadFormat
 		local newHeaderData = string.pack(format, table.unpack(headerTab))
-		handle.write(newHeaderData)		
+		handle.write(newHeaderData)
 
 		handle.seek("set", newStartPos)
 		handle.write(chunkData)
-		-- print("ADDED NEW CHUNK", chunkId, "len", len, "padding", 0, "TO FILE", fileId, "len", newFileLength)
 		handle.flush()
-
-		local nfl = fs.getSize(default.folder .. fileId .. ".bin")
-		if newFileLength ~= nfl or newFileLength < 0 then
-			print(i, "/", subHeadCount, "SIZE MISMATCH 2", "fileLen", newFileLength, "old", ofl, "new", nfl, "fileId", fileId)
-			sleep(30000)
-		end
+		-- print("ADDED NEW CHUNK", chunkId, "len", len, "padding", 0, "TO FILE", fileId, "len", newFileLength)
 	end
-
-	end)
-	if not ok then
-		print(textutils.serialize(err))
-		print("ERROR SAVING CHUNK", chunkId, ":", err)
-		sleep(30000)
-	end
-	
 end
 
 -- TODO: if bored: create chunks of chunks to reduce file handle usage

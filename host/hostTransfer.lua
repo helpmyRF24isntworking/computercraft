@@ -47,10 +47,11 @@ end
 local function transferFiles(node)
     local result = true
 	local waitTime = 5
-    local folders = { "runtime/map/chunks" }
+    local folders = { "runtime/map/chunks", "runtime/map/multichunks" }
     -- only for testing purposses update pocket from 0
     if pocket then
         folders = { "runtime/map/chunks",
+					"runtime/map/multichunks",
                     "general",
                     "gui",
                     "host",
@@ -62,7 +63,7 @@ local function transferFiles(node)
     local files = {
         "runtime/turtles.txt", 
         "runtime/stations.txt", 
-        "runtime/taskGroups.txt", 
+        "runtime/taskData.txt", 
         "runtime/alerts.txt", 
         "runtime/config.lua"
     }

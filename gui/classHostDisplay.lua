@@ -23,7 +23,6 @@ local default = {
 	},
 }
 local global = global
-local taskManager = global.taskManager
 
 local HostDisplay = BasicWindow:new()
 
@@ -50,6 +49,7 @@ function HostDisplay:loadGlobals()
 		self.taskGroups = global.taskGroups
 		self.alerts = global.alerts
 		self.storage = global.storage
+		self.taskManager = global.taskManager
 	else
 		print("GLOBALS NOT AVAILABLE")
 	end
@@ -507,8 +507,7 @@ function HostDisplay:displayGroups()
 	return true
 end
 function HostDisplay:addGroup()
-	self.winGroups.groupSelector = TaskGroupSelector:new(1,1,self.turtles,
-		self.node,self.taskGroups, self.doSlowStart)
+	self.winGroups.groupSelector = TaskGroupSelector:new(1,1,self.taskManager, self.doSlowStart)
 	self.winGroups.groupSelector:setHostDisplay(self)
 	self.winGroups:addObject(self.winGroups.groupSelector)
 	self.winGroups.groupSelector:fillParent()
@@ -519,28 +518,23 @@ end
 function HostDisplay:updateGroups()
 	if self.winGroups.visible then 
 		local taskControls = self.winGroups.taskGroupControls
-		for id,taskGroup in pairs(self.taskGroups) do
-		
-			if not taskControls[id] then 		
-				taskControls[id] = TaskGroupControl:new(1,3+6*self.winGroups.groupCt,
-					taskGroup,self.node,self.taskGroups)
-				self.winGroups:addObject(taskControls[id])
-				taskControls[id]:fillWidth()
-				taskControls[id]:setHostDisplay(self)
-				self.winGroups.groupCt = self.winGroups.groupCt + 1
-			else
-				-- nothing
+		local groups = self.taskManager:getGroups()
+		for id,taskGroup in pairs(groups) do
+			if taskGroup.status ~= "new" then
+				if not taskControls[id] then 		
+					taskControls[id] = TaskGroupControl:new(1,3+6*self.winGroups.groupCt, taskGroup)
+					self.winGroups:addObject(taskControls[id])
+					taskControls[id]:fillWidth()
+					taskControls[id]:setHostDisplay(self)
+					self.winGroups.groupCt = self.winGroups.groupCt + 1
+				end
 			end
 		end
 		self.winGroups:redraw()
 	end
 end
 function HostDisplay:deleteGroup(id)
-	if self.taskGroups[id] then
-		-- delete from global
-		self.taskGroups[id] = nil
-		global.saveGroups()
-	end
+	-- delete all group controls and rebuild them
 	for _,groupControl in pairs(self.winGroups.taskGroupControls) do
 		self.winGroups:removeObject(groupControl)
 	end
@@ -604,20 +598,12 @@ function HostDisplay:globalShutdown()
 	--self:reboot()
 end
 
-function HostDisplay:beforeTerminate()
-	global.map:save()
-	global.saveTurtles()
-	global.saveStations()
-	global.saveGroups()
-	global.taskManager:save()
-end
-
 function HostDisplay:reboot()
 	self:clear()
     self:setCursorPos(math.floor((self:getWidth()-10)/2),math.floor(self:getHeight()/2))
     self:write("REBOOTING")
 	self:update()
-	self:beforeTerminate()
+	global.beforeTerminate()
 	-- self.node:broadcast({"REBOOT"},true)
     os.reboot()
 end
@@ -628,7 +614,7 @@ function HostDisplay:terminate()
 	self:setCursorPos(math.floor((self:getWidth()-10)/2),math.floor(self:getHeight()/2))
 	self:write("TERMINATED")
 	self:update()
-	self:beforeTerminate()
+	global.beforeTerminate()
 	print("TERMINATED")
 	return true
 end

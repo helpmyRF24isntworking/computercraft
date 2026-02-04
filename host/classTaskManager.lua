@@ -1,5 +1,6 @@
 
 local TaskAssignment = require("classTaskAssignment")
+local TaskGroup =  require("classTaskGroup")
 
 local TaskManager = {}
 TaskManager.__index = TaskManager
@@ -13,16 +14,16 @@ local default = {
     fileName = "runtime/taskData.txt",
 }
 
-function TaskManager:new(node)
+function TaskManager:new(node, turtles, groups)
     local o = {}
     setmetatable(o, self)
 
-    o.groups = {} 
+    o.groups = groups or {}
     o.tasks = {}
     o.turtleTasks = {} -- map turtleIds to assignmentIds
     o.cancelledTasks = {}
     o.node = node or nil
-    o.turtles = {}
+    o.turtles = turtles or {}
 
     o:initialize()
     return o
@@ -38,9 +39,34 @@ end
 
 function TaskManager:setGroups(groups)
     self.groups = groups
+    for _,task in pairs(self.tasks) do
+        if task.groupId then
+            local group = self.groups[task.groupId]
+            if group then
+                task:setGroup(group)
+            end
+        end
+    end
 end
+
 function TaskManager:setTurtles(turtles)
     self.turtles = turtles
+    for _, task in pairs(self.tasks) do
+        local turtle = self.turtles[task.turtleId]
+        if turtle then
+            task:setTurtle(turtle)
+        end
+    end
+    for _, group in pairs(self.groups) do
+        group:setTurtles(self.turtles)
+    end
+end
+
+function TaskManager:getGroups()
+    return self.groups
+end
+function TaskManager:getTasks()
+    return self.tasks
 end
 function TaskManager:addTask(task)
     task:setTaskManager(self)
@@ -48,21 +74,87 @@ function TaskManager:addTask(task)
     -- based on the status of the task add to differnt lists?
     self.tasks[task.id] = task
 
+    -- add to group
+    if task.groupId then 
+        local group = self.groups[task.groupId]
+        if group then
+            task:setGroup(group)
+        else
+            print("task has unknown group id", task.groupId)
+        end
+    end
+
+    -- add to internal turtle list
     local turtleTasks = self.turtleTasks[task.turtleId]
     if not turtleTasks then
         turtleTasks = {}
         self.turtleTasks[task.turtleId] = turtleTasks
     end
     turtleTasks[task.id] = task
+
+    -- also set turtle reference
+    if self.turtles then 
+        local turtle = self.turtles[task.turtleId]
+        if turtle then
+            task:setTurtle(turtle)
+        end
+    end
 end
 
 function TaskManager:removeTask(task)
     self.tasks[task.id] = nil
     local turtleTasks = self.turtleTasks[task.turtleId]
+
+    -- remove from group
+    if task.group then
+        task.group:removeTask(task)
+    elseif task.groupId then
+        local group = self.groups[task.groupId]
+        if group then
+            group:removeTask(task)
+        end
+    end
+
     if turtleTasks then 
         turtleTasks[task.id] = nil
     end
     task:setTaskManager(nil)
+end
+
+function TaskManager:createTask(turtleId, groupId)
+    local task = TaskAssignment:new(turtleId, groupId)
+    self:addTask(task)
+    return task
+end
+
+function TaskManager:addGroup(group)
+    group:setTaskManager(self)
+    self.groups[group.id] = group
+end
+
+function TaskManager:removeGroup(group)
+    self.groups[group.id] = nil
+    group:setTaskManager(nil)
+    -- removing tasks is done by group / tasks itself
+    self:saveGroups()
+    -- not sure when to save 
+end
+
+-- do we want this wrapper? deletion should be handled by group itself like task
+--function TaskManager:deleteGroup(id)
+--    local group = self.groups[id] 
+--    if group then return group:delete() end
+--end
+
+function TaskManager:createGroup()
+    local group = TaskGroup:new(self.turtles)
+    group:setTaskManager(self)
+    self.groups[group.id] = group
+    return group
+end
+
+function TaskManager:saveGroups()
+    print("SAVE GROUPS NOT IMPLEMENTED")
 end
 
 function TaskManager:getTurtleTasks(turtleId)
@@ -115,11 +207,7 @@ function TaskManager:getCurrentTurtleTask(turtleId)
     return current
 end
 
-function TaskManager:createTask(turtleId, groupId)
-    local task = TaskAssignment:new(turtleId, groupId)
-    self:addTask(task)
-    return task
-end
+
 
 function TaskManager:addTaskToTurtle(turtleId, funcName, args)
     -- find an assignment for the turtle or create a new one
@@ -228,7 +316,7 @@ function TaskManager:onTaskStateUpdate(taskState)
         task = TaskAssignment:fromData(taskState)
         if task then
             print("adding unknown task to task manager", taskState.id)
-            print(textutils.serialize(task:toTurtleMessage(), {compact=true}))
+            print(textutils.serialize(task:toTurtleMessage(), {compact=true, allow_repetitions=true}))
             self:addTask(task)
         end
     end
@@ -237,12 +325,20 @@ end
 
 -- persistance stuff:
 function TaskManager:save(fileName)
+    print("saving task data")
     local fileName = fileName or default.fileName
     local data = {}
     data.tasks = {}
     for id, task in pairs(self.tasks) do
         if task:getStatus() ~= "new" then 
             table.insert(data.tasks, task:toSerializableData())
+        end
+    end
+
+    data.groups = {}
+    for id, group in pairs(self.groups) do
+        if group:getStatus() ~= "new" then
+            table.insert(data.groups, group:toSerializableData())
         end
     end
 
@@ -263,13 +359,32 @@ function TaskManager:load(fileName)
     if f then
         local data = textutils.unserialize( f.readAll() )
         f.close()
-        if data and data.tasks then
-            for _, taskData in pairs(data.tasks) do
-                local task = TaskAssignment:fromData(taskData)
-                if task then
-                    self:addTask(task)
+        if data then 
+
+            -- load groups first, tasks reattach themselves
+            if data.groups then
+                for _, groupData in pairs(data.groups) do
+                    local group = TaskGroup:new(self.turtles, groupData)
+                    if group then
+                        self:addGroup(group)
+                    end
                 end
             end
+
+            if data.tasks then
+                for _, taskData in pairs(data.tasks) do
+                    local task = TaskAssignment:fromData(taskData)
+                    if task then
+                        self:addTask(task)
+                    end
+                end
+            end
+
+            -- optional: reattach tasks to groups
+            for _, group in pairs(self.groups) do
+                group:reattachTasks(self.tasks)
+            end
+
         end
         return data
     else

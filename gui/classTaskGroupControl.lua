@@ -20,15 +20,14 @@ local default = {
 
 local TaskGroupControl = BasicWindow:new()
 
-function TaskGroupControl:new(x,y,taskGroup,node,taskGroups)
+function TaskGroupControl:new(x,y,taskGroup)
 	local o = o or BasicWindow:new(x,y,default.width,default.height) or {}
 	setmetatable(o,self)
 	self.__index = self
 	
 	o:setBackgroundColor(default.colors.background)
 	o:setBorderColor(default.colors.border)
-	
-	o.node = node or nil 
+
 	o.taskGroup = taskGroup or nil
 	o.mapDisplay = nil -- needed to enable the map button
 	o.hostDisplay = nil
@@ -40,9 +39,6 @@ function TaskGroupControl:new(x,y,taskGroup,node,taskGroups)
 	return o
 end
 
-function TaskGroupControl:setNode(node)
-	self.node = node
-end
 
 function TaskGroupControl:setTaskGroup(taskGroup)
 	if taskGroup then
@@ -56,7 +52,7 @@ function TaskGroupControl:setTaskGroup(taskGroup)
 		self.taskGroup.id = "no data"
 		self.taskGroup.taskName = "no task"
 		self.taskGroup.groupSize = 0
-		self.taskgroup.startTime = os.epoch("ingame")
+		self.taskGroup.started = os.epoch("ingame")
 		self.active = false
 	end
 	if self.active then
@@ -67,9 +63,7 @@ function TaskGroupControl:setTaskGroup(taskGroup)
 		self.statusColor = default.colors.okay
 	end
 end
-function TaskGroupControl:setTaskGroups(taskGroups)
-	self.taskGroups = taskGroups
-end
+
 
 function TaskGroupControl:setHostDisplay(hostDisplay)
 	self.hostDisplay = hostDisplay
@@ -89,15 +83,7 @@ end
 -- end
 
 function TaskGroupControl:cancelTask()
-	-- cancel all running tasks of the turtles
-	local assignments = self.taskGroup:getAssignments()
-	if assignments then 
-		for _,assignment in ipairs(assignments) do
-			if self.node then
-				self.node:send(assignment.turtleId, {"STOP"})
-			end
-		end
-	end
+	self.taskGroup:cancel()
 end
 
 function TaskGroupControl:openMap()
@@ -105,8 +91,9 @@ function TaskGroupControl:openMap()
 	
 	-- todo: draw area
 	if self.hostDisplay and self.mapDisplay then
-		local area = self.taskGroup.area
-		
+		local area = self.taskGroup:getArea()
+		if not area then return end
+
 		minX = math.min(area.start.x, area.finish.x)
 		minY = math.min(area.start.y, area.finish.y)
 		minZ = math.min(area.start.z, area.finish.z)
@@ -126,14 +113,7 @@ function TaskGroupControl:openMap()
 end
 
 function TaskGroupControl:callHome()
-	local assignments = self.taskGroup:getAssignments()
-	if assignments then 
-		for _,assignment in ipairs(assignments) do
-			if self.node then
-				self.node:send(assignment.turtleId, {"DO", "returnHome"})
-			end
-		end
-	end
+	self.taskGroup:addTaskToTurtles("returnHome",{})
 end
 
 function TaskGroupControl:onResize() -- super override
@@ -161,14 +141,16 @@ function TaskGroupControl:initialize()
 	
 	self.frmId = Frame:new(string.sub(self.taskGroup.id,1,4),1,1,self.width,self.height,self.borderColor)
 	
+	local group = self.taskGroup
+	local area = group:getArea() or { start = {x=0,y=0,z=0}, finish = {x=0,y=0,z=0} }
 	-- row 1 - 16
-	self.lblXStart = Label:new("X  " .. self.taskGroup.area.start.x,3,3)
-	self.lblYStart = Label:new("Y  " .. self.taskGroup.area.start.y,3,4)
-	self.lblZStart = Label:new("Z  " .. self.taskGroup.area.start.z,3,5)
+	self.lblXStart = Label:new("X  " .. area.start.x,3,3)
+	self.lblYStart = Label:new("Y  " .. area.start.y,3,4)
+	self.lblZStart = Label:new("Z  " .. area.start.z,3,5)
 	
-	self.lblXFinish = Label:new(self.taskGroup.area.finish.x,13,3)
-	self.lblYFinish = Label:new(self.taskGroup.area.finish.y,13,4)
-	self.lblZFinish = Label:new(self.taskGroup.area.finish.z,13,5)
+	self.lblXFinish = Label:new(area.finish.x,13,3)
+	self.lblYFinish = Label:new(area.finish.y,13,4)
+	self.lblZFinish = Label:new(area.finish.z,13,5)
 	
 	
 	-- row 17 - 27
@@ -178,9 +160,9 @@ function TaskGroupControl:initialize()
 	self.btnCancelTask = Button:new("cancel",21,5,6,1)
 	self.btnDeleteGroup = Button:new("delete", 21,5,6,1)
 	
-	self.lblTask = Label:new(self.taskGroup.taskName,30,3)
+	self.lblTask = Label:new(group.taskName,30,3)
 	self.lblProgress = Label:new("",30,5)
-	self.lblActiveTurtles = Label:new("0/"..self.taskGroup.groupSize,41,4)
+	self.lblActiveTurtles = Label:new("0/".. group.groupSize,41,4)
 	self.lblStatus = Label:new(self.statusText,30,4,self.statusColor)
 	self.lblTime = Label:new("00:00.00", 41,5)
 	
@@ -212,38 +194,48 @@ function TaskGroupControl:initialize()
 end
 
 function TaskGroupControl:refreshPos()
-	self.lblXStart:setText("X  " .. self.taskGroup.area.start.x)
-	self.lblYStart:setText("Y  " .. self.taskGroup.area.start.y)
-	self.lblZStart:setText("Z  " .. self.taskGroup.area.start.z)
-	self.lblXFinish:setText(self.taskGroup.area.finish.x)
-	self.lblYFinish:setText(self.taskGroup.area.finish.y)
-	self.lblZFinish:setText(self.taskGroup.area.finish.z)
+
+	local area = self.taskGroup:getArea() or { start = {x=0,y=0,z=0}, finish = {x=0,y=0,z=0} }
+	local start, finish = area.start, area.finish
+
+	self.lblXStart:setText("X  " .. start.x)
+	self.lblYStart:setText("Y  " .. start.y)
+	self.lblZStart:setText("Z  " .. start.z)
+	self.lblXFinish:setText(finish.x)
+	self.lblYFinish:setText(finish.y)
+	self.lblZFinish:setText(finish.z)
 end
 
 function TaskGroupControl:refresh()
 	self:refreshPos()
 	
-	self.lblTask:setText(self.taskGroup.taskName or "no task")
+	local group = self.taskGroup
+	self.lblTask:setText(group.taskName or "no task")
 	
-	local activeCount = self.taskGroup:getActiveTurtles()
-	self.active = (activeCount ~= 0)
+	local status = group:getStatus()
+
+	local activeCount = group:getActiveTurtles()
+	self.active = (status == "started")
 	if self.active then
-		self.statusText = "active"
 		self.statusColor = default.colors.good
+	elseif status == "completed" then 
+		self.statusColor = colors.lightBlue
 	else
-		self.statusText = "done"
 		self.statusColor = default.colors.okay
 	end
 	
+	self.statusText = group:getStatus()
 	self.lblStatus:setText(self.statusText)
 	self.lblStatus:setTextColor(self.statusColor)
-	self.lblActiveTurtles:setText(activeCount.."/"..self.taskGroup.groupSize)
+	self.lblActiveTurtles:setText(activeCount.."/"..group.groupSize)
 
-	local progress = self.taskGroup:getProgress()
+	local progress = group:getProgress()
 	local progressText = (progress and string.format("%3d%%", math.floor(progress * 100))) or ""
 	self.lblProgress:setText(progressText)
 	
-	local timeDiff = os.epoch("ingame") - self.taskGroup.startTime
+	local started = group.time.started
+	local completed = group.time.completed or os.epoch("ingame")
+	local timeDiff = ( started and completed - started ) or 0
 	-- 1 tick = 3600 ms
 	-- 1 day = 24000 ticks
 	-- 1 real second = 72000 ms
@@ -260,6 +252,9 @@ function TaskGroupControl:refresh()
 end
 
 function TaskGroupControl:deleteGroup()
+	if self.taskGroup then 
+		self.taskGroup:delete()
+	end
 	if self.hostDisplay then
 		self.hostDisplay:deleteGroup(self.taskGroup.id)
 	end

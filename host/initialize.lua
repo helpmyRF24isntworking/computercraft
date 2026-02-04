@@ -62,9 +62,7 @@ end
 
 local function initTaskManager()
 	loadGroups()
-	global.taskManager = TaskManager:new(global.node)
-	global.taskManager:setGroups(global.taskGroups)
-	global.taskManager:setTurtles(global.turtles)
+	global.taskManager = TaskManager:new(global.node, global.turtles, global.taskGroups)
 end
 
 
@@ -82,7 +80,6 @@ global.loadTurtles()
 global.loadStations()
 
 initTaskManager()
-print(global.taskManager)
 global.loadAlerts()
 
 initStorage() -- init after loading the rest but before display

@@ -68,6 +68,7 @@ function MinerTaskAssignment:toSerializableData(noCheckpoint)
 		created = self.created,
 
 		status = self.status,
+        progress = self:getProgress(),
 		error = self.error,
 		returnVals = self.returnVals,
 		checkpoint = not noCheckpoint and self.checkpoint,
@@ -84,8 +85,15 @@ function MinerTaskAssignment:save(path)
 	local data = self:toSerializableData()
 	local fileName = path .. "/task_" .. self.id .. ".txt" 
 	local f = fs.open(fileName, "w")
-	f.write(textutils.serialize(data))
+	f.write(textutils.serialize(data, { allow_repetitions = true }))
 	f.close()
+end
+
+function MinerTaskAssignment:getProgress()
+    -- progress intentionally nil if task is not trackable
+    local progress = self.miner:getOverallProgress() or self.progress
+    self.progress = progress
+    return progress
 end
 
 function MinerTaskAssignment:toState()
@@ -95,7 +103,7 @@ function MinerTaskAssignment:toState()
         turtleId = self.turtleId,
 		groupId = self.groupId,
 		status = self.status,
-		-- progress = self.miner:getOverallProgress(),
+		progress = self:getProgress(),
 	}
 end
 
