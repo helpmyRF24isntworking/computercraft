@@ -25,8 +25,23 @@ function Window:initialize()
 
 	-- sub window for actual contents
 	self.innerWin = BasicWindow:new(1, 1, self.width, self.height, self.complex)
+
+	-- redirect redraw calls to this
+	-- works in theory but not with the mapdisplay as an innerwindow
+	-- because it will be displayed within different windows but a innerWin can
+	-- only really belong to one parent window...
+	-- -> mapdisplay must become its own main window, that is just shuffled around
+	-- for other basicwindows that are actually innerwindows, this logic works
+	-- or have a version that is embedded and another map that is a main window?
+	-- it literally just needs a close button and done, no need to wrap it into another window
+	-- since its a special window anyways
+
+	self.redrawInnerFunc = self.innerWin.redraw
+	self.innerWin.redraw = function() self:redraw() end
+
 	self:addObjectInternal(self.innerWin)
 
+	
 	self.btnClose = Button:new("X",self.width-2,1,3,3,colors.red)
 	self.btnClose.click = function() return self:close() end
 	self:addObjectInternal(self.btnClose)
@@ -131,10 +146,15 @@ function Window:setInnerWindow(win)
 	self:removeObjectInternal(self.innerWin)
 	self.innerWin = win
 	local last = true -- add at end so other elements are on top
+
+	-- redirect redraw calls to this
+	self.redrawInnerFunc = win.redraw
+	win.redraw = function() self:redraw() end
+
 	BasicWindow.addObject(self, win, last)
 	win:setPos(1,1)
 	self.innerWin:setVisible(self.visible)
-
+	
 	-- todo: if self.scrollBar then self.scrollBar:setReferenceWindow(self.innerWin) end
 end
 
@@ -144,6 +164,10 @@ function Window:onAdd(parent)
 end
 function Window:onRemove(parent)
 	self.innerWin:setVisible(self.visible)
+	if self.innerWin.onRemove then
+		-- inform innerWindow as well?
+		self.innerWin:onRemove(self)
+	end
 end
 
 function Window:addObject(obj) -- super override
@@ -174,18 +198,47 @@ function Window:removeObjectInternal(obj)
 end
 
 
---[[ function Window:redraw()
-	-- super
-	BasicWindow.redraw(self)
+function Window:redraw()
+	-- DELETE THIS
 
-	-- draw scroll bar 2nd time at the end ?
-	if self.scrollBar and self.visible then
-		--self.scrollBar:setPos(self.scrollBar.
-		self.scrollBar:setScroll(self.scrollY, self.maxScrollY)
-		self.scrollBar:redraw()
+	if self.parent and self.visible then
+
+		-- first redraw innerWindow
+		
+		-- BasicWindow.redraw(innerWin)
+		-- super
+		-- BasicWindow.redraw(self) -- but without innerWin...
+		-- NONONO wont work for basicwindows that overwrite redraw.
+
+
+		--local maxScrollY = self.maxScrollY
+		self.maxScrollY = 1
+
+		--if self.borderColor == colors.gray then 
+			--print("redraw window", self.x, self.y, self.width, self.height, self.borderColor, self.backgroundColor)
+		--end
+
+		self:drawFilledBox(self.scrollX, self.scrollY, self.width, self.height, self.backgroundColor)
+		if self.borderColor ~= self.backgroundColor then
+			self:drawBox(self.scrollX, self.scrollY,self.width,self.height,self.borderColor,1,self.backgroundColor)
+		end
+
+		local innerWin = self.innerWin
+		self.redrawInnerFunc(innerWin)
+
+		local node = self.objects.last
+		while node do
+			if node ~= innerWin then
+				node:redraw()
+			end
+			node = node._prev
+		end
+
+		if self.onMaxScrollYChanged then
+			self.onMaxScrollYChanged(self.maxScrollY)
+		end
 	end
-	self.btnClose:redraw()
-end ]]
+end
 function Window:onResize() -- super override 
 	-- resize inner window and overlayed objects
 

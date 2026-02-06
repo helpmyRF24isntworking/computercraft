@@ -11,6 +11,8 @@ local default = {
 	}
 }
 
+local osEpoch = os.epoch
+
 local TaskAssignment = {}
 TaskAssignment.__index = TaskAssignment
 
@@ -28,7 +30,7 @@ function TaskAssignment:new(turtleId, groupId, obj)
 		-- general static host task info
 		groupId = groupId or nil,
 		turtleId = turtleId or nil,
-		created = os.epoch("ingame"),
+		time = { created = osEpoch("ingame") },
 		
 
 		-- callback information from turtle
@@ -36,7 +38,7 @@ function TaskAssignment:new(turtleId, groupId, obj)
 		checkpoint = nil, -- state = { }, -- include checkpoint taskState in callback to host?
 		-- using this, any other turtle can continue the task from last state
 		status = "new",
-		progress = 0,
+		progress = nil,
 		returnValues = nil,
 
 		
@@ -46,6 +48,8 @@ function TaskAssignment:new(turtleId, groupId, obj)
 	-- actual references
 	o.group = nil
 	o.turtle = nil
+	if not o.lastUpdate then o.lastUpdate = 0 end
+	if not o.time then o.time = { created = osEpoch("ingame") } end
 
 	if not obj then 
 		o:initialize()
@@ -60,22 +64,28 @@ end
 
 function TaskAssignment:initialize()
 	self.id = utils.generateUUID()
+	self.shortId = string.sub(self.id,1,6)
 end
 
 
 function TaskAssignment:onCompleted()
-	print("task completed", self.id)
+	--print("task", self.shortId, "completed", self.id)
 	-- maybe do something on completion?
 end
 function TaskAssignment:onExecutionStart()
-	print("task started execution", self.id)
+	--print("task", self.shortId, "started execution", self.id)
 	-- maybe do something on start?
 end
 
 function TaskAssignment:getStatus()
 	return self.status
 end
-function TaskAssignment:setStatus(status)
+function TaskAssignment:setStatus(status, time)
+	if time then 
+		self.lastUpdate = time
+	else
+		self.lastUpdate = osEpoch()
+	end
 	local oldStatus = self.status
 	self.status = status
 	if status ~= oldStatus then
@@ -83,7 +93,7 @@ function TaskAssignment:setStatus(status)
 	end
 end
 function TaskAssignment:onStatusChange(old, new)
-	print("task status changed", old, "->", new)
+	print("task", self.shortId, "status changed", old, "->", new, "time", osEpoch())
 
 	if new == "completed" then
 
@@ -113,21 +123,42 @@ function TaskAssignment:onStatusChange(old, new)
 	end
 end
 
-function TaskAssignment:updateFromData(data)
 
-	for k,v in pairs(data) do
-		if k == "status" then
-			self:setStatus(v)
-		else
-			self[k] = v
+
+function TaskAssignment:updateFromData(data)
+	-- print("data update", self.status, "->", data.status, "time", osEpoch(), "last update", self.lastUpdate)
+
+	-- conflict same tick:
+		-- turtle sends status running
+		-- host requests cancel 
+		-- host receives cancel ack
+		-- host receives status running
+
+	-- perhaps status priorities:
+	-- internal (cancel, start) > task_state > stream state
+
+	if data.stateTime >= self.lastUpdate then
+		for k,v in pairs(data) do
+			if k == "status" then
+				self:setStatus(v, data.stateTime)
+			else
+				self[k] = v
+			end
 		end
+	else
+		print("outdated task data", self.shortId, data.status, "time", data.stateTime, "last", self.lastUpdate)
 	end
 end
 function TaskAssignment:updateFromState(state, time)
 	-- to avoid pairs loop
-	self.progress = state.progress or self.progress
-	self:setStatus(state.status)
-	self.lastUpdate = time
+	-- watch out, this might be outdated if the task was cancelled
+	-- print("state update", self.status, "->", state.status, "time", time, "last update", self.lastUpdate)
+	if time > self.lastUpdate then -- same tick updates: state looses, other messages have priority
+		self.progress = state.progress or self.progress
+		self:setStatus(state.status, time)
+	else
+		print("outdated task state", self.shortId, state.status, "time", time, "last", self.lastUpdate)
+	end
 end
 
 function TaskAssignment:getProgress()
@@ -140,7 +171,7 @@ end
 function TaskAssignment:delete()
 	-- for newly created tasks that are not sent to turtles yet
 	if self:getStatus() ~= "new" then
-		print("deleting task that is not new:", self.id, self:getStatus())
+		print("deleting task that is not new:", self.shortId, self:getStatus())
 	end
 	if self.taskManager then
 		self.taskManager:removeTask(self)
@@ -181,8 +212,6 @@ function TaskAssignment:setExecutionParameters(funcName, args)
 end
 
 
-
-
 function TaskAssignment:isActive()
 	local turtle = self.turtle
 	if not turtle or not turtle.state.online 
@@ -202,13 +231,26 @@ function TaskAssignment:setGroup(group)
 	self:setGroupId(group and group.id)
 end
 function TaskAssignment:setTurtleId(turtleId)
-	self.turtleId = turtleId
+	if turtleId ~= self.turtleId then
+		-- changed turtleId, let taskManager handle reassignment
+		local taskManager = self.taskManager
+		if taskManager then
+			taskManager:removeTask(self)
+			self.turtleId = turtleId
+			taskManager:addTask(self)
+		else
+			self.turtleId = turtleId
+		end
+	end
 end
+
 function TaskAssignment:setTurtle(turtle)
 	-- TODO: check if turtle changed (reassigned)
 	-- inform taskManager about this as well (or remove turtleTasks from manager...)
-	self.turtle = turtle
-	self:setTurtleId(turtle and turtle.state.id)
+	if turtle ~= self.turtle then
+		self.turtle = turtle
+		self:setTurtleId(turtle and turtle.state.id)
+	end
 end
 function TaskAssignment:setVariables(vars)
 	self.vars = vars
@@ -257,6 +299,15 @@ function TaskAssignment:isResumable()
 		return false
 	end
 end
+
+function TaskAssignment:printCheckpoint()
+	if self.checkpoint and self.checkpoint.tasks then
+		for k, task in ipairs(self.checkpoint.tasks) do
+			print( k, "checkpoint task", task.func, "stage", task.taskState.stage)
+		end
+	end
+end
+
 function TaskAssignment:resume()
 	if self:isResumable() then
 		return self:start()
@@ -280,7 +331,7 @@ function TaskAssignment:start(node)
 	local data = { "TASK_ASSIGNMENT", self:toSerializableData() }
 	local answer = node:send(self.turtleId, data, true, true)
 	if answer then 
-		print("task answer", self.turtleId, self.id, answer.data[1])
+		-- print("task answer", self.turtleId, self.id, answer.data[1])
 		if answer.data[1] == "TASK_QUEUED" then 
 			self:setStatus("queued")
 			return true
@@ -315,16 +366,10 @@ function TaskAssignment:cancel(node)
 		if answer.data[1] == "TASK_CANCELLED" then 
 			local data = answer.data[2]
 			if data then
-				if data.status == "running" then 
-					-- task was running when it was cancelled
-					if data.checkpoint then 
-						self.checkpoint = data.checkpoint
-					end
-				else
-					-- task was not yet started
-				end
+				-- get checkpoint etc.
+				self:updateFromData(data)
 			end
-			self:setStatus("cancelled")
+			self:setStatus("cancelled") -- updateFromData should also set status cancelled, but to be sure
 			return true
 
 		elseif answer.data[1] == "TASK_CANCEL_FAILED" then
@@ -348,13 +393,37 @@ function TaskAssignment:toSerializableData()
 		vars = self.vars,
 		funcName = self.funcName,
 		args = self.args,
-		created = self.created,
+		time = self.time,
 		checkpoint = self.checkpoint,
 		status = self.status,
 		progress = self.progress,
 		returnValues = self.returnValues,
+		lastUpdate = self.lastUpdate,
 	}
 	return data
+end
+
+-- GUI stuff
+local statusToColor = {
+	new = colors.white,
+	queued = colors.lightBlue,
+	running = colors.green,
+	completed = colors.lightGray,
+	error = colors.red,
+	cancelled = colors.orange,
+	rejected = colors.yellow,
+	no_answer = colors.yellow,
+	cancel_failed = colors.yellow,
+	stopped = colors.yellow,
+	deleted = colors.gray,
+}
+
+function TaskAssignment:getStatusColor()
+	return statusToColor[self.status] or colors.white
+end
+function TaskAssignment:getProgressText()
+	--return string.format("%.1f%%", self.progress * 100)
+	return ( self.progress and string.format("%3d%%", math.floor((self.progress) * 100)) ) or ""
 end
 
 return TaskAssignment

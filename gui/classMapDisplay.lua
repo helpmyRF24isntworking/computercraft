@@ -33,6 +33,7 @@ local randCount = #randomChars
 -- TODO: https://github.com/9551-Dev/pixelbox_lite
 
 local MapDisplay = BasicWindow:new()
+-- change to Window, not basicwindow
 
 function MapDisplay:new(x,y,width,height,map)
 	local o = o or BasicWindow:new(x,y,width,height) or {}
@@ -70,7 +71,9 @@ function MapDisplay:initialize()
 
 	self:precomputeBackground()
 	
-	-- self.btnClose = Button:new("X",self.width-2,1,3,3,colors.red)
+	self.btnClose = Button:new("X",self.width-2,1,3,3,colors.red)
+	self.btnClose.click = function() return self:close() end
+
 	self.btnLeft = Button:new("<",1,self.midHeight,3,3,default.buttonColor)
 	self.btnRight = Button:new(">",self.width-2,self.midHeight,3,3,default.buttonColor)
 	self.btnUp = Button:new("^",self.midWidth,1,3,3,default.buttonColor)
@@ -134,7 +137,6 @@ function MapDisplay:initialize()
 	end
 
 	
-	-- self:addObject(self.btnClose)
 	self:addObject(self.btnLeft)
 	self:addObject(self.btnRight)	
 	self:addObject(self.btnUp)
@@ -151,6 +153,8 @@ function MapDisplay:initialize()
 	self:addObject(self.btnTurtles)
 	self:addObject(self.btnHome)
 	self:addObject(self.btnCircle)
+	self:addObject(self.btnClose)
+
 	if pocket then self:addObject(self.btnFocusPocket) end
 	
 end
@@ -177,6 +181,8 @@ end
 function MapDisplay:onResize()
 	BasicWindow.onResize(self) -- super
 	
+	self.btnClose:setPos(self.width - 3 + self.scrollX, self.scrollY) 
+
 	--self:calculateMapMid()
 	self:setMid(self.mapMidX, self.mapMidY, self.mapMidZ)
 	self.btnLeft:setPos(1,self.midHeight)
@@ -196,6 +202,7 @@ function MapDisplay:onResize()
 end
 function MapDisplay:onRemove(parent)
 	self.focusId = nil
+	self:showControls()
 end
 
 function MapDisplay:setMid(x,y,z)
@@ -275,13 +282,30 @@ function MapDisplay:setFocus(id)
 		end
 	end
 end
+function MapDisplay:hideControls()
+	if self.objects and not self.hiddenControls then
+		self.hiddenControls = self.objects
+		self.objects = List:new()
+	end
+end
 
-function MapDisplay:checkUpdates()
+function MapDisplay:showControls()
+	if self.hiddenControls then
+		self.objects = self.hiddenControls
+		self.hiddenControls = nil
+	end
+end
+
+function MapDisplay:refresh()
+	local redraw = false
+
+	--TODO: use chunk._lastChange to determine if redraw is needed
+		-- DO NOT USE MAPLOG to determine redraw
+
 	if pocket then 
 		global.pos = utils.gpsLocate()
 	end
 	if self.parent and self.visible then
-		local redraw = false
 		if self.focusId then
 			local data = global.turtles[self.focusId]
 			if data and data.state and data.state.pos then
@@ -300,14 +324,16 @@ function MapDisplay:checkUpdates()
 				redraw = true
 			end
 		end
-		
 		redraw = true
-		--TODO: use chunk._lastChange to determine if redraw is needed
-		-- DO NOT USE MAPLOG to determine redraw
-		
-		if redraw then self:redraw() end
 	end
+	return redraw
 end
+
+--function MapDisplay:checkUpdates()
+--
+--	local redraw = self:refresh()
+--	if redraw then self.parent:redraw() end -- assuming the map is an innerWindow
+--end
 
 function MapDisplay:precomputeBackground()
     self.background = {}
@@ -330,9 +356,8 @@ function MapDisplay:precomputeBackground()
 end
 
 function MapDisplay:redraw() -- super override
+	print("map redraw start")
 	if self.parent and self.visible then
-		--self:drawFilledBox(1, 1, self.width, self.height, self.backgroundColor)
-		--TODO: improve drawing speed (buffer each line and update with blit)
 		
 		local freeCol = blitTab[default.freeColor]
 		local blockedCol = blitTab[default.blockedColor]
@@ -340,6 +365,8 @@ function MapDisplay:redraw() -- super override
 		local disallowedCol = blitTab[default.disallowedColor]
 
 		local map = self.map
+		local ct = 0
+		local start = os.epoch("utc")
 		
 		local x, y, z, height, width = self.mapX, self.mapY, self.mapZ, self.height, self.width
 		local zoomLevel, background, bgWidth, bgHeight = self.zoomLevel, self.background, self.backgroundWidth, self.backgroundHeight
@@ -352,6 +379,7 @@ function MapDisplay:redraw() -- super override
 
 			for col=1, width do
 				local data = map:getData(x + (col-1)*zoomLevel, y, z + row*zoomLevel)
+				ct = ct + 1
 				
 				if data then
 					if data == 0 then
@@ -377,6 +405,9 @@ function MapDisplay:redraw() -- super override
 			-- self:blit(table.concat(text),table.concat(textColor),table.concat(backgroundColor))
 			self:blitTable(text, textColor, backgroundColor)
 		end
+		-- draw called multiple times: hostdisplay, turtledetails (redraw + checkupdates)
+		print("map redraw ct", ct, "time", os.epoch("utc") - start)
+		
 		self:redrawOverlay()
 		-- redraw map elements
 		local node = self.objects.last

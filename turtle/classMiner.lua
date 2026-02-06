@@ -2094,6 +2094,13 @@ function Miner:initProgress(taskName, hierarchy)
 	}
 end
 
+function Miner:restoreProgress(progress)
+	-- to restore progress hierarchy from a checkpointed task
+	if progress then
+		self.progress = progress
+	end
+end
+
 function Miner:addProgressLevel(key, max, label, minMargin, maxMargin)
 	local progress = self.progress
 	if progress then 
@@ -2223,6 +2230,7 @@ function Miner:mineArea(start, finish)
 	self.checkPointer:save(self)
 
 	self:initProgress("mineArea", { { key = "stage", max = 1, label = "Stage", minMargin = 0.05, maxMargin = 0.95 } } )
+	print("excecuting stage:", taskState.stage)
 	
 	if taskState.stage == 1 then
 
@@ -2258,10 +2266,8 @@ function Miner:mineArea(start, finish)
 		self:updateProgress("stage", 0.01)
 
 		if not self:navigateToPos(start.x, start.y, start.z) then
-			print("unable to get to area")
 			self:returnHome()
-			-- save checkpoint, tasklist remove
-			-- error? could resume after error?
+			self:error("UNABLE TO GET TO AREA") -- resumable
 		else
 			self:turnTo(orientation)
 

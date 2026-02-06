@@ -373,13 +373,13 @@ function ChunkyMap:readChunk(chunkId)
 				handle.seek("set", startPos)
 				local chunkData = handle.read(len)
 				handle.close()
-				print("READ CHUNK", chunkId, "start", startPos, "len", len, "pad", padding, "FROM FILE", fileId, "readLen", chunkData and #chunkData)
+				-- print("READ CHUNK", chunkId, "start", startPos, "len", len, "pad", padding, "FROM FILE", fileId, "readLen", chunkData and #chunkData)
 				local chunk = unbinarize(chunkData)
 				return chunk
 			end
 		end
 	else
-		print("FILE", fileId, "FOR CHUNK", chunkId, "NOT FOUND")
+		-- print("FILE", fileId, "FOR CHUNK", chunkId, "NOT FOUND")
 		return nil
 	end
 end
@@ -513,7 +513,7 @@ function ChunkyMap:saveChunk(chunkId)
 					local newHeaderData = string.pack(format, table.unpack(headerTab))
 					handle.write(newHeaderData)
 					handle.flush()
-					print("SHIFTED", chunkId, "pos", startPos, "len", len, "pad", newPadding, "toRead", toRead, "off", offset, "IN FILE", fileId)
+					-- print("SHIFTED", chunkId, "pos", startPos, "len", len, "pad", newPadding, "toRead", toRead, "off", offset, "IN FILE", fileId)
 					return
 				end
 			end

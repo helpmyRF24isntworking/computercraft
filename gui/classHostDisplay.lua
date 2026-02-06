@@ -240,9 +240,10 @@ function HostDisplay:initialize()
 	self.storageDisplay = StorageDisplay:new(1,1,self:getWidth(),self:getHeight(),self.storage)
 	self.storageDisplay:setHostDisplay(self)
 
-	self.winMap = Window:new()
+	--self.winMap = Window:new()
 	self.mapDisplay = MapDisplay:new(4,4,32,16)
-	self.winMap:setInnerWindow(self.mapDisplay)
+	--self.winMap:setInnerWindow(self.mapDisplay)
+	self.winMap = self.mapDisplay
 	self.winTurtles = Window:new()
 	self.winGroups = Window:new()
 	
@@ -302,17 +303,24 @@ function HostDisplay:initialize()
 
 end 
 
-function HostDisplay:refresh()
-	self.mapDisplay:checkUpdates()
+function HostDisplay:refreshRedraw() -- actually refreshRedraw...
+	-- self.mapDisplay:checkUpdates() -- now part of refreshRedraw party
 	-- self.winMap:redraw()
 	self.storageDisplay:checkUpdates()
 	self:updateTurtles()
 	self:updateGroups()
 	self:updateTime()
+
+	local winTop = self:getTopWindow()
+	if winTop ~= self.winMain 
+	and winTop ~= self.storageDisplay 
+	and winTop ~= self.winTurtles 
+	and winTop ~= self.winGroups then
+		winTop:refreshRedraw()
+	end
 end
-function HostDisplay:redraw()
-	-- only redraw the top window and set the rest invisible
-	-- get first visible window
+
+function HostDisplay:getTopWindow()
 	local winTop = self.objects.first
 	local o = winTop
 	while o do
@@ -322,6 +330,13 @@ function HostDisplay:redraw()
 		end
 		o = o._next
 	end
+	return winTop
+end
+
+function HostDisplay:redraw()
+	-- only redraw the top window and set the rest invisible
+	-- get first visible window
+	local winTop = self:getTopWindow()
 	
 	-- set other windows invisible
 	local o = winTop._next
@@ -421,6 +436,8 @@ function HostDisplay:displayMap()
 
 	self:addObject(self.winMap)
 	--self:addObject(self.mapDisplay)
+	self.winMap:setPos(1,1)
+	self.winMap:showControls()
 	self.winMap:fillParent()
 	
 	self:redraw()
@@ -458,7 +475,7 @@ function HostDisplay:updateTurtles()
 				and (filter.stuck == data.state.stuck or (not filter.stuck and data.state.stuck == nil)) then
 
 				if not turtleControls[id] then 		
-					turtleControls[id] = TurtleControl:new(1,y,data.state,self.node)
+					turtleControls[id] = TurtleControl:new(1,y,data,self.node)
 					self.winTurtles:addObject(turtleControls[id])
 					turtleControls[id]:fillWidth()
 					turtleControls[id]:setHostDisplay(self)
@@ -468,7 +485,7 @@ function HostDisplay:updateTurtles()
 						y = y - 1
 					end
 					turtleControls[id]:setY(y)
-					turtleControls[id]:setData(data.state)
+					-- turtleControls[id]:setTurt(data)
 				end
 				y = y + turtleControls[id]:getHeight()
 				prvHeight = turtleControls[id]:getHeight()

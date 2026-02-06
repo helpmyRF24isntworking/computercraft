@@ -51,6 +51,12 @@ function TaskGroup:initialize()
 	self.shortId = string.sub(self.id,1,4)
 end
 
+function TaskGroup:changeId(id)
+	-- only for dummy groups
+	self.id = id
+	self.shortId = string.sub(id,1,4)
+end
+
 function TaskGroup:setTaskManager(taskManager)
 	self.taskManager = taskManager
 end
@@ -366,6 +372,12 @@ function TaskGroup:deleteTasks()
 		task:delete()
 	end
 	self.tasks = {}
+end
+
+function TaskGroup:addTask(task)
+	-- existance check first?
+	table.insert(self.tasks, task)
+	task:setGroup(self)
 end
 
 function TaskGroup:removeTask(task)

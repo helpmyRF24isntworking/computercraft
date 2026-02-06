@@ -4,6 +4,7 @@ local Label = require("classLabel")
 local BasicWindow = require("classBasicWindow")
 local Frame = require("classFrame")
 local TaskSelector = require("classTaskSelector")
+local TurtleDetails = require("classTurtleDetails")
 
 
 local default = {
@@ -27,7 +28,7 @@ local default = {
 
 local TurtleControl = BasicWindow:new()
 
-function TurtleControl:new(x,y,data,node)
+function TurtleControl:new(x,y,turt,node)
 	local o = o or BasicWindow:new(x,y,default.collapsed.width,default.collapsed.height) or {}
 	setmetatable(o,self)
 	self.__index = self
@@ -36,7 +37,7 @@ function TurtleControl:new(x,y,data,node)
 	o:setBorderColor(default.colors.border)
 	
 	o.node = node or nil 
-	o.data = data
+	o.turt = turt or nil
 	o.mapDisplay = nil -- needed to enable the map button
 	o.hostDisplay = nil
 	o.collapsed = true
@@ -44,17 +45,19 @@ function TurtleControl:new(x,y,data,node)
 
 	o:initialize()
 
-	
-	o:setData(data)
-	
 	return o
+end
+
+function TurtleControl:setTurt(turt)
+	self.turt = turt
 end
 
 function TurtleControl:setNode(node)
 	self.node = node
 end
 
-function TurtleControl:setData(data)
+function TurtleControl:refreshData()
+	local data = self.turt and self.turt.state or nil
 	if data then
 		self.data = data
 		
@@ -121,6 +124,17 @@ function TurtleControl:expand()
 	return true
 end
 
+function TurtleControl:openDetails()
+	-- open a new window with more details and options for the turtle
+	-- for fullscreen add to hostDisplay instead of parent
+	local detailsWindow = TurtleDetails:new(2, 2, self.turt)
+	detailsWindow:setHostDisplay(self.hostDisplay)
+	self.hostDisplay:addObject(detailsWindow)
+	detailsWindow:fillParent()
+	self.hostDisplay:redraw()
+	return true
+end
+
 function TurtleControl:addTask()
 	self.taskSelector = TaskSelector:new(self.x+19,self.y-1)
 	self.taskSelector:setNode(self.node)
@@ -177,8 +191,7 @@ function TurtleControl:redraw() -- super override
 end
 
 function TurtleControl:initialize()
-	
-	-- self:removeObject(self.btnClose) -- close button not needed
+	self:refreshData()
 	
 	self.winDetail = BasicWindow:new()
 	self.winSimple = BasicWindow:new()
@@ -216,7 +229,8 @@ function TurtleControl:initialize()
 	self.lblY = Label:new("Y  " .. data.pos.y,3,4)
 	self.lblZ = Label:new("Z  " .. data.pos.z,3,5)
 	self.btnMap = Button:new("map",12,3,5,1)
-	self.btnCallHome = Button:new("home",12,5,5,1)
+	-- self.btnCallHome = Button:new("home",12,5,5,1)
+	self.btnDetails = Button:new("more", 12,5,5,1)
 	-- row 17 - 27
 	self.lblProgress = Label:new("",29,2)
 	self.lblTaskLast = Label:new(data.lastTask,20,3)
@@ -233,9 +247,10 @@ function TurtleControl:initialize()
 	self.btnAddTask.click = function() return self:addTask() end
 	self.btnMap.click = function() self:openMap() end
 	self.btnCancelTask.click = function() self:cancelTask() end
-	self.btnCallHome.click = function() self:callHome() end
+	--self.btnCallHome.click = function() self:callHome() end
 	self.btnDeleteTurtle.click = function() return self:deleteTurtle() end
 	self.btnCollapse.click = function() return self:collapse() end
+	self.btnDetails.click = function() return self:openDetails() end
 	
 	self.winDetail:addObject(self.frmId)
 	self.winDetail:addObject(self.lblX)
@@ -253,8 +268,9 @@ function TurtleControl:initialize()
 	self.winDetail:addObject(self.btnAddTask)
 	self.winDetail:addObject(self.btnMap)
 	self.winDetail:addObject(self.btnCancelTask)
-	self.winDetail:addObject(self.btnCallHome)
+	--self.winDetail:addObject(self.btnCallHome)
 	self.winDetail:addObject(self.btnDeleteTurtle)
+	self.winDetail:addObject(self.btnDetails)
 	
 	self.btnDeleteTurtle.visible = self.data.online
 
@@ -268,6 +284,7 @@ function TurtleControl:refreshPos()
 end
 
 function TurtleControl:refresh()
+	self:refreshData()
 	self:refreshPos()
 
 	local data = self.data
@@ -301,7 +318,7 @@ function TurtleControl:refresh()
 		
 		self.btnAddTask:setEnabled(data.online)
 		self.btnCancelTask:setEnabled(data.online)
-		self.btnCallHome:setEnabled(data.online)
+		--self.btnCallHome:setEnabled(data.online)
 		
 		self.btnAddTask.visible = data.online
 		self.btnCancelTask.visible = data.online

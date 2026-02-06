@@ -29,7 +29,7 @@ while global.running and global.displaying do
 	monitor:checkEvents()
 
 	if frame%5 == 0 then
-		display:refresh()
+		display:refreshRedraw()
 
 		if printDisplayTime then 
 			print(osEpoch("local") - start, "frame", frame )

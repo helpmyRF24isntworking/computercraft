@@ -73,7 +73,7 @@ function ScrollBar:increase()
 	else
 		print("PARENT IS NOT SCROLLABLE!")
 	end
-	-- self:redraw() ?
+	self.parent:redraw()
 end
 
 function ScrollBar:decrease()
@@ -87,7 +87,7 @@ function ScrollBar:decrease()
 	else
 		print("PARENT IS NOT SCROLLABLE!")
 	end
-	-- self:redraw() ?
+	self.parent:redraw()
 end
 
 function ScrollBar:setMaxScroll(max)

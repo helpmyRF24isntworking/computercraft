@@ -340,6 +340,7 @@ local function handleAlert(alert)
 			if task then 
 				print("Turtle", id, "accepted recovery task for", alert.state.id)
 				result = true
+				break
 			end
 		end
 	end

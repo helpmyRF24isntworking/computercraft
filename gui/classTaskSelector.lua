@@ -94,10 +94,8 @@ function TaskSelector:selectArea()
 end
 
 function TaskSelector:mineArea()
-	if self.node then
-		self.taskName = "mineArea"
-		self:selectArea()
-	end
+	self.taskName = "mineArea"
+	self:selectArea()
 end
 
 
@@ -149,25 +147,19 @@ function TaskSelector:onPositionSelected(x,y,z)
 end
 	
 function TaskSelector:navigateToPos()
-	if self.node then
-		self.taskName = "navigateToPos"
-		self:selectPosition()
-	end
+	self.taskName = "navigateToPos"
+	self:selectPosition()
 end
 
 function TaskSelector:digToPos()
-	if self.node then
-		self.taskName = "digToPos"
-		self:selectPosition()
-	end
+	self.taskName = "digToPos"
+	self:selectPosition()
 end
 
 function TaskSelector:reboot()
-	if self.node then
-		self.node:send(self.data.id, {"REBOOT"},false, false)
-		-- self.taskManager:rebootTurtle(self.data.id)
-		self:close()
-	end
+	self.node:send(self.data.id, {"REBOOT"},false, false)
+	--self.taskManager:rebootTurtle(self.data.id)
+	self:close()
 end
 
 return TaskSelector

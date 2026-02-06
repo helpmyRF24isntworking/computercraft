@@ -33,6 +33,12 @@ local blitTab = {
 local BasicWindow = {}
 BasicWindow.blitTab = blitTab
 
+-- redrawing a basic window, when it plays the role of an innerWindow for Window
+-- it can draw over the close button and other elements without redrawing the main Window
+-- perhaps do a callback to the main window to redraw those elements
+-- also onRemove callbacks only work for the main Window, not for the inner Window
+-- see mapDisplay
+
 function BasicWindow:new(x,y,width,height,complex)
 	local o = o or {}
 	setmetatable(o, self)
@@ -219,16 +225,26 @@ function BasicWindow:getScrollX()
 	return self.scrollX
 end
 
+function BasicWindow:refresh() end -- to be implemented by subclasses
+
+function BasicWindow:refreshRedraw()
+	-- refresh updates the content
+	if self.parent and self.visible then
+		local needsRedraw = true
+		if self.refresh then
+			-- only if refresh explicitly returns false, redraw is not called
+			needsRedraw = self:refresh()
+			if needsRedraw == nil then needsRedraw = true end
+		end
+		-- redraw forcefully redraws the window
+		if needsRedraw then self:redraw() end
+	end
+end
 
 function BasicWindow:redraw()
 	if self.parent and self.visible then
 
-		--local maxScrollY = self.maxScrollY
 		self.maxScrollY = 1
-
-		--if self.borderColor == colors.gray then 
-			--print("redraw window", self.x, self.y, self.width, self.height, self.borderColor, self.backgroundColor)
-		--end
 
 		self:drawFilledBox(self.scrollX, self.scrollY, self.width, self.height, self.backgroundColor)
 		if self.borderColor ~= self.backgroundColor then

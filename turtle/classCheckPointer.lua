@@ -47,12 +47,6 @@ function CheckPointer:load(miner)
 		return false
 	end
 
-	local taskList = miner.taskList
-	for _, task in ipairs(self.checkpoint.tasks or {}) do
-		local entry = { task.func, taskState = task.taskState }
-		taskList:addLast(entry)
-	end
-
 	-- restore position seperately
 
 	return true
@@ -82,6 +76,7 @@ function CheckPointer:restoreTaskAssignment(miner)
 			assignment:setCheckpoint(self.checkpoint)
 			miner:addTaskAssignment(assignment, 1) -- add as first assignment
 			self.checkpoint.assignment = assignment:toSerializableData(true)
+			self:printCheckpoint()
 			return true
 			-- TODO: assignment:notifyResumed()
 
@@ -105,6 +100,18 @@ function CheckPointer:restoreTaskAssignment(miner)
 	return false
 end
 
+function CheckPointer:printCheckpoint()
+	if #self.checkpoint.tasks <= 0 then 
+		print("no checkpoint tasks")
+		return
+	end
+
+	for k, task in ipairs(self.checkpoint.tasks) do
+		local state = task.taskState
+		print(k, task.func, "stage", state.stage, "ignPos", state.ignorePosition)
+	end
+end
+
 function CheckPointer:setCheckpoint(checkpoint)
 	-- to restore a checkpoint sent by the host 
 	self.checkpoint = checkpoint
@@ -114,7 +121,17 @@ function CheckPointer:executeTasks(miner)
 	print("CONTINUE FROM CHECKPOINT")
 	-- Throws error
 
-	-- restore the miner position
+	-- restore progress hierarchy if available, not just the overall value
+	miner:restoreProgress(self.checkpoint.progress)
+
+	-- restore miner taskstack
+	local taskList = miner.taskList
+	for _, task in ipairs(self.checkpoint.tasks or {}) do
+		local entry = { task.func, taskState = task.taskState }
+		taskList:addLast(entry)
+	end
+
+	-- execute tasks in checkpoint
 	local pos, orientation = self.checkpoint.pos, self.checkpoint.orientation
 	local returnVals = nil
 	for k, task in ipairs(self.checkpoint.tasks) do
@@ -164,6 +181,7 @@ function CheckPointer:getCheckpoint(miner)
 		pos = miner.pos,
 		orientation = miner.orientation,
 		assignment = getTaskAssignment(miner),
+		progress = miner.progress,
 	}
 	if #checkpoint.tasks == 0 then 
 		checkpoint = nil

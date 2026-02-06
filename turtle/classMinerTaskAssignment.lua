@@ -6,6 +6,8 @@ local default = {
 	path = "/runtime/tasks/",
 }
 
+local osEpoch = os.epoch
+
 local MinerTaskAssignment = {}
 MinerTaskAssignment.__index = MinerTaskAssignment
 
@@ -22,6 +24,7 @@ function MinerTaskAssignment:fromData(data)
 	setmetatable(o, MinerTaskAssignment)
 
 	if not o.status then o.status = "new" end
+	if not o.time then o.time = { created = osEpoch() } end
 	-- keep track of how often task was attempted
 	if not o.attempts then o.attempts = 0 end
     if not o.turtleId then o.turtleId = os.getComputerID() end
@@ -30,7 +33,7 @@ function MinerTaskAssignment:fromData(data)
 end
 
 function MinerTaskAssignment:fromFile(fileName)
-	-- rebuild class from loaded file data or from host message
+	-- rebuild task from saved file
 	local f = fs.open(fileName, "r")
 	local data = textutils.unserialize(f.readAll())
 	f.close()
@@ -65,7 +68,7 @@ function MinerTaskAssignment:toSerializableData(noCheckpoint)
 
 		funcName = self.funcName,
 		args = self.args,
-		created = self.created,
+		time = self.time, -- created, started, completed
 
 		status = self.status,
         progress = self:getProgress(),
@@ -74,6 +77,7 @@ function MinerTaskAssignment:toSerializableData(noCheckpoint)
 		checkpoint = not noCheckpoint and self.checkpoint,
         attempts = self.attempts,
 
+		stateTime = osEpoch(),
 	}
 end
 function MinerTaskAssignment:save(path)
@@ -154,9 +158,10 @@ function MinerTaskAssignment:onCancel(msg)    -- only relevant if task is runnin
         -- then stop miner -> this throws a fake error, which is redirected to this task assignment
         self.miner.stop = true
     end
+	-- maybe send old status, so host knows if it was running or just queued?
+	self.time.completed = osEpoch()
+	self.status = "cancelled"
     self:confirmCancelled(msg)
-    -- send old status, so host knows if it was running or just queued
-    self.status = "cancelled"
     return true
 end
 
@@ -222,6 +227,7 @@ function MinerTaskAssignment:execute()
 	local miner = self.miner
     miner:setTaskAssignment(self) -- also clears progress
     self.status = "running"
+	self.time.started = osEpoch()
     self:informHost() -- inform host that task is starting
     self.miner.stop = false -- reset stop flag
 
@@ -236,6 +242,7 @@ function MinerTaskAssignment:execute()
 			if not checkPointer.checkpoint then 
 				-- use the checkpoint from the assignment if none is set
 				checkPointer:setCheckpoint(self.checkpoint)
+				checkPointer:printCheckpoint()
 			end
             -- let checkpointer handle restoration
             ok, err = pcall(function()
@@ -283,6 +290,7 @@ function MinerTaskAssignment:execute()
         self.status = "completed"
     end
 	-- inform host about completion / error
+	self.time.completed = osEpoch()
     self:informHost()
 	return ok
 end

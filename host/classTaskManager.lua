@@ -78,7 +78,7 @@ function TaskManager:addTask(task)
     if task.groupId then 
         local group = self.groups[task.groupId]
         if group then
-            task:setGroup(group)
+            group:addTask(task)
         else
             print("task has unknown group id", task.groupId)
         end
@@ -103,7 +103,6 @@ end
 
 function TaskManager:removeTask(task)
     self.tasks[task.id] = nil
-    local turtleTasks = self.turtleTasks[task.turtleId]
 
     -- remove from group
     if task.group then
@@ -115,6 +114,7 @@ function TaskManager:removeTask(task)
         end
     end
 
+    local turtleTasks = self.turtleTasks[task.turtleId]
     if turtleTasks then 
         turtleTasks[task.id] = nil
     end
@@ -153,15 +153,18 @@ function TaskManager:createGroup()
     return group
 end
 
+function TaskManager:createDummyGroup(id)
+    -- create dummy group for unknown tasks
+    local group = self:createGroup()
+    self.groups[group.id] = nil
+    group:changeId(id)
+    self.groups[id] = group
+end
+
 function TaskManager:saveGroups()
     print("SAVE GROUPS NOT IMPLEMENTED")
 end
 
-function TaskManager:getTurtleTasks(turtleId)
-    -- TODO: do not use table, but check task list
-    -- otherwise we have to keep the list updated all the time
-    return nil --self.turtleTasks[turtleId]
-end
 
 function TaskManager:getCurrentTurtleTask(turtleId)
     local turtleTasks = self:getTurtleTasks(turtleId)
@@ -235,7 +238,7 @@ function TaskManager:cancelTask(task)
     -- mark task as abandoned, so it wont be restarted
     if task:cancel() then
         self.cancelledTasks[task:getId()] = task
-        self:removeTask(task)
+        -- self:removeTask(task) dont remove it
         return true
     else
         return false
@@ -291,6 +294,152 @@ function TaskManager:getTask(taskId)
 end
 
 
+function TaskManager:getTurtleTasks(turtleId)
+    -- we have to ensure the table is uptodate
+    return self.turtleTasks[turtleId]
+end
+-- maybe its time to create a turtle class that holds the state and has subscriber funcitons for state changes etc.
+-- then we can easier manage and track the turtles
+
+function TaskManager:getTaskWithStatus(...)
+    local statusList = {...}
+    local statusMap = {}
+    local taskList = {}
+    if #statusList <= 0 then
+        print("no status filter provided")
+    else
+        if type(statusList[1]) == "table" then
+            -- we assume the filter has been pre-made
+            statusMap = statusList[1]
+        else
+            for _, status in ipairs(statusList) do
+                statusMap[status] = true
+            end
+        end
+        for _, task in pairs(self.tasks) do
+            if statusMap[task:getStatus()] then
+                table.insert(taskList, task)
+            end
+        end
+    end
+    return taskList
+end
+
+function TaskManager:getTaskList(filter)
+    -- filter = { taskIds = {}, groupIds = {}, turtleIds = {}, statuses = {} }
+    -- use dedicated function for other filters
+    local taskList = {}
+    if not filter then 
+        print("no filter provided for getTaskList")
+        return taskList
+    end
+
+    local taskIds = filter.taskIds
+    local groupIds = filter.groupIds
+    local turtleIds = filter.turtleIds
+    local statuses = filter.statuses
+
+    local hasTaskFilter = taskIds and #taskIds > 0
+    local hasGroupFilter = groupIds and #groupIds > 0
+    local hasTurtleFilter = turtleIds and #turtleIds > 0
+    local hasStatusFilter = statuses and #statuses > 0
+
+    local statusMap
+    if hasStatusFilter then 
+        -- build status map
+        statusMap = {}
+        for _, status in ipairs(statuses) do
+            statusMap[status] = true
+        end
+    end
+
+    if hasGroupFilter and not hasTaskFilter and not hasTurtleFilter then
+        -- if only group id filter is set, we can directly get the tasks from the group
+        for _, groupId in ipairs(groupIds) do
+            local group = self.groups[groupId]
+            if group then
+                if hasStatusFilter then 
+                    taskList = group:getTasksWithStatus(table.unpack(statuses))
+                else
+                    taskList = group:getTasks()
+                end
+            end
+        end
+    elseif hasTurtleFilter and not hasTaskFilter and not hasGroupFilter then
+        for _, turtleId in ipairs(turtleIds) do
+            local turtleTasks = self:getTurtleTasks(turtleId)
+            if turtleTasks then
+                for id, task in pairs(turtleTasks) do
+                    if hasStatusFilter then 
+                        if statusMap[task:getStatus()] then
+                            table.insert(taskList, task)
+                        end
+                    else
+                        table.insert(taskList, task)
+                    end
+                end
+            end
+        end
+    elseif hasStatusFilter and not hasTaskFilter and not hasGroupFilter and not hasTurtleFilter then
+        taskList = self:getTasksWithStatus(statusMap)
+    else
+
+
+        -- otherwise we have to iterate over all tasks and check the filters
+        -- this also covers the case where only taskIds are provided, since we check those first in the matching function
+        local function matchesFilter(task)
+            if hasGroupFilter then
+                local match = false
+                for _, groupId in ipairs(groupIds) do
+                    if task.groupId == groupId then
+                        match = true
+                        break
+                    end
+                end
+                if not match then return false end
+            end
+
+            if hasTurtleFilter then
+                local match = false
+                for _, turtleId in ipairs(turtleIds) do
+                    if task.turtleId == turtleId then
+                        match = true
+                        break
+                    end
+                end
+                if not match then return false end
+            end
+
+            if hasStatusFilter then
+                return statusMap[task:getStatus()]
+            end
+
+            return true
+        end
+
+        -- Iterate over tasks and apply filters
+        if hasTaskFilter then
+            for _, id in ipairs(taskIds) do
+                local task = self.tasks[id]
+                if task and matchesFilter(task) then
+                    table.insert(taskList, task)
+                end
+            end
+        else
+            for _, task in pairs(self.tasks) do
+                if matchesFilter(task) then
+                    table.insert(taskList, task)
+                end
+            end
+        end
+
+    end
+
+
+
+    return taskList
+end
+
 -- ############# MESSAGE HANDLERS
 function TaskManager:isTaskMessage(msg)
     local txt = msg.data[1]
@@ -310,6 +459,8 @@ function TaskManager:handleMessage(msg)
     end
 end
 
+
+
 function TaskManager:onTaskStateUpdate(taskState)
     -- task state update from turtle
     local task = self:getTask(taskState.id)
@@ -324,6 +475,16 @@ function TaskManager:onTaskStateUpdate(taskState)
             self:addTask(task)
         end
     end
+
+    if task.groupId then 
+        local group = self.groups[task.groupId]
+        if not group then 
+            group = self:createDummyGroup(task.groupId)
+            group:setStatus("unknown")
+            print("adding unknown group", group.shortId, "for task", task.shortId)
+        end
+    end
+        
 
 end
 
