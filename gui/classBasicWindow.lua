@@ -324,6 +324,14 @@ function BasicWindow:handleClick(x,y)
 		o:handleClick(x,y)
 	end
 end
+function BasicWindow:handleScroll(dir,x,y)
+	local o = self:getObjectByPos(x,y)
+	x = x - self.x + self.scrollX
+	y = y - self.y + self.scrollY
+	if o and o.handleScroll then
+		return o:handleScroll(dir,x,y)
+	end
+end
 
 function BasicWindow:getBackgroundColorByPos(x,y)
     local o = self:getObjectByPos(x,y)

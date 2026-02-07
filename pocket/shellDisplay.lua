@@ -10,7 +10,7 @@ local monitor = global.monitor
 
 while global.running do
 	local event, p1, p2, p3, msg, p5 = os.pullEventRaw()
-	if event == "mouse_up" then -- or event == "mouse_click" or event == "monitor_resize" then
+	if event == "mouse_up" or event == "mouse_scroll" then -- or event == "mouse_click" or event == "monitor_resize" then
 		monitor:addEvent({event,p1,p2,p3,msg,p5})
 	elseif event == "input_request" then 
 		local token = p1

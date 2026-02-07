@@ -62,6 +62,15 @@ function ScrollBar:setReferenceWindow(win)
 	self.referenceWindow = win
 end
 
+function ScrollBar:handleScroll(dir,x,y)
+	if dir == 1 then 
+		self:increase()
+	else
+		self:decrease()
+	end
+	return true
+end
+
 function ScrollBar:increase()
 	self.value = self.value + 1
 	if self.referenceWindow.scroll then

@@ -159,6 +159,7 @@ function TaskManager:createDummyGroup(id)
     self.groups[group.id] = nil
     group:changeId(id)
     self.groups[id] = group
+    return group
 end
 
 function TaskManager:saveGroups()
@@ -471,7 +472,7 @@ function TaskManager:onTaskStateUpdate(taskState)
         task = TaskAssignment:fromData(taskState)
         if task then
             print("adding unknown task to task manager", taskState.id)
-            print(textutils.serialize(task:toTurtleMessage(), {compact=true, allow_repetitions=true}))
+            print(textutils.serialize(task:toSerializableData(), {compact=true, allow_repetitions=true}))
             self:addTask(task)
         end
     end
@@ -480,8 +481,10 @@ function TaskManager:onTaskStateUpdate(taskState)
         local group = self.groups[task.groupId]
         if not group then 
             group = self:createDummyGroup(task.groupId)
-            group:setStatus("unknown")
-            print("adding unknown group", group.shortId, "for task", task.shortId)
+            if group then
+                group:setStatus("unknown")
+                print("adding unknown group", group.shortId, "for task", task.shortId)
+            end
         end
     end
         

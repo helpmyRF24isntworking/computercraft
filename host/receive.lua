@@ -58,13 +58,12 @@ while global.running and global.receiving do
 			end
 			
 	elseif event == "timer" then
-		--if event[2] == bluenet.receivedTimer then 
-			--bluenet.clearReceivedMessages()
-		--end
 		global.timerCount = global.timerCount + 1
+
 	elseif event == "monitor_touch" or event == "mouse_up"
-		or event == "mouse_click" or event == "monitor_resize" then
+		or event == "mouse_click" or event == "monitor_resize" then -- scroll only in shellDisplay
 		monitor:addEvent({event,p1,p2,p3,msg,p5})
+		
 	elseif event == "terminate" then 
 		error("Terminated",0)
 	end

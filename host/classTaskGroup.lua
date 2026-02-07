@@ -61,6 +61,7 @@ function TaskGroup:setTaskManager(taskManager)
 	self.taskManager = taskManager
 end
 
+
 function TaskGroup:getTasksWithStatus(...)
 	local t = table.pack(...)
 	local status = {}
@@ -298,7 +299,7 @@ end
 
 
 function TaskGroup:start()
-	print("starting tasks for group", self.shortId, "func", self.funcName)
+	print("starting",  #self.tasks, "tasks for group", self.shortId, "func", self.funcName)
 
 	self.time.started = os.epoch("ingame")
 	for _,task in ipairs(self.tasks) do
@@ -324,7 +325,7 @@ end
 
 function TaskGroup:resume()
 	self.time.completed = nil
-	print("resuming tasks for group", self.shortId, "func", self.funcName)
+	print("resuming",  #self.tasks, "tasks for group", self.shortId, "func", self.funcName)
 
 	self.time.started = os.epoch("ingame")
 	for _,task in ipairs(self.tasks) do
@@ -349,6 +350,7 @@ function TaskGroup:resume()
 end
 
 function TaskGroup:cancel()
+	print("cancelling", #self.tasks, "tasks for group", self.shortId)
 	for _,task in ipairs(self.tasks) do
 		local ok = task:cancel()
 	end
@@ -375,7 +377,15 @@ function TaskGroup:deleteTasks()
 end
 
 function TaskGroup:addTask(task)
-	-- existance check first?
+
+	-- existance check is necessary when loading from disk
+	for i,t in ipairs(self.tasks) do
+		if task.id == t.id then
+			self.tasks[task.id] = task
+			return
+		end
+	end
+
 	table.insert(self.tasks, task)
 	task:setGroup(self)
 end
@@ -394,11 +404,10 @@ function TaskGroup:createTask(turtleId)
 	local task = self.taskManager:createTask(turtleId, self.id)
 	task:setFunction(self.funcName)
 	task:setTaskName(self.taskName)
-	table.insert(self.tasks, task)
+	-- when creating through manager, it is already added to the group
+	-- table.insert(self.tasks, task)
 	return task
 end
-
-
 
 function TaskGroup:addTaskToTurtles(funcName, args)
 	-- basic assign and execute function e.g. to call them home
@@ -430,6 +439,7 @@ function TaskGroup:assignAreas(areas)
 	for i,area in ipairs(areas) do
 		local turtleId = turtles[i].state.id
 		local task = self:createTask(turtleId)
+		print("created", task.shortId, "for turtle", turtleId, "area", area.start.x, area.start.y, area.start.z, area.finish.x, area.finish.y, area.finish.z)
 		task:setArea(area.start, area.finish)
 	end
 	return self.tasks
@@ -437,7 +447,6 @@ end
 
 function TaskGroup:reattachTasks(allTasks)
 	-- reconnect existing tasks to this group
-
 	for i, task in ipairs(self.tasks) do
 		local realTask = allTasks[task.id]
 		if realTask then

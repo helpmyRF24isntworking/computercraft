@@ -178,6 +178,50 @@ function MapDisplay:handleClick(x,y) -- super override
 		end
 	end
 end
+
+
+function MapDisplay:scrollZoom(dir,x,z)
+	-- real x and y
+	local level = self.zoomLevel + dir
+
+	local dx = self.mapMidX - x
+	local dz = self.mapMidZ - z
+
+	local old = self.zoomLevel
+
+	-- setZoomLevel logic
+	if level < 1 then level = 1
+	elseif level > 10 then level = 10 end
+	
+	if not ( self.zoomLevel == level ) then
+		self.zoomLevel = level
+
+		dx = ( dx / old ) * level
+		dz =  ( dz / old ) * level
+
+		self:setMid(x + dx, self.mapMidY, z + dz)
+		self.lblZoom:setText(self.zoomLevel .. ":1")
+		self:redraw()
+	end
+
+end
+
+function MapDisplay:handleScroll(dir,x,y) -- super override 
+
+	local o = self:getObjectByPos(x,y)
+	x = x - self.x + self.scrollX
+	y = y - self.y + self.scrollY
+	if o and o.handleScroll then
+		o:handleScroll(dir,x,y)
+	elseif not o and self.visible then
+
+		varX = self.mapMidX + (x - self.midWidth - 1) * self.zoomLevel
+		varZ = self.mapMidZ + (y - self.midHeight - 1) * self.zoomLevel
+
+		self:scrollZoom(dir,varX,varZ)
+	end
+end
+
 function MapDisplay:onResize()
 	BasicWindow.onResize(self) -- super
 	
@@ -356,7 +400,6 @@ function MapDisplay:precomputeBackground()
 end
 
 function MapDisplay:redraw() -- super override
-	print("map redraw start")
 	if self.parent and self.visible then
 		
 		local freeCol = blitTab[default.freeColor]
@@ -406,7 +449,7 @@ function MapDisplay:redraw() -- super override
 			self:blitTable(text, textColor, backgroundColor)
 		end
 		-- draw called multiple times: hostdisplay, turtledetails (redraw + checkupdates)
-		print("map redraw ct", ct, "time", os.epoch("utc") - start)
+		-- print("map redraw ct", ct, "time", os.epoch("utc") - start)
 		
 		self:redrawOverlay()
 		-- redraw map elements

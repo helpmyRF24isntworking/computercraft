@@ -356,6 +356,8 @@ function TaskAssignment:cancel(node)
 	-- answer might not come directly if turtle is busy
 	local node = node or self.node
 
+	print("cancelling", self.shortId, "current status", self.status, "time", osEpoch())
+
 	if self.status == "completed" or self.status == "deleted" then
 		print("cannot cancel task, already completed or deleted", self.turtleId, self.id)
 		return true
@@ -387,6 +389,8 @@ end
 function TaskAssignment:toSerializableData()
 	local data = {
 		id = self.id,
+		shortId = self.shortId,
+		
 		groupId = self.groupId,
 		turtleId = self.turtleId,
 		taskName = self.taskName,

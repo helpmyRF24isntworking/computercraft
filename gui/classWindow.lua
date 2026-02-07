@@ -197,6 +197,24 @@ function Window:removeObjectInternal(obj)
 	-- for removing overlay objects like scrollbars, close buttons etc.
 end
 
+function Window:handleScroll(dir,x,y) -- super override
+
+	local handled = false
+	local o = self:getObjectByPos(x,y)
+	x = x - self.x + self.scrollX
+	y = y - self.y + self.scrollY
+	if o and o.handleScroll then
+		handled = o:handleScroll(dir,x,y)
+	end
+
+	if not handled and self.scrollBar then
+		return self.scrollBar:handleScroll(dir,x,y)
+		-- not sure if the scrollBar, this window or innerWindow should handle scroll events
+		-- scrollBar has the best knowledge though and relevant functions/references
+		-- also holds the "truth" about current scroll position, max scroll etc.
+	end
+end
+
 
 function Window:redraw()
 	-- DELETE THIS

@@ -141,6 +141,14 @@ function Monitor:handleEvent(event)
 		end
 	elseif event[1] == "monitor_resize" then 
 		self:onResize()
+	elseif event[1] == "mouse_scroll" then
+		local dir = event[2]
+		local x = event[3]
+		local y = event[4]		
+		local o = self:getObjectByPos(x,y)
+		if o and o.handleScroll then
+			return o:handleScroll(dir,x,y)
+		end
 	end
 end
 
