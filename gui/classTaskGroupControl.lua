@@ -108,6 +108,7 @@ function TaskGroupControl:openMap()
 		diff = finish - start
 		focus = vector.new(minX + math.floor(diff.x/2), maxY, minZ + math.floor(diff.z/2))
 		
+		table.insert(self.mapDisplay.areas, {start = start, finish = finish, color = colors.orange})
 		self.mapDisplay:setMid(focus.x, focus.y, focus.z)
 		self.hostDisplay:displayMap()
 	end

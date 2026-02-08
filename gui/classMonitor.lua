@@ -400,6 +400,32 @@ function Monitor:blitTable(text, textColor, backgroundColor)
 	end
 end
 
+function Monitor:blitFrame(bframe)
+	-- full frame region / window
+	local frame, width, height = self.frame, self.width, self.height
+	local cx, cy = self.curX, self.curY
+	local bwidth = nil
+	local by = 0
+	for r = cy, min(cy + #bframe - 1, height) do
+		
+		local line = frame[r]
+		local lnText, lnTextColor, lnBackgroundColor = line[1], line[2], line[3]
+		local bx = 0
+		by = by + 1
+		local bline = bframe[by]
+		local btext, bcolor, bgcolor = bline[1], bline[2], bline[3]
+		if not bwidth then bwidth = #btext end
+		for c=cx, min(cx + bwidth - 1, width) do
+			bx = bx + 1
+			lnText[c] = btext[bx]
+			lnTextColor[c] = bcolor[bx]
+			lnBackgroundColor[c] = bgcolor[bx]
+		end
+		line.modified = true
+	end
+
+end
+
 function Monitor:write(text)
 
 	local line = self.frame[self.curY]

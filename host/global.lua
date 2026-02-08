@@ -24,6 +24,7 @@ turtles = {}
 alerts = {}
 
 pos = {}
+floatPos = nil -- for pocket
 taskGroups = {}
 
 

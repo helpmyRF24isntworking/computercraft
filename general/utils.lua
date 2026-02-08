@@ -12,6 +12,7 @@ local mathrandom = math.random
 local tableinsert = table.insert
 local stringgsub = string.gsub
 local stringformat = string.format
+local vectornew = vector.new
 
 function utils.loadExtension(extensionModule, targetClass)
     for name, func in pairs(extensionModule) do
@@ -27,16 +28,17 @@ end
 
 
 utils.gpsLocate = function()
-    local pos = nil
+    local pos, floatPos = nil, nil
     local x,y,z
     if gps then 
         x, y, z = gps.locate()
         if x and y and z then
+            floatPos = vectornew(x,y,z)
             x, y, z = floor(x), floor(y), floor(z)
-            pos = vector.new(x, y, z)
+            pos = vectornew(x, y, z)
         end
     end
-    return pos
+    return pos, floatPos
 end
 
 function utils.generateUUID(simple)

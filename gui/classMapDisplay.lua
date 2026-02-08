@@ -5,6 +5,11 @@ require("classList")
 local BasicWindow = require("classBasicWindow")
 local Label = require("classLabel")
 local utils = require("utils")
+local PixelDrawer = require("classPixelDrawer")
+
+local blockColors = require("blockColor")
+local idToBlit = blockColors.idToBlit
+local nameToBlit = blockColors.nameToBlit
 
 local default = {
 backgroundColor = colors.gray,
@@ -41,7 +46,7 @@ function MapDisplay:new(x,y,width,height,map)
 	self.__index = self
 	
 	o.map = map or {}
-	
+	o.areas = {}
 	o.backgroundColor = default.backgroundColor
 	
 	o.mapX = 0
@@ -51,6 +56,8 @@ function MapDisplay:new(x,y,width,height,map)
 	o.mapMidY = 0
 	o.mapMidZ = 0
 	o.zoomLevel = 1
+	o.zoomBase = 1 -- TODO: when starting with 1:2, the level should be 0.5 and base 2, not 1:2
+	local zoomText = o.zoomLevel < 1 and "1:"..o.zoomBase or (o.zoomLevel .. ":" .. o.zoomBase)
 	self.displayTurtles = true
 	self.displayHome = true
 	self.displayChunkCircle = true
@@ -66,11 +73,16 @@ end
 function MapDisplay:initialize()
 	self:calculateMapMid()
 
+	self:precomputeBackground()
+
+	self.mapWidth = self.width*2
+	self.mapHeight = self.height*3
+	self.drawer = PixelDrawer:new(self.width*2, self.height*3)
+
+
 	self.scrollFactor = math.floor( (self.height + self.width)/16 )
 	if self.scrollFactor <= 0 then self.scrollFactor = 1 end
 
-	self:precomputeBackground()
-	
 	self.btnClose = Button:new("X",self.width-2,1,3,3,colors.red)
 	self.btnClose.click = function() return self:close() end
 
@@ -88,7 +100,7 @@ function MapDisplay:initialize()
 	
 	self.btnZoomOut = Button:new("-",self.width-2,self.height-2,3,3,default.buttonColor)
 	self.btnZoomIn = Button:new("+",self.width-2,self.height-6,3,3,default.buttonColor)
-	self.lblZoom = Label:new(self.zoomLevel..":1", self.width-2, self.height-3)
+	self.lblZoom = Label:new(self.zoomLevel..":"..self.zoomBase, self.width-2, self.height-3)
 	self.btnTurtles = CheckBox:new(1,self.height-2,"turtles",self.displayTurtles,nil,nil,self.backgroundColor)
 	self.btnHome = CheckBox:new(1,self.height-1,"home",self.displayHome,nil,nil,self.backgroundColor)
 	self.btnCircle = CheckBox:new(1,self.height, "128/256 circles",self.displayChunkCircle,nil,nil,self.backgroundColor)
@@ -167,8 +179,12 @@ function MapDisplay:handleClick(x,y) -- super override
 	if o and o.handleClick then
 		o:handleClick(x,y)
 	elseif not o and self.visible then
-		varX = self.mapMidX + (x - self.midWidth - 1) * self.zoomLevel
-		varZ = self.mapMidZ + (y - self.midHeight - 1) * self.zoomLevel
+		varX = self.mapMidX + (x - self.midWidth - 1) * self.zoomLevel * 2
+		varZ = self.mapMidZ + (y - self.midHeight - 1) * self.zoomLevel * 3
+
+		varX = math.floor(varX + 0.5)
+		varZ = math.floor(varZ + 0.5)
+
 		if self.doSelectPosition then
 			self.doSelectPosition = false
 			if self.onPositionSelected then self:onPositionSelected(varX, self.mapMidY, varZ) end
@@ -189,22 +205,25 @@ function MapDisplay:scrollZoom(dir,x,z)
 
 	local old = self.zoomLevel
 
-	-- setZoomLevel logic
-	if level < 1 then level = 1
-	elseif level > 10 then level = 10 end
-	
-	if not ( self.zoomLevel == level ) then
-		self.zoomLevel = level
+	local changed = self:calculateZoomLevel(level)
+	if changed then
 
-		dx = ( dx / old ) * level
-		dz =  ( dz / old ) * level
+		dx = ( dx / old ) * self.zoomLevel
+		dz =  ( dz / old ) * self.zoomLevel
 
-		self:setMid(x + dx, self.mapMidY, z + dz)
-		self.lblZoom:setText(self.zoomLevel .. ":1")
+		if self.focusId or (pocket and self.focusPocket) then
+			-- dont zoom towards the cursor but the focus point
+			self:setMid(self.mapMidX, self.mapMidY, self.mapMidZ)
+		else
+			self:setMid(x + dx, self.mapMidY, z + dz)
+		end
+		local zoomText = self.zoomLevel < 1 and "1:"..self.zoomBase or (self.zoomLevel .. ":" .. self.zoomBase)
+		self.lblZoom:setText(zoomText)
 		self:redraw()
 	end
 
 end
+
 
 function MapDisplay:handleScroll(dir,x,y) -- super override 
 
@@ -215,8 +234,8 @@ function MapDisplay:handleScroll(dir,x,y) -- super override
 		o:handleScroll(dir,x,y)
 	elseif not o and self.visible then
 
-		varX = self.mapMidX + (x - self.midWidth - 1) * self.zoomLevel
-		varZ = self.mapMidZ + (y - self.midHeight - 1) * self.zoomLevel
+		varX = self.mapMidX + (x - self.midWidth - 1) * self.zoomLevel * 2
+		varZ = self.mapMidZ + (y - self.midHeight - 1) * self.zoomLevel * 3
 
 		self:scrollZoom(dir,varX,varZ)
 	end
@@ -225,6 +244,7 @@ end
 function MapDisplay:onResize()
 	BasicWindow.onResize(self) -- super
 	
+	self.drawer:setSize(self.width*2, self.height*3)
 	self.btnClose:setPos(self.width - 3 + self.scrollX, self.scrollY) 
 
 	--self:calculateMapMid()
@@ -250,12 +270,17 @@ function MapDisplay:onRemove(parent)
 end
 
 function MapDisplay:setMid(x,y,z)
-	self.mapMidX = x
+
+	self.mapMidX = math.floor(x+0.5)
 	self.mapMidY = y
-	self.mapMidZ = z
-	self.mapX = self.mapMidX - self.midWidth * self.zoomLevel
+	self.mapMidZ = math.floor(z+0.5)
+
+	
+	self.mapX = self.mapMidX - math.floor(self.midWidth * self.zoomLevel * 2 + 0.5)
 	self.mapY = self.mapMidY
-	self.mapZ = self.mapMidZ - self.midHeight * self.zoomLevel
+	self.mapZ = self.mapMidZ - math.floor(self.midHeight * self.zoomLevel * 3 + 0.5)
+
+	print("setMid", x,z, "floor", self.mapMidX, self.mapMidZ, "map", self.mapX, self.mapZ)
 	
 	self.lblX:setText("X  " .. self.mapMidX)
 	self.lblY:setText(self.mapMidY)
@@ -263,28 +288,28 @@ function MapDisplay:setMid(x,y,z)
 end
 
 function MapDisplay:calculateMapMid()
-	self.mapMidX = self.mapX + self.midWidth * self.zoomLevel
+	self.mapMidX = self.mapX + self.midWidth * self.zoomLevel * 2
 	self.mapMidY = self.mapY
-	self.mapMidZ = self.mapZ + self.midHeight * self.zoomLevel
+	self.mapMidZ = self.mapZ + self.midHeight * self.zoomLevel * 3
 end
 
 function MapDisplay:scrollLeft()
-	self:setMid(self.mapMidX - self.scrollFactor*self.zoomLevel, self.mapMidY, self.mapMidZ)
+	self:setMid(self.mapMidX - self.scrollFactor*self.zoomLevel * 2, self.mapMidY, self.mapMidZ)
 	self.lblX:setText("X  " .. self.mapMidX)
 	self:redraw()
 end
 function MapDisplay:scrollRight()
-	self:setMid(self.mapMidX + self.scrollFactor*self.zoomLevel, self.mapMidY, self.mapMidZ)
+	self:setMid(self.mapMidX + self.scrollFactor*self.zoomLevel * 2, self.mapMidY, self.mapMidZ)
 	self.lblX:setText("X  " .. self.mapMidX)
 	self:redraw()
 end
 function MapDisplay:scrollUp()
-	self:setMid(self.mapMidX, self.mapMidY, self.mapMidZ - self.scrollFactor*self.zoomLevel)
+	self:setMid(self.mapMidX, self.mapMidY, self.mapMidZ - self.scrollFactor*self.zoomLevel * 3)
 	self.lblZ:setText("Z  " .. self.mapMidZ)
 	self:redraw()
 end
 function MapDisplay:scrollDown()
-	self:setMid(self.mapMidX, self.mapMidY, self.mapMidZ + self.scrollFactor*self.zoomLevel)
+	self:setMid(self.mapMidX, self.mapMidY, self.mapMidZ + self.scrollFactor*self.zoomLevel * 3)
 	self.lblZ:setText("Z  " .. self.mapMidZ)
 	self:redraw()
 end
@@ -304,18 +329,37 @@ end
 function MapDisplay:zoomIn()
 	self:setZoomLevel(self.zoomLevel-1)
 end
-function MapDisplay:setZoomLevel(level)
-	if level < 1 then level = 1
-	elseif level > 10 then level = 10 end
+
+function MapDisplay:calculateZoomLevel(level)
+	if level < 1 then 
+		-- zooming in
+		self.zoomBase = self.zoomBase + 1
+		level = 1 / self.zoomBase
+	elseif level % 1 ~= 0 then 
+		-- zooming out
+		self.zoomBase = self.zoomBase - 1
+		if self.zoomBase < 1 then self.zoomBase = 1 end
+		level = 1 / self.zoomBase
+	else
+		if level > 5 then level = 5 end
+	end
 	
 	if not ( self.zoomLevel == level ) then
 		self.zoomLevel = level
-
+		print("new zoom", self.zoomLevel, self.zoomBase)
+		return true
+	end
+end
+function MapDisplay:setZoomLevel(level)
+	local changed = self:calculateZoomLevel(level)
+	if changed then
 		self:setMid(self.mapMidX, self.mapMidY, self.mapMidZ)
-		self.lblZoom:setText(self.zoomLevel .. ":1")
+		local zoomText = level < 1 and "1:"..self.zoomBase or (level .. ":" .. self.zoomBase)
+		self.lblZoom:setText(zoomText)
 		self:redraw()
 	end
 end
+
 function MapDisplay:setFocus(id)
 	self.focusId = id
 	if self.focusId then
@@ -340,6 +384,7 @@ function MapDisplay:showControls()
 	end
 end
 
+
 function MapDisplay:refresh()
 	local redraw = false
 
@@ -347,7 +392,8 @@ function MapDisplay:refresh()
 		-- DO NOT USE MAPLOG to determine redraw
 
 	if pocket then 
-		global.pos = utils.gpsLocate()
+		self.prvFloatPos = global.floatPos
+		global.pos, global.floatPos = utils.gpsLocate()
 	end
 	if self.parent and self.visible then
 		if self.focusId then
@@ -361,7 +407,7 @@ function MapDisplay:refresh()
 				end
 				
 			end
-		elseif pocket and self.focusPocket then 
+		elseif pocket and self.focusPocket and global.pos then 
 			local x, y, z = global.pos.x, global.pos.y, global.pos.z
 			if self.mapMidX ~= x or self.mapMidY ~= y or self.mapMidZ ~= z then
 				self:setMid(x,y,z)
@@ -401,7 +447,10 @@ end
 
 function MapDisplay:redraw() -- super override
 	if self.parent and self.visible then
-		
+
+		local drawer = self.drawer
+		local frame = drawer.frame
+
 		local freeCol = blitTab[default.freeColor]
 		local blockedCol = blitTab[default.blockedColor]
 		local unknownCol = blitTab[default.unknownColor]
@@ -409,47 +458,135 @@ function MapDisplay:redraw() -- super override
 
 		local map = self.map
 		local ct = 0
+
 		local start = os.epoch("utc")
 		
-		local x, y, z, height, width = self.mapX, self.mapY, self.mapZ, self.height, self.width
+		local x, y, z, width, height = self.mapX, self.mapY, self.mapZ, drawer.width, drawer.height
 		local zoomLevel, background, bgWidth, bgHeight = self.zoomLevel, self.background, self.backgroundWidth, self.backgroundHeight
-		local text, textColor, backgroundColor = {},{},{}
-		for row=0, height-1 do
-			self:setCursorPos(1, 1 + row)
-			local bgRow = (z + row * zoomLevel) % bgHeight + 1
-			local bg = background[bgRow]
-			local bgText, bgTextColor, bgBackgroundColor = bg[1], bg[2], bg[3]
+		
+		if zoomLevel < 1 then
+			local base = self.zoomBase
+			-- not necessary to get data for every pixel but only on value for base x base pixels, then fill the rest with the same value
+			local height = math.ceil(height / base)
+			local width = math.ceil(width / base)
 
-			for col=1, width do
-				local data = map:getData(x + (col-1)*zoomLevel, y, z + row*zoomLevel)
-				ct = ct + 1
-				
-				if data then
-					if data == 0 then
-						text[col] = " "
-						textColor[col] = 0
-						backgroundColor[col] = freeCol
-					else
-						text[col] = " "
-						textColor[col] = 0
-						if data == "computercraft:turtle_advanced" then 
-							backgroundColor[col] = disallowedCol
+			for row = 1, height do 
+				for col = 1, width do 
+
+					-- getdata is main bottleneck (90%)
+					local blockid = map:getBlockId(x + (col-1), y, z + (row-1))
+					local pixelCol = idToBlit[blockid]
+					if not pixelCol then
+						if blockid then
+							pixelCol = blockedCol
 						else
-							backgroundColor[col] = blockedCol
+							pixelCol = unknownCol
 						end
 					end
-				else
-                    local bgCol = (x + (col - 1) * zoomLevel) % bgWidth + 1
-					text[col] = bgText[bgCol]
-                    textColor[col] = bgTextColor[bgCol]
-					backgroundColor[col] = bgBackgroundColor[bgCol]
+
+					local rb = row*base
+					local rc = col*base
+					for i = 0, base-1 do
+						-- not optimal to get the lines every time but whatever
+						local line = frame[rb - i]
+						if not line then break end
+						for j = 0, base-1 do
+							line[rc - j] = pixelCol
+						end
+					end
 				end
 			end
-			-- self:blit(table.concat(text),table.concat(textColor),table.concat(backgroundColor))
-			self:blitTable(text, textColor, backgroundColor)
+			
+		else
+
+			-- TODO: same logic for zoomlevel < 1 above
+			local drawEndX = x + (width-1) * zoomLevel
+			local drawEndZ = z + (height-1) * zoomLevel
+			local chunkSize = map.chunkSize
+			local csminus1 = chunkSize - 1
+
+			local cy = y
+			local row = 1
+			repeat
+				local cz = z + (row-1) * zoomLevel
+				local rsz = cz % chunkSize
+
+				local chunkHeight = csminus1 - rsz
+				local chunkEndZ = cz + chunkHeight
+				if chunkEndZ > drawEndZ then chunkHeight = drawEndZ - cz end
+
+				local col = 1
+				repeat
+					local cx = x + (col-1) * zoomLevel
+					local rsx = cx % chunkSize
+
+					local chunkWidth = csminus1 - rsx
+					local chunkEndX = cx + chunkWidth
+					if chunkEndX > drawEndX then chunkWidth = drawEndX - cx end
+
+					--print("row", row,"cz", cz,"chunkHeight", chunkHeight, "col", col, "cx", cx,  "chunkWidth", chunkWidth, "self", width, height, "end", row + chunkHeight, col + chunkWidth)
+
+					local chunkId = map.xyzToChunkId(cx,cy,cz)
+					local chunk = map:accessChunk(chunkId,false,true)
+
+					local trow = 0
+					for chunkz = 0, chunkHeight, zoomLevel do
+						local line = frame[row + trow]
+						trow = trow + 1
+						local tcol = 0
+						for chunkx = 0, chunkWidth, zoomLevel do
+							-- for blocks x - 15, z - 15
+							ct = ct + 1
+							local relativeId = map.xyzToRelativeChunkId(cx + chunkx, cy, cz + chunkz)
+							local blockid = chunk[relativeId]
+							local pixelCol = idToBlit[blockid]
+
+							if not pixelCol then
+								if blockid then
+									pixelCol = blockedCol
+								else
+									pixelCol = unknownCol
+								end
+							end
+							line[col + tcol] = pixelCol
+							tcol = tcol + 1
+						end
+					end
+
+					col = col + math.floor(chunkWidth / zoomLevel) + 1
+				until col > width
+
+				row = row + math.floor(chunkHeight / zoomLevel) + 1
+			until row > height
+
+			--[[ -- blockwise drawing
+				for row = rx, height do 
+					local line = frame[row]
+					for col = 1, width do 
+
+						local blockid = map:getBlockId(x + (col-1) * zoomLevel, y, z + (row-1) * zoomLevel)
+						local pixelCol = idToBlit[blockid]
+						if not pixelCol then
+							if blockid then
+								pixelCol = blockedCol
+							else
+								pixelCol = unknownCol
+							end
+						end
+						line[col] = pixelCol
+
+					end
+				end
+			--]]
 		end
+		self:drawAreas()
+		self:drawTrajectory()
+		self:drawChunkCircle()
+		self:setCursorPos(1,1)
+		self:blitFrame(drawer:toBlitFrame())
+
 		-- draw called multiple times: hostdisplay, turtledetails (redraw + checkupdates)
-		-- print("map redraw ct", ct, "time", os.epoch("utc") - start)
+		print("map", "redraw ct", ct, "time", os.epoch("utc") - start)
 		
 		self:redrawOverlay()
 		-- redraw map elements
@@ -460,18 +597,61 @@ function MapDisplay:redraw() -- super override
 		end
 	end
 end
-function MapDisplay:redrawOverlay()
-	-- draw turtles and other stuff
-	
+
+function MapDisplay:drawAreas()
+	local areas = self.areas
+	self.displayAreas = true -- testing
+	if areas and self.displayAreas then
+		for _,area in ipairs(areas) do
+			local start, finish, color = area.start, area.finish, area.color
+			if start and finish then
+				local sx, sz = self:transformSubPos(start)
+				local ex, ez = self:transformSubPos(finish)
+				self.drawer:drawBox(sx, sz, ex-sx+1, ez-sz+1, blitTab[color], 1)
+			end
+		end
+	end
+end
+
+function MapDisplay:drawTrajectory()
+	local curPos = global.floatPos
+	local prvPos = self.prvFloatPos
+	if pocket and self.focusPocket and curPos and prvPos then
+		
+		local vec = curPos - prvPos
+		vec.y = 0
+		local len = vec:length()
+		
+		if len > 0 then
+			vec = vec / len * 10 
+			local sx, sz = self.midWidth * 2, self.midHeight * 3
+			sx, sz = sx + vec.x, sz + vec.z
+			local ex, ez = sx + vec.x, sz + vec.z
+			sx, sz = math.floor(sx + 0.5), math.floor(sz + 0.5)
+			ex, ez = math.floor(ex + 0.5), math.floor(ez + 0.5)
+			self.drawer:drawLine(sx, sz, ex, ez, colors.toBlit(colors.yellow))
+			
+		end
+	end
+end
+
+function MapDisplay:drawChunkCircle()
 	if self.displayChunkCircle then
 		local pos = global.pos
 		-- draw a single circle around the current position
-		local centerX, centerZ = self:transformPos(pos)
+		local centerX, centerZ = self:transformSubPos(pos)
 		local radius = 16*8 / self.zoomLevel
-		self:drawCircle(centerX, centerZ, radius, colors.orange)
+		-- TODO: drawcircle function for pixeldrawer
+		self.drawer:drawCircle(centerX, centerZ, radius, colors.toBlit(colors.orange))
+		--self:drawCircle(centerX, centerZ, radius, colors.orange)
 		local radius = 16*16 / self.zoomLevel
-		self:drawCircle(centerX, centerZ, radius, colors.red)
+		self.drawer:drawCircle(centerX, centerZ, radius, colors.toBlit(colors.red))
+		--self:drawCircle(centerX, centerZ, radius, colors.red)
 	end
+end
+function MapDisplay:redrawOverlay()
+	-- draw turtles and other stuff
+	
 	if self.displayAreas then
 		
 	end
@@ -520,19 +700,30 @@ function MapDisplay:redrawOverlay()
 		end
 	end
 end
+
+function MapDisplay:transformSubPos(pos)
+	-- used for drawing on the subpixel level
+	local varX = pos.x - self.mapX 
+	local varZ = pos.z - self.mapZ
+	local x = math.floor(varX/ ( self.zoomLevel))+1
+	local y = math.floor(varZ/ ( self.zoomLevel))+1
+	return x,y
+end
+
 function MapDisplay:transformPos(pos)
+	-- used for drawing full characters on top of subpixel map
 	local varX = pos.x - self.mapX 
 	--local varY = pos.y - self.mapY
 	local varZ = pos.z - self.mapZ
-	local x = math.floor(varX/self.zoomLevel)+1
-	local y = math.floor(varZ/self.zoomLevel)+1
+	local x = math.floor(varX/ ( self.zoomLevel * 2))+1
+	local y = math.floor(varZ/ ( self.zoomLevel * 3))+1
 	return x,y
 end
 function MapDisplay:isWithin(x,y,z)
 	-- y can be nil if the level is irrelevant
 	local mx, mz, zoomLevel = self.mapX, self.mapZ, self.zoomLevel
-	if x >= mx and x < mx + self.width*zoomLevel
-	and z >= mz and z < mz + self.height*zoomLevel then
+	if x >= mx and x < mx + self.width*zoomLevel * 2
+	and z >= mz and z < mz + self.height*zoomLevel * 3 then
 		if y then
 			if y == self.mapY then
 				return true

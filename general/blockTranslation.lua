@@ -22,6 +22,7 @@ local mineBlocks = {
 
 local nameToId = {
 -- 0 = air
+["minecraft:air"] = 0, -- breaks pathfinding
 ["minecraft:stone"] = 1,
 ["minecraft:granite"] = 2,
 ["minecraft:polished_granite"] = 3,
@@ -1197,7 +1198,8 @@ local function reverseTranslation()
 	return t
 end
 
-idToName = reverseTranslation()
+local idToName = reverseTranslation()
+idToName[0] = nil -- 0 is air and should not be translated to "minecraft:air"
 
 return {nameToId = nameToId, idToName=idToName, translateTable=translateTable}
 --return nameToId

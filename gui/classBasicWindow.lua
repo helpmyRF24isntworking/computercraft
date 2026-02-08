@@ -448,6 +448,11 @@ function BasicWindow:blitTable(text,textColor,backgroundColor)
 		self.parent:blitTable(text,textColor,backgroundColor)
 	--end
 end
+function BasicWindow:blitFrame(frame)
+	--if self.parent then
+		self.parent:blitFrame(frame)
+	--end
+end
 
 function BasicWindow:drawText(x,y,text,textColor,backgroundColor)
 	--if self.parent then

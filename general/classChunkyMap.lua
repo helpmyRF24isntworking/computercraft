@@ -3,6 +3,10 @@ local translation = require("blockTranslation")
 local nameToId = translation.nameToId
 local idToName = translation.idToName
 
+local colorTranslation = require("blockColor")
+local nameToColor = colorTranslation.nameToColor
+local idToColor = colorTranslation.idToColor
+
 local utilsSerialize = require("utilsSerialize")
 local binarize = utilsSerialize.binarizeStreamDict
 local unbinarize = utilsSerialize.unbinarizeStreamDict
@@ -70,6 +74,7 @@ function ChunkyMap:new(inMemory)
 	o.handleReuseCount = 0
 	o.reusedFiles = {}
 	o.maxHandles = 96 -- computer maximum of 128
+	o.chunkSize = chunkSize
 	
 	o.inMemory = inMemory or default.inMemory
 	
@@ -350,6 +355,11 @@ function ChunkyMap:readChunk(chunkId)
 	if handle then
 		-- read header 
 		local headerDescr = handle.read(headDescrLen)
+		if not headerDescr or #headerDescr < headDescrLen then
+			print("READ, FILE", fileId, "FOR CHUNK", chunkId, "IS CORRUPT OR EMPTY")
+			handle.close()
+			return nil
+		end
 		local subHeadLen, subHeadCount, maxCount, fileLength = string.unpack(headDescrFormat, headerDescr, 1)
 		if maxCount ~= maxChunksPerFile then
 			print("header:", "subHeadLen", subHeadLen, "subHeadCount", subHeadCount, "maxCount", maxCount, "fileLength", fileLength)
@@ -388,10 +398,19 @@ local log
 
 function ChunkyMap:saveChunk(chunkId)
 
-	local fileId = self:chunkIdToFileId(chunkId)
-	local handle, isNewFile = self:getFileHandle(fileId)
 	local chunkData = binarize(self.chunks[chunkId], minIndex, maxIndex)
 	local len = #chunkData
+	if len == 0 then
+		-- saving empty chunks can cause issues when trying to read the header
+		-- also really unnecessary
+		return false
+	end
+
+	local fileId = self:chunkIdToFileId(chunkId)
+	local handle, isNewFile = self:getFileHandle(fileId)
+	if not handle then
+		return false
+	end
 
 	local minPadding = 256
 	local paddingFactor = 0.15
@@ -411,13 +430,18 @@ function ChunkyMap:saveChunk(chunkId)
 		handle.write(chunkData)
 		handle.flush()
 		-- print("SAVED NEW CHUNK", chunkId, "len", len, "padding", padding, "TO NEW FILE", fileId, "len", fileLength)
-		return
+		return true
 	else
 
 		-- read header
 		-- format: idLength, idsCount, fileLength { id, startPos, length, padding } ...  , )
 		handle.seek("set", 0)
 		local headerDescr = handle.read(headDescrLen)
+		if not headerDescr or #headerDescr < headDescrLen then
+			print("WRITE, FILE", fileId, "FOR CHUNK", chunkId, "IS CORRUPT OR EMPTY")
+			-- handle.close() handleCount = handleCount - 1 fileHandles[fileId] = nil
+			return nil
+		end
 		local subHeadLen, subHeadCount, maxCount, fileLength = string.unpack(headDescrFormat, headerDescr, 1)
 
 		if maxCount ~= maxChunksPerFile then
@@ -464,7 +488,7 @@ function ChunkyMap:saveChunk(chunkId)
 					handle.write(chunkData)
 					handle.flush()
 					-- print("OVERWROTE CHUNK", chunkId, "len", len, "pad", headerTab[hdId + 3], "oldLen", oldLen, "oldPad", padding, "IN FILE", fileId, "len", fileLength)
-					return
+					return true
 				else
 					--TODO:
 					-- when a small chunk at start of file triggers a shift, and the file is big (toRead > 50.000 bytes)
@@ -514,7 +538,7 @@ function ChunkyMap:saveChunk(chunkId)
 					handle.write(newHeaderData)
 					handle.flush()
 					-- print("SHIFTED", chunkId, "pos", startPos, "len", len, "pad", newPadding, "toRead", toRead, "off", offset, "IN FILE", fileId)
-					return
+					return true
 				end
 			end
 		end
@@ -554,6 +578,7 @@ function ChunkyMap:saveChunk(chunkId)
 		handle.write(chunkData)
 		handle.flush()
 		-- print("ADDED NEW CHUNK", chunkId, "len", len, "padding", 0, "TO FILE", fileId, "len", newFileLength)
+		return true
 	end
 end
 
@@ -801,6 +826,19 @@ function ChunkyMap:getData(x,y,z)
 end
 ChunkyMap.getBlockName = ChunkyMap.getData
 
+function ChunkyMap:getBlockId(x,y,z)
+	-- dont translate back to name
+	if y <= bedrockLevel then
+		return -1
+	else
+		local chunk = self:accessChunk(xyzToChunkId(x,y,z),false,true)
+		if chunk then 
+			return chunk[xyzToRelativeChunkId(x,y,z)]
+		end
+	end
+	return nil
+end
+
 
 function ChunkyMap:resetChunk(chunkId)
 	-- to avoid impossible path finiding tasks
@@ -870,7 +908,7 @@ function ChunkyMap:cleanCache()
 			if deleteCount < 1 then deleteCount = 1 end
 			for id,chunk in pairs(self.chunks) do
 				if not chunk.locked then 
-					tableinsert(countTable, { id=id, count=chunk._accessCount})
+					tableinsert(countTable, { id=id, count=chunk._accessCount or 0})
 				end
 				chunk._accessCount = 0
 			end
