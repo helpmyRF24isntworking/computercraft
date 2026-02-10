@@ -11,11 +11,13 @@ local CheckBox = require("classCheckBox")
 local Window = require("classWindow")
 local BasicWindow = require("classBasicWindow")
 local MapDisplay = require("classMapDisplay")
-local TurtleControl = require("classTurtleControl")
 local TaskGroupSelector = require("classTaskGroupSelector")
 local TaskGroupControl = require("classTaskGroupControl")
 local StorageDisplay = require("classStorageDisplay")
 local ScrollBar = require("classScrollBar")
+local TurtleList = require("classTurtleList")
+local GroupDetails = require("classTaskGroupDetails")
+local TurtleDetails = require("classTurtleDetails")
 
 local default = {
 	colors = {
@@ -244,47 +246,13 @@ function HostDisplay:initialize()
 	self.mapDisplay = MapDisplay:new(4,4,32,16)
 	--self.winMap:setInnerWindow(self.mapDisplay)
 	self.winMap = self.mapDisplay
-	self.winTurtles = Window:new()
+	self.winTurtles = TurtleList:new(1,1,self:getWidth(),self:getHeight(), self.turtles)
 	self.winGroups = Window:new()
 	
 	-- add map window data
 	self.mapDisplay:setMap(self.map)
 	self.mapDisplay:setMid(self.pos.x,self.pos.y,self.pos.z)
 	
-	-- add turtles window objects
-	self.winTurtles.lblTurtles = Label:new("Turtles",1,1)
-
-	self.winTurtles.filter = {
-		online = true,
-		active = false,
-		stuck = false,
-	}
-	
-	
-	self.winTurtles.chkFilterOnline = CheckBox:new(14,1,"online",self.winTurtles.filter.online)
-	self.winTurtles.chkFilterActive = CheckBox:new(27,1,"active",self.winTurtles.filter.active)
-	self.winTurtles.chkFilterStuck = CheckBox:new(40,1,"stuck",self.winTurtles.filter.stuck)
-
-	self.winTurtles.chkFilterOnline.click = function()
-		self.winTurtles.filter.online = self.winTurtles.chkFilterOnline.active
-	end
-	self.winTurtles.chkFilterActive.click = function()
-		self.winTurtles.filter.active = self.winTurtles.chkFilterActive.active
-	end
-	self.winTurtles.chkFilterStuck.click = function()
-		self.winTurtles.filter.stuck = self.winTurtles.chkFilterStuck.active
-	end
-
-	self.winTurtles.turtleControls = {}
-	self.winTurtles.turtleCt = 0
-	
-	self.winTurtles.refresh = function() self:updateTurtles() end
-	
-	self.winTurtles:addObject(self.winTurtles.lblTurtles)
-	self.winTurtles:addObject(self.winTurtles.chkFilterOnline)
-	self.winTurtles:addObject(self.winTurtles.chkFilterActive)
-	self.winTurtles:addObject(self.winTurtles.chkFilterStuck)
-	self.winTurtles:addScrollbar(true)
 	
 	-- init groups window
 	self.winGroups.lblName = Label:new("Task Groups",1,1)
@@ -303,18 +271,18 @@ function HostDisplay:initialize()
 
 end 
 
-function HostDisplay:refreshRedraw() -- actually refreshRedraw...
+function HostDisplay:refreshRedraw()
 	-- self.mapDisplay:checkUpdates() -- now part of refreshRedraw party
 	-- self.winMap:redraw()
+	-- self:updateTurtles()  -- winTurtles is not also part of the party
+
 	self.storageDisplay:checkUpdates()
-	self:updateTurtles()
 	self:updateGroups()
 	self:updateTime()
 
 	local winTop = self:getTopWindow()
 	if winTop ~= self.winMain 
 	and winTop ~= self.storageDisplay 
-	and winTop ~= self.winTurtles 
 	and winTop ~= self.winGroups then
 		winTop:refreshRedraw()
 	end
@@ -446,6 +414,25 @@ end
 function HostDisplay:closeMap()
 	self.winMap:close()
 end
+
+function HostDisplay:openTurtleDetails(turt)
+	local detailsWindow = TurtleDetails:new(1, 1, turt, self.node)
+	detailsWindow:setHostDisplay(self)
+	self:addObject(detailsWindow)
+	detailsWindow:fillParent()
+	self:redraw()
+	return true
+end
+
+function HostDisplay:openGroupDetails(group)
+	local detailsWindow = GroupDetails:new(1, 1, group)
+	detailsWindow:setHostDisplay(self)
+	self:addObject(detailsWindow)
+	detailsWindow:fillParent()
+	self:redraw()
+	return true
+end
+
 function HostDisplay:displayStorage()
 	self:addObject(self.storageDisplay)
 	self.storageDisplay:fillParent()
@@ -456,61 +443,15 @@ end
 function HostDisplay:displayTurtles()
 	self:addObject(self.winTurtles)
 	self.winTurtles:fillParent()
-	for _,turtleControl in pairs(self.winTurtles.turtleControls) do
-		turtleControl:fillWidth()
-	end
-	self:updateTurtles()
-	self:redraw()
+	self:refreshRedraw()
 	return true
 end
-function HostDisplay:updateTurtles()
-	if self.winTurtles.visible then 
-		local y = 3
-		local prvHeight = 1
-		local turtleControls = self.winTurtles.turtleControls
-		for id,data in pairs(self.turtles) do
-			
-			local filter = self.winTurtles.filter
-			if filter.online == data.state.online and filter.active == (data.state.task ~= nil)
-				and (filter.stuck == data.state.stuck or (not filter.stuck and data.state.stuck == nil)) then
 
-				if not turtleControls[id] then 		
-					turtleControls[id] = TurtleControl:new(1,y,data,self.node)
-					self.winTurtles:addObject(turtleControls[id])
-					turtleControls[id]:fillWidth()
-					turtleControls[id]:setHostDisplay(self)
-					self.winTurtles.turtleCt = self.winTurtles.turtleCt + 1
-				else
-					if prvHeight > 3 and turtleControls[id]:getHeight() > 3 then
-						y = y - 1
-					end
-					turtleControls[id]:setY(y)
-					-- turtleControls[id]:setTurt(data)
-				end
-				y = y + turtleControls[id]:getHeight()
-				prvHeight = turtleControls[id]:getHeight()
-			else
-				-- remove turtle
-				if turtleControls[id] then
-					self.winTurtles:removeObject(turtleControls[id])
-					turtleControls[id] = nil
-					self.winTurtles.turtleCt = self.winTurtles.turtleCt - 1
-				end
-			end
-		end
-		self.winTurtles:redraw()
-	end
-end
 function HostDisplay:deleteTurtle(id)
 	if self.turtles[id] then
-		-- delete from global
+		-- delete from global list
 		self.turtles[id] = nil
 	end
-	for _,turtleControl in pairs(self.winTurtles.turtleControls) do
-		self.winTurtles:removeObject(turtleControl)
-	end
-	self.winTurtles.turtleControls = {}
-	self.winTurtles.turtleCt = 0
 end
 
 -- task groups

@@ -446,6 +446,18 @@ local log
 
 function ChunkyMap:saveChunk(chunkId)
 
+	local ok,err = pcall(function()
+
+
+	local function checkSize(fileId, data, fileLength, caller)
+		local path = default.folder .. fileId .. ".bin"
+		local size = fs.getSize(path)
+		if size == 0 then
+			print("FILE", fileId, "IS EMPTY AFTER", caller, "DATA LEN", data and #data, "FILE LEN", fileLength)
+			error("grr")
+		end
+	end
+
 	local chunkData = binarize(self.chunks[chunkId], minIndex, maxIndex)
 	local len = #chunkData
 	if len == 0 then
@@ -461,6 +473,7 @@ function ChunkyMap:saveChunk(chunkId)
 	local handle, isNewFile = self:getFileHandle(fileId)
 	if not handle then
 		-- maybe this exits even though the file was created/touched
+		print("UNABLE TO GET FILE HANDLE", fileId, "FOR CHUNK", chunkId, "exists", fs.exists(default.folder .. fileId .. ".bin"))
 		return false
 	end
 
@@ -482,6 +495,7 @@ function ChunkyMap:saveChunk(chunkId)
 		handle.write(chunkData)
 		handle.flush()
 		-- print("SAVED NEW CHUNK", chunkId, "len", len, "padding", padding, "TO NEW FILE", fileId, "len", fileLength)
+		checkSize(fileId, chunkData, fileLength, "new file")
 		return true
 	else
 
@@ -539,6 +553,7 @@ function ChunkyMap:saveChunk(chunkId)
 					handle.seek("set", startPos)
 					handle.write(chunkData)
 					handle.flush()
+					checkSize(fileId, chunkData, fileLength, "overwrite")
 					-- print("OVERWROTE CHUNK", chunkId, "len", len, "pad", headerTab[hdId + 3], "oldLen", oldLen, "oldPad", padding, "IN FILE", fileId, "len", fileLength)
 					return true
 				else
@@ -589,6 +604,7 @@ function ChunkyMap:saveChunk(chunkId)
 					local newHeaderData = string.pack(format, table.unpack(headerTab))
 					handle.write(newHeaderData)
 					handle.flush()
+					checkSize(fileId, chunkData, newFileLength, "shift")
 					-- print("SHIFTED", chunkId, "pos", startPos, "len", len, "pad", newPadding, "toRead", toRead, "off", offset, "IN FILE", fileId)
 					return true
 				end
@@ -629,8 +645,16 @@ function ChunkyMap:saveChunk(chunkId)
 		handle.seek("set", newStartPos)
 		handle.write(chunkData)
 		handle.flush()
+		checkSize(fileId, chunkData, newFileLength, "new entry")
 		-- print("ADDED NEW CHUNK", chunkId, "len", len, "padding", 0, "TO FILE", fileId, "len", newFileLength)
 		return true
+	end
+	
+	end)	
+	if not ok then
+		print("ERROR SAVING CHUNK", chunkId ":", err)
+		sleep(200000)
+		return false
 	end
 end
 

@@ -230,6 +230,9 @@ function TaskAssignment:setGroup(group)
 	self.group = group
 	self:setGroupId(group and group.id)
 end
+function TaskAssignment:getGroup()
+	return self.group
+end
 function TaskAssignment:setTurtleId(turtleId)
 	if turtleId ~= self.turtleId then
 		-- changed turtleId, let taskManager handle reassignment
@@ -390,7 +393,7 @@ function TaskAssignment:toSerializableData()
 	local data = {
 		id = self.id,
 		shortId = self.shortId,
-		
+
 		groupId = self.groupId,
 		turtleId = self.turtleId,
 		taskName = self.taskName,

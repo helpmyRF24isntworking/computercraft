@@ -196,7 +196,7 @@ function TurtleDetails:initialize()
 	self:addObject(winInfo)
 	self:initializeMiniMap()
 	
-	winInfo.btnDeleteTurtle.visible = not data.online
+	winInfo.btnDeleteTurtle.visible = false
 end
 
 function TurtleDetails:refreshPos()

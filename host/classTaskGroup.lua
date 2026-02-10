@@ -196,8 +196,8 @@ function TaskGroup:getAssignedTurtles()
 			if not turts[task.turtleId] and turt then
 				count = count + 1
 				turts[task.turtleId] = turt
+				table.insert(result, task.turtle)
 			end
-			table.insert(result, task.turtle)
 		end
 	end
 	return count, result
@@ -502,8 +502,57 @@ function TaskGroup:getStatusColor()
 	return statusToColor[self.status] or colors.white
 end
 
+function TaskGroup:getAreaDetails()
+	-- focus for map display
+	local area = self:getArea()
+	if not area then return end
 
+	local minX = math.min(area.start.x, area.finish.x)
+	local minY = math.min(area.start.y, area.finish.y)
+	local minZ = math.min(area.start.z, area.finish.z)
+	local maxX = math.max(area.start.x, area.finish.x)
+	local maxY = math.max(area.start.y, area.finish.y)
+	local maxZ = math.max(area.start.z, area.finish.z)
 
+	local start = vector.new(minX, minY, minZ)
+	local finish = vector.new(maxX, maxY, maxZ)
+
+	local diff = finish - start
+	local focus = vector.new(minX + math.floor(diff.x/2), maxY, minZ + math.floor(diff.z/2))
+	return start, finish, focus
+end
+		
+function TaskGroup:getProgressText()
+	local progress = self:getProgress()
+	return (progress and string.format("%3d%%", math.floor(progress * 100))) or ""
+end
+function TaskGroup:isActive()
+	-- alternative: 
+	-- local activeCount = self:getActiveTurtles()
+	-- return (activeCount ~= 0)
+
+	local status = self.status
+	return (status == "started" or status == "resumed" or status == "partially_started" or status == "partially_resumed")
+end
+
+function TaskGroup:getUptime()
+	local time = self.time
+	local started = time.started
+	local completed = time.completed or os.epoch("ingame")
+	local timeDiff = ( started and completed - started ) or 0
+	return timeDiff
+end
+function TaskGroup:getUptimeText()
+	local timeDiff = self:getUptime()
+	-- 1 tick = 3600 ms
+	-- 1 day = 24000 ticks
+	-- 1 real second = 72000 ms
+	local seconds = math.floor(timeDiff/72000)%60
+	local minutes = math.floor(timeDiff/72000/60)
+	local ticks = math.floor((timeDiff % 72000)/3600/20*100)
+	local uptime = string.format("%02d:%02d.%02d",minutes,seconds,ticks)
+	return uptime
+end
 
 function TaskGroup.approximate3dDivisions(n)
 	-- local nx = math.ceil(n^(1/3))

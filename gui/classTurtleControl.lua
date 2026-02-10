@@ -127,11 +127,7 @@ end
 function TurtleControl:openDetails()
 	-- open a new window with more details and options for the turtle
 	-- for fullscreen add to hostDisplay instead of parent
-	local detailsWindow = TurtleDetails:new(2, 2, self.turt)
-	detailsWindow:setHostDisplay(self.hostDisplay)
-	self.hostDisplay:addObject(detailsWindow)
-	detailsWindow:fillParent()
-	self.hostDisplay:redraw()
+	self.hostDisplay:openTurtleDetails(self.turt)
 	return true
 end
 
@@ -147,9 +143,6 @@ function TurtleControl:addTask()
 end
 function TurtleControl:cancelTask()
 	global.taskManager:cancelCurrentTurtleTask(self.data.id)
-	--if self.node then
-	--	self.node:send(self.data.id, {"STOP"})
-	--end
 end
 
 function TurtleControl:openMap()

@@ -5,6 +5,7 @@ local BasicWindow = require("classBasicWindow")
 local Frame = require("classFrame")
 local TaskSelector = require("classTaskSelector")
 local ChoiceSelector = require("classChoiceSelector")
+local GroupDetails = require("classTaskGroupDetails")
 
 local default = {
 	colors = {
@@ -32,7 +33,6 @@ function TaskGroupControl:new(x,y,taskGroup)
 	o.taskGroup = taskGroup or nil
 	o.mapDisplay = nil -- needed to enable the map button
 	o.hostDisplay = nil
-	o.taskGroups = taskGroups
 	o:initialize()
 	
 	o:setTaskGroup(taskGroup)
@@ -89,29 +89,20 @@ end
 
 function TaskGroupControl:openMap()
 	-- open map and set focus to middle of area
-	
-	-- todo: draw area
 	if self.hostDisplay and self.mapDisplay then
-		local area = self.taskGroup:getArea()
-		if not area then return end
-
-		minX = math.min(area.start.x, area.finish.x)
-		minY = math.min(area.start.y, area.finish.y)
-		minZ = math.min(area.start.z, area.finish.z)
-		maxX = math.max(area.start.x, area.finish.x)
-		maxY = math.max(area.start.y, area.finish.y)
-		maxZ = math.max(area.start.z, area.finish.z)
-		
-		start = vector.new(minX, minY, minZ)
-		finish = vector.new(maxX, maxY, maxZ)
-		
-		diff = finish - start
-		focus = vector.new(minX + math.floor(diff.x/2), maxY, minZ + math.floor(diff.z/2))
-		
+		local start, finish, focus = self.taskGroup:getAreaDetails()
+		if not start then return end
 		table.insert(self.mapDisplay.areas, {start = start, finish = finish, color = self.taskGroup:getStatusColor()})
 		self.mapDisplay:setMid(focus.x, focus.y, focus.z)
 		self.hostDisplay:displayMap()
 	end
+end
+
+function TaskGroupControl:openDetails()
+	-- open a new window with more details and options for the turtle
+	-- for fullscreen add to hostDisplay instead of parent
+	self.hostDisplay:openGroupDetails(self.taskGroup)
+	return true
 end
 
 function TaskGroupControl:openOptions()
@@ -119,6 +110,15 @@ function TaskGroupControl:openOptions()
 	if self.taskGroup:isResumable() then 
 		table.insert(choices,1,"resume task")
 	end
+	local active = self.taskGroup:isActive()
+	if active then 
+		table.insert(choices, "cancel task")
+	else
+		table.insert(choices, "delete group")
+	end
+
+	self.btnCancelTask.visible = active
+	self.btnDeleteGroup.visible = not active
 	
 	local choiceSelector = ChoiceSelector:new(self.x + self.btnOptions.x - 1, self.y + self.btnOptions.y-5, 16, 6, choices)
 	choiceSelector.onChoiceSelected = function(choice)
@@ -128,6 +128,10 @@ function TaskGroupControl:openOptions()
 			self.taskGroup:reboot()
 		elseif choice == "resume task" then
 			self.taskGroup:resume()
+		elseif choice == "cancel task" then
+			self.taskGroup:cancel()
+		elseif choice == "delete group" then
+			self:deleteGroup()
 		end
 	end
 	
@@ -178,11 +182,11 @@ function TaskGroupControl:initialize()
 	
 	-- row 17 - 27
 	self.btnMap = Button:new("map",21,3,6,1)
-	--self.btnCallHome = Button:new("home",21,4,6,1)
 	self.btnOptions = Button:new("opts", 21,4,6,1)
 	
-	self.btnCancelTask = Button:new("cancel",21,5,6,1)
-	self.btnDeleteGroup = Button:new("delete", 21,5,6,1)
+	--self.btnCancelTask = Button:new("cancel",21,5,6,1)
+	--self.btnDeleteGroup = Button:new("delete", 21,5,6,1)
+	self.btnDetails = Button:new("detail", 21,5,6,1)
 	
 	self.lblTask = Label:new(group.taskName,30,3)
 	self.lblProgress = Label:new("",30,5)
@@ -191,11 +195,12 @@ function TaskGroupControl:initialize()
 	self.lblTime = Label:new("00:00.00", 41,5)
 	
 	self.btnMap.click = function() self:openMap() end
-	self.btnCancelTask.click = function() self:cancelTask() end
-	--self.btnCallHome.click = function() self:callHome() end
-	self.btnDeleteGroup.click = function() return self:deleteGroup() end
-	self.btnOptions.click = function() return self:openOptions() end
+	--self.btnCancelTask.click = function() self:cancelTask() end
+	--self.btnDeleteGroup.click = function() return self:deleteGroup() end
 	
+	self.btnOptions.click = function() return self:openOptions() end
+	self.btnDetails.click = function() return self:openDetails() end
+
 	self:addObject(self.frmId)
 	
 	self:addObject(self.lblXStart)
@@ -211,12 +216,11 @@ function TaskGroupControl:initialize()
 	self:addObject(self.lblProgress)
 	
 	self:addObject(self.btnMap)
-	self:addObject(self.btnCancelTask)
-	--self:addObject(self.btnCallHome)
+	--self:addObject(self.btnCancelTask)
 	self:addObject(self.btnOptions)
-	self:addObject(self.btnDeleteGroup)
-	
-	self.btnDeleteGroup.visible = false
+	--self:addObject(self.btnDeleteGroup)
+	self:addObject(self.btnDetails)
+	--self.btnDeleteGroup.visible = false
 end
 
 function TaskGroupControl:refreshPos()
@@ -239,36 +243,20 @@ function TaskGroupControl:refresh()
 	self.lblTask:setText(group.taskName or "no task")
 	
 	local status = group:getStatus()
-
 	local activeCount = group:getActiveTurtles()
-	self.active = (status == "started" or status == "resumed" or status == "partially_started" or status == "partially_resumed")
-	self.statusColor = self.taskGroup:getStatusColor()
-	
-	self.statusText = group:getStatus()
-	self.lblStatus:setText(self.statusText)
-	self.lblStatus:setTextColor(self.statusColor)
-	self.lblActiveTurtles:setText(activeCount.."/"..group.groupSize)
+	local active = group:isActive()
 
-	local progress = group:getProgress()
-	local progressText = (progress and string.format("%3d%%", math.floor(progress * 100))) or ""
-	self.lblProgress:setText(progressText)
+	self.lblStatus:setText(status)
+	self.lblStatus:setTextColor(group:getStatusColor())
+	self.lblActiveTurtles:setText(activeCount.."/"..group.groupSize)
+	self.lblProgress:setText(group:getProgressText())
 	
-	local started = group.time.started
-	local completed = group.time.completed or os.epoch("ingame")
-	local timeDiff = ( started and completed - started ) or 0
-	-- 1 tick = 3600 ms
-	-- 1 day = 24000 ticks
-	-- 1 real second = 72000 ms
-	local seconds = math.floor(timeDiff/72000)%60
-	local minutes = math.floor(timeDiff/72000/60)
-	local ticks = math.floor((timeDiff % 72000)/3600/20*100)
-	local uptime = string.format("%02d:%02d.%02d",minutes,seconds,ticks)
-	self.lblTime:setText(uptime)
+	self.lblTime:setText(group:getUptimeText())
 	
-	self.btnCancelTask:setEnabled(self.active)
+	--self.btnCancelTask:setEnabled(active)
 	
-	self.btnCancelTask.visible = self.active
-	self.btnDeleteGroup.visible = not self.active
+	--self.btnCancelTask.visible = active
+	--self.btnDeleteGroup.visible = not active
 end
 
 function TaskGroupControl:deleteGroup()

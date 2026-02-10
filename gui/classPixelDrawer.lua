@@ -46,6 +46,8 @@ end
 function PixelDrawer:setSize(width, height)
 	if height % 3 ~= 0 or width % 2 ~= 0 then
 		print("WIDTH MUST BE MULTIPLE OF 2 AND HEIGHT MUST BE MULTIPLE OF 3", width, height)
+		height = height + (3-height % 3)
+		width = width + (2-width % 2)
 	end
 	self.width = width
 	self.height = height
@@ -59,7 +61,7 @@ function PixelDrawer:clearFrame()
 		local line = {}
 		frame[row] = line
 		for col = 1, width do
-			line[col] = 0
+			line[col] = "0"
 		end
 	end
 	self.frame = frame
@@ -804,7 +806,7 @@ function PixelDrawer:redraw()
 	--term.clear()
 	for row = 1, #blit do
 		local bline = blit[row]
-		setcursor(1,row+15)
+		setcursor(1,row)
 		termblit(tableconcat(bline[1]), tableconcat(bline[2]), tableconcat(bline[3]))
 	end
 end

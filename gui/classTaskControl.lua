@@ -118,6 +118,12 @@ function TaskControl:redraw() -- super override
 	end
 end
 
+function TaskControl:viewGroup()
+	local group = self.task:getGroup()
+	if group then
+		global.display:openGroupDetails(group)
+	end
+end
 
 function TaskControl:openOptions()
 	local choices = { "delete", "cancel" }
@@ -215,6 +221,8 @@ function TaskControl:initialize()
             self.task:printDetails()
         end
     end
+
+	self.btnGroup.click = function() return self:viewGroup() end
 
     self.btnCollapse.click = function() return self:collapse() end
 

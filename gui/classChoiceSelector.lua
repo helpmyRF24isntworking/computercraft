@@ -35,7 +35,6 @@ function ChoiceSelector:initialize(choices)
 	if choices and #choices > 0 then
 		self:addChoices(choices)
 	end
-	print(self.borderColor, self.innerWin.borderColor)
 end
 
 function ChoiceSelector:addChoice(text)
