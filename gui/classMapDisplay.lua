@@ -141,6 +141,7 @@ function MapDisplay:initialize()
 	end
 	self.btnCircle.click = function()
 		self.displayChunkCircle = self.btnCircle.active
+		self.fullRedraw = true
 		self:redraw()
 	end
 	self.btnFocusPocket.click = function()
@@ -280,8 +281,6 @@ function MapDisplay:setMid(x,y,z)
 	self.mapY = self.mapMidY
 	self.mapZ = self.mapMidZ - math.floor(self.midHeight * self.zoomLevel * 3 + 0.5)
 
-	print("setMid", x,z, "floor", self.mapMidX, self.mapMidZ, "map", self.mapX, self.mapZ)
-	
 	self.lblX:setText("X  " .. self.mapMidX)
 	self.lblY:setText(self.mapMidY)
 	self.lblZ:setText("Z  " .. self.mapMidZ)
@@ -464,7 +463,108 @@ function MapDisplay:redraw() -- super override
 		local x, y, z, width, height = self.mapX, self.mapY, self.mapZ, drawer.width, drawer.height
 		local zoomLevel, background, bgWidth, bgHeight = self.zoomLevel, self.background, self.backgroundWidth, self.backgroundHeight
 		
+
+
+		local drawEndX = math.floor(x + (width-1) * zoomLevel)
+		local drawEndZ = math.floor(z + (height-1) * zoomLevel)
+		local chunkSize = map.chunkSize
+		local csminus1 = chunkSize - 1
+
+		local xyzToChunkId = map.xyzToChunkId
+		local xyzToRelativeChunkId = map.xyzToRelativeChunkId
+
+		local fullRedraw = self.fullRedraw -- can be set by any other funciton
+		local prv = self.previous
+		if not fullRedraw and prv then 
+			if x ~= prv.mapX or y ~= prv.mapY or z ~= prv.mapZ or zoomLevel ~= prv.zoomLevel then
+				-- theoretically we could shift the old frame but whatever
+				fullRedraw = true
+			end
+		end
+		self.fullRedraw = false -- for next cycle
+		local lastUpdate = prv and prv.time or 0
+
+
 		if zoomLevel < 1 then
+			-- [[
+			local base = self.zoomBase
+
+			-- currently we start drawing with full blocks instead of just portions if the zoom is very high, which can cause some jittering when mouse zooming
+			-- mainly because mapX, mapZ are rounded instead of starting at 0.33
+
+			local cy = y
+			local row = 1
+			repeat
+				local cz = z + (row-1)  -- * zoomLevel same logic but increment by base, not zoomlevel
+				local rsz = cz % chunkSize
+
+				local chunkHeight = csminus1 - rsz
+				local chunkEndZ = cz + chunkHeight
+				if chunkEndZ > drawEndZ then chunkHeight = drawEndZ - cz end
+
+				local col = 1
+				repeat
+					local cx = x + (col-1)
+					local rsx = cx % chunkSize
+
+					local chunkWidth = csminus1 - rsx
+					local chunkEndX = cx + chunkWidth
+					if chunkEndX > drawEndX then chunkWidth = drawEndX - cx end
+
+					-- print("row", row,"cz", cz,"chunkHeight", chunkHeight, "col", col, "cx", cx,  "chunkWidth", chunkWidth, "self", width, height, "end", row*base + chunkHeight*base, col*base + chunkWidth*base)
+
+					local chunkId = xyzToChunkId(cx,cy,cz)
+					local chunk = map:accessChunk(chunkId,false,true)
+
+					if fullRedraw or chunk._lastChange >= lastUpdate then
+						-- only redraw if needed
+
+						local trow = 0
+						for chunkz = 0, chunkHeight, 1 do
+							local line = frame[row + trow]
+							
+							local tcol = 0
+							for chunkx = 0, chunkWidth, 1 do
+								-- for blocks x - 15, z - 15
+								ct = ct + 1
+								local relativeId = xyzToRelativeChunkId(cx + chunkx, cy, cz + chunkz)
+								local blockid = chunk[relativeId]
+								local pixelCol = idToBlit[blockid]
+
+								if not pixelCol then
+									if blockid then
+										pixelCol = blockedCol
+									else
+										pixelCol = unknownCol
+									end
+								end
+
+								local rb = (row+trow)*base
+								local rc = (col+tcol)*base
+								for i = 0, base-1 do
+									-- not optimal to get the line every time but whatever
+									local line = frame[rb - i]
+									if not line then break end
+									for j = 0, base-1 do
+										line[rc - j] = pixelCol
+									end
+								end
+								tcol = tcol + 1
+							end
+							trow = trow + 1
+						end
+
+					end
+
+					col = col + chunkWidth + 1
+				until col*base > width
+
+				row = row + chunkHeight + 1
+			until row*base > height
+			--]]
+
+			--[[
+
 			local base = self.zoomBase
 			-- not necessary to get data for every pixel but only on value for base x base pixels, then fill the rest with the same value
 			local height = math.ceil(height / base)
@@ -496,14 +596,11 @@ function MapDisplay:redraw() -- super override
 					end
 				end
 			end
+			--]]
 			
 		else
 
-			-- TODO: same logic for zoomlevel < 1 above
-			local drawEndX = x + (width-1) * zoomLevel
-			local drawEndZ = z + (height-1) * zoomLevel
-			local chunkSize = map.chunkSize
-			local csminus1 = chunkSize - 1
+
 
 			local cy = y
 			local row = 1
@@ -526,31 +623,36 @@ function MapDisplay:redraw() -- super override
 
 					--print("row", row,"cz", cz,"chunkHeight", chunkHeight, "col", col, "cx", cx,  "chunkWidth", chunkWidth, "self", width, height, "end", row + chunkHeight, col + chunkWidth)
 
-					local chunkId = map.xyzToChunkId(cx,cy,cz)
+					local chunkId = xyzToChunkId(cx,cy,cz)
 					local chunk = map:accessChunk(chunkId,false,true)
 
-					local trow = 0
-					for chunkz = 0, chunkHeight, zoomLevel do
-						local line = frame[row + trow]
-						trow = trow + 1
-						local tcol = 0
-						for chunkx = 0, chunkWidth, zoomLevel do
-							-- for blocks x - 15, z - 15
-							ct = ct + 1
-							local relativeId = map.xyzToRelativeChunkId(cx + chunkx, cy, cz + chunkz)
-							local blockid = chunk[relativeId]
-							local pixelCol = idToBlit[blockid]
+					if fullRedraw or chunk._lastChange >= lastUpdate then
+						-- only redraw if needed
 
-							if not pixelCol then
-								if blockid then
-									pixelCol = blockedCol
-								else
-									pixelCol = unknownCol
+						local trow = 0
+						for chunkz = 0, chunkHeight, zoomLevel do
+							local line = frame[row + trow]
+							trow = trow + 1
+							local tcol = 0
+							for chunkx = 0, chunkWidth, zoomLevel do
+								-- for blocks x - 15, z - 15
+								ct = ct + 1
+								local relativeId = xyzToRelativeChunkId(cx + chunkx, cy, cz + chunkz)
+								local blockid = chunk[relativeId]
+								local pixelCol = idToBlit[blockid]
+
+								if not pixelCol then
+									if blockid then
+										pixelCol = blockedCol
+									else
+										pixelCol = unknownCol
+									end
 								end
+								line[col + tcol] = pixelCol
+								tcol = tcol + 1
 							end
-							line[col + tcol] = pixelCol
-							tcol = tcol + 1
 						end
+
 					end
 
 					col = col + math.floor(chunkWidth / zoomLevel) + 1
@@ -585,6 +687,10 @@ function MapDisplay:redraw() -- super override
 		self:setCursorPos(1,1)
 		self:blitFrame(drawer:toBlitFrame())
 
+		-- save current parameters for next redraw, to know if the old frame can be reused
+		self.previous = { mapX = x, mapY = y, mapZ = z, zoomLevel = zoomLevel, time = os.epoch()}
+		
+
 		-- draw called multiple times: hostdisplay, turtledetails (redraw + checkupdates)
 		print("map", "redraw ct", ct, "time", os.epoch("utc") - start)
 		
@@ -616,21 +722,37 @@ end
 function MapDisplay:drawTrajectory()
 	local curPos = global.floatPos
 	local prvPos = self.prvFloatPos
-	if pocket and self.focusPocket and curPos and prvPos then
-		
-		local vec = curPos - prvPos
-		vec.y = 0
-		local len = vec:length()
-		
-		if len > 0 then
-			vec = vec / len * 10 
-			local sx, sz = self.midWidth * 2, self.midHeight * 3
-			sx, sz = sx + vec.x, sz + vec.z
-			local ex, ez = sx + vec.x, sz + vec.z
-			sx, sz = math.floor(sx + 0.5), math.floor(sz + 0.5)
-			ex, ez = math.floor(ex + 0.5), math.floor(ez + 0.5)
-			self.drawer:drawLine(sx, sz, ex, ez, colors.toBlit(colors.yellow))
-			
+
+	if pocket then
+		local prvPosTime = self.prvPosTime or 0
+		local time = os.epoch()
+		self.prvPosTime = time -- not truly the last update but whatever
+
+		if self.focusPocket and curPos and prvPos then
+
+			local vec = curPos - prvPos
+			vec.y = 0
+			local len = vec:length()
+
+			local lenpers = len
+			-- normalize by time, so its not dependant on refresh rate
+			if prvPosTime > 0 then
+				local timeDiff = time - prvPosTime
+				local seconds = timeDiff / 72000 -- at 20tps
+				lenpers = len / seconds 
+			end
+
+			if lenpers > 0.4 then
+				--print("len", len, "len/s", lenpers)
+				vec = vec / len * 10 
+				local sx, sz = self.midWidth * 2, self.midHeight * 3
+				sx, sz = sx + vec.x, sz + vec.z
+				local ex, ez = sx + vec.x, sz + vec.z
+				sx, sz = math.floor(sx + 0.5), math.floor(sz + 0.5)
+				ex, ez = math.floor(ex + 0.5), math.floor(ez + 0.5)
+				self.drawer:drawLine(sx, sz, ex, ez, colors.toBlit(colors.yellow))
+				self.fullRedraw = true
+			end
 		end
 	end
 end

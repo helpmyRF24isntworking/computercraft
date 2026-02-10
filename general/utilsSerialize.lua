@@ -71,6 +71,7 @@ local utilsSerialize = {
 		-- this is now the state of the art except its slow for very sparse data
 		
 		-- could also try runs of air values not just nil
+		-- can also store runLengths using LZ style enconding instead of fixed to 1 byte
 
 		local result = ""
 
@@ -334,6 +335,7 @@ local utilsSerialize = {
 			local strFormat = string.rep("z", strMapLen)
 			local strBlob = pack(strFormat, table.unpack(strList))
 
+			-- TODO: add startIndex to header for rebuilding
 			local header = pack("<I1I1I2I2I2I2I2I2", bytes, values, valBit, byteEntries, runId, strMapLen, actValByte, valMapLen)
 
 			result = header .. partsBlob .. runBlob .. valBlob .. strBlob
@@ -383,7 +385,7 @@ local utilsSerialize = {
 				local pos = index
 				local entry = 1
 				local runId = 0
-				local idx = 0 -- actual index in chunk
+				local idx = 0 -- actual index in chunk = startIndex - 1
 
 				while entry <= entries do
 					local n = math.min(CHUNK, entries - entry + 1)

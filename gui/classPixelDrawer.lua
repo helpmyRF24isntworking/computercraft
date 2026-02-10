@@ -217,6 +217,8 @@ local function precalculateColors()
 		farben[col] = { r = r, g = g, b = b, blit = blit }
 	end
 
+	local start = os.epoch("utc")
+
 	for c0, d0 in pairs(farben) do
 		for c1, d1 in pairs(farben) do
 			local dist = deltaE(d0.r, d0.g, d0.b, d1.r, d1.g, d1.b)
@@ -229,11 +231,12 @@ local function precalculateColors()
 		end
 	end
 
+	--[[
 	for c0, d0 in pairs(farben) do
 		for c1, d1 in pairs(farben) do
 			local blitKey = d0.blit .. d1.blit
 			local colorKey = c0 + c1
-
+			
 			blitMap01[blitKey] = blitMap[blitKey] or {}
 			colorMap01[colorKey] = colorMap[colorKey] or {}
 
@@ -259,7 +262,42 @@ local function precalculateColors()
 			end
 		end
 	end
+	--]]
 
+	for c0, d0 in pairs(farben) do
+		blitMap01[d0.blit] = blitMap01[d0.blit] or {}
+		blitMap[d0.blit] = blitMap[d0.blit] or {}
+
+		for c1, d1 in pairs(farben) do
+			-- local blitKey = d0.blit .. d1.blit do not concat strings
+			local colorKey = c0 + c1
+
+			blitMap01[d0.blit][d1.blit] = blitMap01[d0.blit][d1.blit] or {}
+			colorMap01[colorKey] = colorMap01[colorKey] or {}
+
+			blitMap[d0.blit][d1.blit] = blitMap[d0.blit][d1.blit] or {}
+			colorMap[colorKey] = colorMap[colorKey] or {}
+
+			for cx, dx in pairs(farben) do
+				-- print("c0", c0, "c1", c1, "cx", cx, "c0cx", c0+cx, "c1cx", c1+cx)
+				local dist0 = colorDistances[c0 + cx]
+				local dist1 = colorDistances[c1 + cx]
+
+				if dist0 < dist1 then
+					blitMap01[d0.blit][d1.blit][dx.blit] = 0
+					colorMap01[colorKey][cx] = 0
+					blitMap[d0.blit][d1.blit][dx.blit] = d0.blit
+					colorMap[colorKey][cx] = c0
+				else
+					blitMap01[d0.blit][d1.blit][dx.blit] = 1
+					colorMap01[colorKey][cx] = 1
+					blitMap[d0.blit][d1.blit][dx.blit] = d1.blit
+					colorMap[colorKey][cx] = c1
+				end
+			end
+		end
+	end
+	print("deltaE precalculation took", os.epoch("utc") - start, "ms")
 end
 
 
@@ -275,9 +313,23 @@ local function check(b, bn, s, sn, v, n)
 end
 
 
+local function checktotal(b, bn, s, sn, v, n, t)
+	if n > bn then
+		s, sn = b, bn
+		b, bn = v, n
+		t = t - n
+	elseif v ~= b and n > sn then
+		s,sn = v, n
+		t = t - n		
+	end
+	return b, bn, s, sn, t
+end
+
+
 local function dominantColors3(a, b, c, d, e, f)
     -- Direct counting for each color
     local n1, n2, n3, n4, n5, n6 = 1, 0, 0, 0, 0, 0
+	
 
     if b == a then n1 = n1 + 1 else n2 = n2 + 1 end
     if c == a then n1 = n1 + 1 elseif c == b then n2 = n2 + 1 else n3 = n3 + 1 end
@@ -289,17 +341,49 @@ local function dominantColors3(a, b, c, d, e, f)
     local best, bestn = a, n1
     local second, secondn = a, 0
 
-    best, bestn, second, secondn = check(best, bestn, second, secondn, b, n2)
-    best, bestn, second, secondn = check(best, bestn, second, secondn, c, n3)
-    best, bestn, second, secondn = check(best, bestn, second, secondn, d, n4)
-    best, bestn, second, secondn = check(best, bestn, second, secondn, e, n5)
-    best, bestn, second, secondn = check(best, bestn, second, secondn, f, n6)
+
+	-- inline comparisons
+    if n2 > bestn then
+        second, secondn = best, bestn
+        best, bestn = b, n2
+    elseif n2 > secondn and b ~= best then
+        second, secondn = b, n2
+    end
+
+    if n3 > bestn then
+        second, secondn = best, bestn
+        best, bestn = c, n3
+    elseif n3 > secondn and c ~= best then
+        second, secondn = c, n3
+    end
+
+    if n4 > bestn then
+        second, secondn = best, bestn
+        best, bestn = d, n4
+    elseif n4 > secondn and d ~= best then
+        second, secondn = d, n4
+    end
+
+    if n5 > bestn then
+        second, secondn = best, bestn
+        best, bestn = e, n5
+    elseif n5 > secondn and e ~= best then
+        second, secondn = e, n5
+    end
+
+    if n6 > bestn then
+        second = best
+        best = f
+    elseif n6 > secondn and f ~= best then
+        second = f
+    end
 
     return best, second
 end
 
 
 local reverseMapping = {
+	--[[
 	[000000] = "\128",
 	[000001] = "\129",
 	[000010] = "\130",
@@ -332,6 +416,41 @@ local reverseMapping = {
 	[011101] = "\157",
 	[011110] = "\158",
 	[011111] = "\159",
+	--]]
+
+	-- one less bit
+	[00000] = "\128",
+	[00001] = "\129",
+	[00010] = "\130",
+	[00011] = "\131",
+	[00100] = "\132",
+	[00101] = "\133",
+	[00110] = "\134",
+	[00111] = "\135",
+	[01000] = "\136",
+	[01001] = "\137",
+	[01010] = "\138",
+	[01011] = "\139",
+	[01100] = "\140",
+	[01101] = "\141",
+	[01110] = "\142",
+	[01111] = "\143",
+	[10000] = "\144",
+	[10001] = "\145",
+	[10010] = "\146",
+	[10011] = "\147",
+	[10100] = "\148",
+	[10101] = "\149",
+	[10110] = "\150",
+	[10111] = "\151",
+	[11000] = "\152",
+	[11001] = "\153",
+	[11010] = "\154",
+	[11011] = "\155",
+	[11100] = "\156",
+	[11101] = "\157",
+	[11110] = "\158",
+	[11111] = "\159",
 
 	-- instead of doing 63 - char we could also add the inverse mapping, but this way we can also support the case where the dominant color is 1 instead of 0
 	-- or we just use p5-p1 as charid and use p6 for inverting?
@@ -388,7 +507,7 @@ local function pixelsToChar(p1,p2,p3,p4,p5,p6)
 	-- 		111111 = char \128 with 0 as foreground, 1 as background
 
 	local c0, c1 = dominantColors3(p1,p2,p3,p4,p5,p6)
-	local bmap = blitMap01[c0..c1]
+	local bmap = blitMap01[c0][c1]
 
 	--[[
 	print("pixel", p1, p2, p3, p4, p5, p6)
@@ -426,7 +545,6 @@ local function pixelsToChar(p1,p2,p3,p4,p5,p6)
 --]]
 
 
-
 	if p1 == c0 then p1 = 0 elseif p1 == c1 then p1 = 1 else p1 = bmap[p1] end
 	if p2 == c0 then p2 = 0 elseif p2 == c1 then p2 = 1 else p2 = bmap[p2] end
 	if p3 == c0 then p3 = 0 elseif p3 == c1 then p3 = 1 else p3 = bmap[p3] end
@@ -461,13 +579,20 @@ local function pixelsToChar(p1,p2,p3,p4,p5,p6)
 		-- color 0 is background, color 1 is foreground
 		return mapping[charId], c1, c0
 	end
+
+	-- usage
+	-- btext[bc], bcolor[bc], bgcolor[bc] = pixelsToChar(p1, p2, p3, p4, p5, p6)
 end
 PixelDrawer.pixelsToChar = pixelsToChar
+
+local setcursor = term.setCursorPos
+local termblit = term.blit
+local tableconcat = table.concat
 
 function PixelDrawer:toBlitFrame()
 	local frame, width, height = self.frame, self.width, self.height
 	local blit = self.blitFrame
-	
+
 	local br = 0
 	for row = 1, height, 3 do -- 3 pixels height per char
 		local line1 = frame[row]
@@ -482,26 +607,199 @@ function PixelDrawer:toBlitFrame()
 
 		for col = 1, width, 2 do -- 2 pixels width per char
 			bc = bc + 1
-			local col2 = col + 1	
+
+			local col2 = col + 1
 			local p1, p2, p3, p4, p5, p6 = line1[col], line1[col2], line2[col], line2[col2], line3[col], line3[col2]
-			--print("pixels", p1, p2, p3, p4, p5, p6, "                      ")
+			local txt, fgcol, bgcol = " ", 0, p1
+
 			local singlecol = p1 == p2 and p1 == p3 and p1 == p4 and p1 == p5 and p1 == p6
-			if singlecol then 
-				btext[bc] = " "
-				bcolor[bc] = p1
-				bgcolor[bc] = p1
-			else
-				btext[bc], bcolor[bc], bgcolor[bc] = pixelsToChar(p1, p2, p3, p4, p5, p6)
+			if not singlecol then
+				-- all inline
+				local n1, n2, n3, n4, n5, n6 = 1, 0, 0, 0, 0, 0
+
+				if p2 == p1 then n1 = n1 + 1 else n2 = n2 + 1 end
+				if p3 == p1 then n1 = n1 + 1 elseif p3 == p2 then n2 = n2 + 1 else n3 = n3 + 1 end
+				if p4 == p1 then n1 = n1 + 1 elseif p4 == p2 then n2 = n2 + 1 elseif p4 == p3 then n3 = n3 + 1 else n4 = n4 + 1 end
+				if p5 == p1 then n1 = n1 + 1 elseif p5 == p2 then n2 = n2 + 1 elseif p5 == p3 then n3 = n3 + 1 elseif p5 == p4 then n4 = n4 + 1 else n5 = n5 + 1 end
+				if p6 == p1 then n1 = n1 + 1 elseif p6 == p2 then n2 = n2 + 1 elseif p6 == p3 then n3 = n3 + 1 elseif p6 == p4 then n4 = n4 + 1 elseif p6 == p5 then n5 = n5 + 1 else n6 = n6 + 1 end
+
+				-- determine the two most frequent colors
+				local c0, bestn = p1, n1
+				local c1, secondn = p1, 0
+
+				-- inline sorting
+				if n2 > bestn then
+					c1, secondn = c0, bestn
+					c0, bestn = p2, n2
+				elseif n2 > secondn and p2 ~= c0 then
+					c1, secondn = p2, n2
+				end
+
+				if n3 > bestn then
+					c1, secondn = c0, bestn
+					c0, bestn = p3, n3
+				elseif n3 > secondn and p3 ~= c0 then
+					c1, secondn = p3, n3
+				end
+
+				if n4 > bestn then
+					c1, secondn = c0, bestn
+					c0, bestn = p4, n4
+				elseif n4 > secondn and p4 ~= c0 then
+					c1, secondn = p4, n4
+				end
+
+				if n5 > bestn then
+					c1, secondn = c0, bestn
+					c0, bestn = p5, n5
+				elseif n5 > secondn and p5 ~= c0 then
+					c1, secondn = p5, n5
+				end
+
+				if n6 > bestn then
+					c1 = c0
+					c0 = p6
+				elseif n6 > secondn and p6 ~= c0 then
+					c1 = p6
+				end
+
+				local bmap = blitMap01[c0][c1]
+				p1 = bmap[p1]
+				p2 = bmap[p2]
+				p3 = bmap[p3]
+				p4 = bmap[p4]
+				p5 = bmap[p5]
+				p6 = bmap[p6]
+
+				--p1 = bmap[p1]; p2 = bmap[p2]; p3 = bmap[p3]; p4 = bmap[p4];	p5 = bmap[p5]; p6 = bmap[p6]
+
+				-- leading bit p6 inverts the character
+				local charId = p5 * 16 + p4 * 8 + p3 * 4 + p2 * 2 + p1
+				if p6 == 1 then 
+					-- color 0 is foreground, color 1 is background
+					txt, fgcol, bgcol = mapping[31 - charId], c0, c1
+				else
+					-- color 0 is background, color 1 is foreground
+					txt, fgcol, bgcol = mapping[charId], c1, c0
+				end
 			end
+
+			btext[bc], bcolor[bc], bgcolor[bc] = txt, fgcol, bgcol
+
 		end
 	end
 	return blit
 end
 
-local setcursor = term.setCursorPos
-local termblit = term.blit
-local tableconcat = table.concat
-function PixelDrawer:render()
+
+function PixelDrawer:toBlitFrameInt()
+	local frame, width, height = self.frame, self.width, self.height
+	local blit = self.blitFrame
+		local colorMap01 = colorMap01
+	local mapping = mapping
+
+	local br = 0
+	for row = 1, height, 3 do -- 3 pixels height per char
+		local line1 = frame[row]
+		local line2 = frame[row+1]
+		local line3 = frame[row+2]
+
+		-- actual blit entry
+		local bc = 0
+		br = br + 1
+		local bline = blit[br]
+		local btext, bcolor, bgcolor = bline[1], bline[2], bline[3]
+
+		for col = 1, width, 2 do -- 2 pixels width per char
+			bc = bc + 1
+
+			local col2 = col + 1
+			local p1, p2, p3, p4, p5, p6 = line1[col], line1[col2], line2[col], line2[col2], line3[col], line3[col2]
+			local txt, fgcol, bgcol = " ", 0, p1
+
+			local singlecol = p1 == p2 and p1 == p3 and p1 == p4 and p1 == p5 and p1 == p6
+			if not singlecol then
+
+				-- all inline
+				local n1, n2, n3, n4, n5, n6 = 1, 0, 0, 0, 0, 0
+
+				if p2 == p1 then n1 = n1 + 1 else n2 = n2 + 1 end
+				if p3 == p1 then n1 = n1 + 1 elseif p3 == p2 then n2 = n2 + 1 else n3 = n3 + 1 end
+				if p4 == p1 then n1 = n1 + 1 elseif p4 == p2 then n2 = n2 + 1 elseif p4 == p3 then n3 = n3 + 1 else n4 = n4 + 1 end
+				if p5 == p1 then n1 = n1 + 1 elseif p5 == p2 then n2 = n2 + 1 elseif p5 == p3 then n3 = n3 + 1 elseif p5 == p4 then n4 = n4 + 1 else n5 = n5 + 1 end
+				if p6 == p1 then n1 = n1 + 1 elseif p6 == p2 then n2 = n2 + 1 elseif p6 == p3 then n3 = n3 + 1 elseif p6 == p4 then n4 = n4 + 1 elseif p6 == p5 then n5 = n5 + 1 else n6 = n6 + 1 end
+
+				-- determine the two most frequent colors
+				local c0, bestn = p1, n1
+				local c1, secondn = p1, 0
+
+				-- inline sorting
+				if n2 > bestn then
+					c1, secondn = c0, bestn
+					c0, bestn = p2, n2
+				elseif n2 > secondn and p2 ~= c0 then
+					c1, secondn = p2, n2
+				end
+
+				if n3 > bestn then
+					c1, secondn = c0, bestn
+					c0, bestn = p3, n3
+				elseif n3 > secondn and p3 ~= c0 then
+					c1, secondn = p3, n3
+				end
+
+				if n4 > bestn then
+					c1, secondn = c0, bestn
+					c0, bestn = p4, n4
+				elseif n4 > secondn and p4 ~= c0 then
+					c1, secondn = p4, n4
+				end
+
+				if n5 > bestn then
+					c1, secondn = c0, bestn
+					c0, bestn = p5, n5
+				elseif n5 > secondn and p5 ~= c0 then
+					c1, secondn = p5, n5
+				end
+
+				if n6 > bestn then
+					c1 = c0
+					c0 = p6
+				elseif n6 > secondn and p6 ~= c0 then
+					c1 = p6
+				end
+
+				local bmap = colorMap01[c0 + c1]
+				p1 = bmap[p1]
+				p2 = bmap[p2]
+				p3 = bmap[p3]
+				p4 = bmap[p4]
+				p5 = bmap[p5]
+				p6 = bmap[p6]
+
+				--p1 = bmap[p1]; p2 = bmap[p2]; p3 = bmap[p3]; p4 = bmap[p4];	p5 = bmap[p5]; p6 = bmap[p6]
+
+				-- leading bit p6 inverts the character
+				local charId = p5 * 16 + p4 * 8 + p3 * 4 + p2 * 2 + p1
+				if p6 == 1 then 
+					-- color 0 is foreground, color 1 is background
+					txt, fgcol, bgcol = mapping[31 - charId], c0, c1
+				else
+					-- color 0 is background, color 1 is foreground
+					txt, fgcol, bgcol = mapping[charId], c1, c0
+				end
+			end
+
+			btext[bc], bcolor[bc], bgcolor[bc] = txt, fgcol, bgcol
+
+		end
+	end
+	return blit
+end
+
+
+
+function PixelDrawer:redraw()
 	local blit = self:toBlitFrame()
 	--term.clear()
 	for row = 1, #blit do

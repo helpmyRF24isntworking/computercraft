@@ -126,7 +126,7 @@ function ChunkyMap:setCheckFunction(func)
 end
 
 
-function ChunkyMap.xyzToChunkId(x,y,z)
+function ChunkyMap.xyzToChunkIdCantor(x,y,z)
 	-- returns the chunkId for the position
 
 	local cx,cy,cz = floor(x / chunkSize), 
@@ -148,7 +148,55 @@ function ChunkyMap.xyzToChunkId(x,y,z)
 	local tempcz = temp + cz
 	return 0.5 * tempcz * ( tempcz + 1 ) + cz 
 end
+
+-- 53 bit integer precision
+-- we only use 45 (18+18+9) to stay below 10^14
+-- otherwise we need to use string.format("%.0f", n) for any file-io
+-- 2^18 still gives us +- 100.000 blocks
+local maxXZ = 2^17-1
+local mulZ = 2^9
+local mulX = mulZ * 2^18 -- max 22
+
+function ChunkyMap.xyzToChunkId(x,y,z)
+	-- returns the chunkId for the position
+	-- without mod this returns a unique id for every position(+-maxXZ)
+
+	local cx, cy, cz = x - x % chunkSize, y - y % chunkSize, z - z % chunkSize
+
+	cx = cx + maxXZ
+	cz = cz + maxXZ
+	cy = cy + 64
+
+	return cx * mulX + cz * mulZ + cy
+
+	-- mod is faster than floor
+	--x, y, z = floor(x / chunkSize), floor(y / chunkSize), floor(z / chunkSize)
+	--return y * mulY + x * mulXZ + z
+end
 local xyzToChunkId = ChunkyMap.xyzToChunkId
+
+function ChunkyMap.chunkIdToXYZ(chunkId)
+	-- returns the chunkId for the position
+
+	local cx = floor(chunkId / mulX)
+	local cy = chunkId - cx * mulX
+	local cz = floor(cy / mulZ)
+	cy = cy - cz * mulZ
+	
+	return cx - maxXZ, cy - 64, cz - maxXZ
+end
+local chunkIdToXYZ = ChunkyMap.chunkIdToXYZ
+
+function ChunkyMap.xyzToIds(x,y,z)
+	-- returns both chunkId and relativeId
+
+	local rx, ry, rz = x % chunkSize, y % chunkSize, z % chunkSize
+	local cx, cy, cz = x - rx + maxXZ , y - ry + 64, z - rz + maxXZ
+
+	return cx * mulX + cz * mulZ + cy,
+		rx + rz * chunkSize + ry * sqSize + 1
+end
+local xyzToIds = ChunkyMap.xyzToIds
 
 
 function ChunkyMap.xyzToRelativeChunkPos(x,y,z)
@@ -197,7 +245,7 @@ function ChunkyMap.relativeIdToXYZ(id)
 end
 local relativeIdToXYZ = ChunkyMap.relativeIdToXYZ
 
-function ChunkyMap.chunkIdToXYZ(chunkId)
+function ChunkyMap.chunkIdToXYZCantor(chunkId)
 	local x,y,z = undoCantorPairing(chunkId)
 	-- restore negative coordinates
 	if y > chunkOffsetX then
@@ -217,7 +265,7 @@ function ChunkyMap.chunkIdToXYZ(chunkId)
 	
 	return x*chunkSize,y*chunkSize,z*chunkSize
 end
-local chunkIdToXYZ = ChunkyMap.chunkIdToXYZ
+
 
 function ChunkyMap.idsToXYZ(chunkId, relativeId)
 	local cx,cy,cz = chunkIdToXYZ(chunkId)
@@ -348,7 +396,7 @@ local subHeadFormat = "I6I4I4I4" 	-- id, startPos, length, padding
 local pad_byte = string.char(0xFF)
 
 function ChunkyMap:readChunk(chunkId)
-	local fileId = self:chunkIdToFileId(chunkId)
+	local fileId = self.chunkIdToFileId(chunkId)
 	-- do not reuse handles for reading, this messes things up
 	local handle = fs.open(default.folder .. fileId .. ".bin", "r")
 
@@ -406,9 +454,13 @@ function ChunkyMap:saveChunk(chunkId)
 		return false
 	end
 
-	local fileId = self:chunkIdToFileId(chunkId)
+	-- TODO: find out when empty files are being created, by checking fs.getSize() after writing
+	-- files should never be empty and at least contain the header
+
+	local fileId = self.chunkIdToFileId(chunkId)
 	local handle, isNewFile = self:getFileHandle(fileId)
 	if not handle then
+		-- maybe this exits even though the file was created/touched
 		return false
 	end
 
@@ -591,28 +643,18 @@ end
 -- also: keep a logfile opened for very sudden crashes, which we can read from on startup
 -- to replay and have the best possible consistency
 
-function ChunkyMap:chunkIdToFileId(chunkId)
+function ChunkyMap.chunkIdToFileId(chunkId)
 	-- for chunk of chunks file storage
 	local x,y,z = chunkIdToXYZ(chunkId)
 	local aggregatedSize = chunkSize * chunkWidthPerFile
-	local cx, cy, cz = floor(x / aggregatedSize), 
-			floor(y / aggregatedSize), 
-			floor(z / aggregatedSize)
 
-	if cx < 0 then 
-		cx = -cx 
-		cy = cy + chunkOffsetX
-	end
-	if cz < 0 then 
-		cz = -cz 
-		cy = cy + chunkOffsetZ
-	end
-	cy = cy + chunkOffsetY
-	
-	local cxcy = cx + cy
-	local temp = 0.5 * cxcy * ( cxcy + 1 ) + cy
-	local tempcz = temp + cz
-	return 0.5 * tempcz * ( tempcz + 1 ) + cz
+	local cx, cy, cz = x - x % aggregatedSize, y - y % aggregatedSize, z - z % aggregatedSize
+
+	cx = cx + maxXZ
+	cz = cz + maxXZ
+	cy = cy + 64
+
+	return cx * mulX + cz * mulZ + cy
 end
 
 function ChunkyMap:saveChanged()
@@ -762,6 +804,9 @@ function ChunkyMap:setChunkData(chunkId,relativeId,data,real)
 		chunk[relativeId] = data
 	end
 
+	-- todo: instead of having main loop call this
+	-- spawn a coroutine that periodically triggers the cleanup check
+
 	if self.lifeTime > 0 then 
 		if osEpoch() - self.lastCleanup > self.cleanInterval then 
 			-- to clean time based chunks while stationary
@@ -779,8 +824,9 @@ function ChunkyMap:setData(x,y,z,data,real)
 	--nil = not yet inspected
 	--0 = inspected but empty or mined
 
-	local chunkId = xyzToChunkId(x,y,z)
-	local relativeId = xyzToRelativeChunkId(x,y,z)
+	local chunkId, relativeId = xyzToIds(x,y,z)
+	--local chunkId = xyzToChunkId(x,y,z)
+	--local relativeId = xyzToRelativeChunkId(x,y,z)
 	local value = (nameToId[data] or data)
 	
 	-- remember and forget recent ores, consistency not important
@@ -815,10 +861,11 @@ function ChunkyMap:getData(x,y,z)
 	if y <= bedrockLevel then
 		return -1
 	else
-		local chunk = self:accessChunk(xyzToChunkId(x,y,z),false,true)
+		local chunkId, relativeId = xyzToIds(x,y,z)
+		local chunk = self:accessChunk(chunkId,false,true)
 		if chunk then 
 			--return chunk[xyzToRelativeChunkId(x,y,z)]
-			local block = chunk[xyzToRelativeChunkId(x,y,z)]
+			local block = chunk[relativeId]
 			return idToName[block] or block
 		end
 	end
@@ -831,9 +878,10 @@ function ChunkyMap:getBlockId(x,y,z)
 	if y <= bedrockLevel then
 		return -1
 	else
-		local chunk = self:accessChunk(xyzToChunkId(x,y,z),false,true)
+		local chunkId, relativeId = xyzToIds(x,y,z)
+		local chunk = self:accessChunk(chunkId,false,true)
 		if chunk then 
-			return chunk[xyzToRelativeChunkId(x,y,z)]
+			return chunk[relativeId]
 		end
 	end
 	return nil

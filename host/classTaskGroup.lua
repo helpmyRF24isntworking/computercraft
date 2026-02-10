@@ -481,6 +481,30 @@ function TaskGroup:toSerializableData()
 end
 
 
+
+
+-- GUI stuff
+local statusToColor = {
+	new = colors.white,
+	completed = colors.lightBlue,
+
+	started = colors.green,
+	partially_started = colors.yellow,
+	resumed = colors.green,
+	partially_resumed = colors.yellow,
+
+	error = colors.red,
+	cancelled = colors.orange,
+	deleted = colors.gray,
+}
+
+function TaskGroup:getStatusColor()
+	return statusToColor[self.status] or colors.white
+end
+
+
+
+
 function TaskGroup.approximate3dDivisions(n)
 	-- local nx = math.ceil(n^(1/3))
 	-- local ny = math.ceil(math.sqrt(n/nx))

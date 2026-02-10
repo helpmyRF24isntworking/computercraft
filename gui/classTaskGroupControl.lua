@@ -108,7 +108,7 @@ function TaskGroupControl:openMap()
 		diff = finish - start
 		focus = vector.new(minX + math.floor(diff.x/2), maxY, minZ + math.floor(diff.z/2))
 		
-		table.insert(self.mapDisplay.areas, {start = start, finish = finish, color = colors.orange})
+		table.insert(self.mapDisplay.areas, {start = start, finish = finish, color = self.taskGroup:getStatusColor()})
 		self.mapDisplay:setMid(focus.x, focus.y, focus.z)
 		self.hostDisplay:displayMap()
 	end
@@ -242,13 +242,7 @@ function TaskGroupControl:refresh()
 
 	local activeCount = group:getActiveTurtles()
 	self.active = (status == "started" or status == "resumed" or status == "partially_started" or status == "partially_resumed")
-	if self.active then
-		self.statusColor = default.colors.good
-	elseif status == "completed" then 
-		self.statusColor = colors.lightBlue
-	else
-		self.statusColor = default.colors.okay
-	end
+	self.statusColor = self.taskGroup:getStatusColor()
 	
 	self.statusText = group:getStatus()
 	self.lblStatus:setText(self.statusText)
