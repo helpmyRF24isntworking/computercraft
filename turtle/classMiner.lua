@@ -725,7 +725,7 @@ function Miner:offloadItemsAtHome()
 	local startOrientation = self.orientation
 
 	if self:returnHome() then
-		self:dumpBadItems(true) -- REMOVE; DROP ALL ITEMS: ONLY FOR TESTING SO I DONT HAVE TO CLEAR THE CHESTS
+		self:dumpBadItems(true) -- DELELTE; DROP ALL ITEMS: ONLY FOR TESTING SO I DONT HAVE TO CLEAR THE CHESTS
 		self:transferItems()
 		if self:getEmptySlots() < 2 then
 			-- catch this in stripmine e.g.
@@ -1160,14 +1160,14 @@ function Miner:getFuel()
 	-- done refueling
 	self:releaseStation()
 
+	self.gettingFuel = false -- to allow actual refueling 
+
 	if self:getEmptySlots() < 10 then -- 8
 		-- already at home, also offload items
 		self:offloadItemsAtHome() 
 	end
 
-	self:returnHome()
-
-	self.gettingFuel = false
+	
 	
 	self.taskList:remove(currentTask)
 	return result
@@ -2586,6 +2586,11 @@ function Miner:navigateToPos(x,y,z)
 	return result
 end
 
+
+-- issues:
+-- navigate is a safe function which does not mine decorative blocks
+-- however some underground structures like the copper stuff have tuff bricks which results in
+-- no path being found 
 
 function Miner:navigate(x, y, z, map, options)
 	local currentTask = self:addCheckTask({debug.getinfo(1, "n").name})

@@ -1997,4 +1997,4 @@ local function mapToPalette(t)
 end
 mapToPalette()
 
-return { nameToColor = nameToColor, idToColor = idToColor, nameToBlit = nameToBlit, idToBlit = idToBlit, mapToPalette = mapToPalette, deltaEFromRGB = deltaEFromRGB }
+return { nameToColor = nameToColor, idToColor = idToColor, nameToBlit = nameToBlit, idToBlit = idToBlit, mapToPalette = mapToPalette, deltaEFromRGB = deltaEFromRGB, blitTab = blitTab }

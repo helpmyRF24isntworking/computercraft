@@ -116,9 +116,6 @@ function TaskGroupControl:openOptions()
 	else
 		table.insert(choices, "delete group")
 	end
-
-	self.btnCancelTask.visible = active
-	self.btnDeleteGroup.visible = not active
 	
 	local choiceSelector = ChoiceSelector:new(self.x + self.btnOptions.x - 1, self.y + self.btnOptions.y-5, 16, 6, choices)
 	choiceSelector.onChoiceSelected = function(choice)

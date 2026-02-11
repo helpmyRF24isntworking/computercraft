@@ -108,11 +108,12 @@ local utilsSerialize = {
 			local runLengths = {}
 			local partCount = 0
 			
-			-- we have to initialize lastVid and runLen
+			-- we have to initialize lastVid, runLen and maxVal
 			local lastVid = nil
 			if runVal ~= nil then
 				partCount = partCount + 1
 				if type(runVal) == "number" then
+					maxVal = runVal
 					local vid = valMap[runVal]
 					if not vid then 
 						valMapLen = valMapLen + 1
@@ -328,6 +329,7 @@ local utilsSerialize = {
 			local runBlob = pack(runFormat, table.unpack(runLengths, 1, runId))
 
 			-- actual value mapping
+			-- bad argument #2 integer overflow = valList[1], chunk 17875585441344, highest actVal = 1149
 			local valFormat = "<" .. string.rep("I" .. actValByte, valMapLen)
 			local valBlob = pack(valFormat, table.unpack(valList))
 

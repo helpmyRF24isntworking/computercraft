@@ -137,6 +137,7 @@ function GroupDetails:initialize()
 	local ct, turtles = group:getAssignedTurtles()
 	self.turtleList = TurtleList:new(2, turtleListY, self.width-2, self.height - turtleListY, turtles)
 	self.turtleList:removeCloseButton()
+	self.turtleList.filter.inactive = false
 
 	self.winInfo = BasicWindow:new(2,2,self.width-2,self.turtleList.y - 2)
 	local winInfo = self.winInfo

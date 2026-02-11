@@ -172,13 +172,10 @@ function TurtleList:refresh()
 		local x, y = 1, 3
 		local prvHeight = 1
         
-        local prv = nil
         for i = 1, #turtList do
             local turt = turtList[i]
             local id = turt.state.id
             
-            print("refreshing turtle", id, prv)
-            prv = id
             local turtleControl = turtleControls[id]
             if not turtleControl then 		
                 turtleControl = TurtleControl:new(x,y,turt,global.node) -- self.node, but we dont have one

@@ -2,6 +2,7 @@
 
 local blockColor = require("blockColor")
 local deltaE = blockColor.deltaEFromRGB
+local blitTab = blockColor.blitTab
 
 local default = {
 }
@@ -30,17 +31,23 @@ end
 function PixelDrawer:setHeight(height)
 	if height % 3 ~= 0 then
 		print("HEIGHT MUST BE MULTIPLE OF 3", height)
+		height = height + (3-height % 3)
 	end
-	self.height = height
-	self:clearFrame()
+	if height ~= self.height then
+		self.height = height
+		self:clearFrame()
+	end
 end
 
 function PixelDrawer:setWidth(width)
 	if width % 2 ~= 0 then
 		print("WIDTH MUST BE MULTIPLE OF 2", width)
+		width = width + (2-width % 2)
 	end
-	self.width = width
-	self:clearFrame()
+	if width ~= self.width then
+		self.width = width
+		self:clearFrame()
+	end
 end
 
 function PixelDrawer:setSize(width, height)
@@ -49,9 +56,11 @@ function PixelDrawer:setSize(width, height)
 		height = height + (3-height % 3)
 		width = width + (2-width % 2)
 	end
-	self.width = width
-	self.height = height
-	self:clearFrame()
+	if width ~= self.width or height ~= self.height then
+		self.width = width
+		self.height = height
+		self:clearFrame()
+	end
 end
 
 function PixelDrawer:clearFrame()
@@ -77,8 +86,8 @@ function PixelDrawer:clearFrame()
 		for col = 1, width, 2 do 
 			by = by + 1
 			btext[by] = " "
-			bcolor[by] = colors.white
-			bgcolor[by] = colors.black
+			bcolor[by] = "0"
+			bgcolor[by] = "0"
 		end
 	end
 	self.blitFrame = blit

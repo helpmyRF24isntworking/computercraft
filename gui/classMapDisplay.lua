@@ -681,6 +681,18 @@ function MapDisplay:redraw() -- super override
 				end
 			--]]
 		end
+
+		-- drawTurtles if they are not drawn as overlay
+		if not self.displayTurtles then
+			for id,data in pairs(global.turtles) do
+				local pos = data.state.pos
+				if pos and self:isWithin(pos.x,pos.y,pos.z) then
+					local x,y = self:transformSubPos(pos)
+					drawer.frame[y][x] = blitTab[colors.yellow]
+				end
+			end
+		end
+
 		self:drawAreas()
 		self:drawTrajectory()
 		self:drawChunkCircle()
@@ -692,7 +704,7 @@ function MapDisplay:redraw() -- super override
 		
 
 		-- draw called multiple times: hostdisplay, turtledetails (redraw + checkupdates)
-		print("map", "redraw ct", ct, "time", os.epoch("utc") - start)
+		-- print("map", "redraw ct", ct, "time", os.epoch("utc") - start)
 		
 		self:redrawOverlay()
 		-- redraw map elements
@@ -760,23 +772,17 @@ end
 function MapDisplay:drawChunkCircle()
 	if self.displayChunkCircle then
 		local pos = global.pos
-		-- draw a single circle around the current position
 		local centerX, centerZ = self:transformSubPos(pos)
 		local radius = 16*8 / self.zoomLevel
-		-- TODO: drawcircle function for pixeldrawer
 		self.drawer:drawCircle(centerX, centerZ, radius, colors.toBlit(colors.orange))
-		--self:drawCircle(centerX, centerZ, radius, colors.orange)
 		local radius = 16*16 / self.zoomLevel
 		self.drawer:drawCircle(centerX, centerZ, radius, colors.toBlit(colors.red))
-		--self:drawCircle(centerX, centerZ, radius, colors.red)
 	end
 end
+
 function MapDisplay:redrawOverlay()
 	-- draw turtles and other stuff
-	
-	if self.displayAreas then
-		
-	end
+
 	if self.displayHome then
 		local pos = global.pos
 		if pos and self:isWithin(pos.x,nil,pos.z) then
@@ -825,10 +831,10 @@ end
 
 function MapDisplay:transformSubPos(pos)
 	-- used for drawing on the subpixel level
-	local varX = pos.x - self.mapX 
-	local varZ = pos.z - self.mapZ
-	local x = math.floor(varX/ ( self.zoomLevel))+1
-	local y = math.floor(varZ/ ( self.zoomLevel))+1
+	local varX = pos.x - self.mapX --+ 1
+	local varZ = pos.z - self.mapZ --+ 1
+	local x = math.floor(varX/ self.zoomLevel) + 1
+	local y = math.floor(varZ/ self.zoomLevel) + 1
 	return x,y
 end
 

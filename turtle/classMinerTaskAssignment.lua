@@ -278,14 +278,13 @@ function MinerTaskAssignment:execute()
         else
             -- try and get saved checkpoint or from error
             if not self:getCheckpoint() then 
-                self:setCheckpoint(err.checkpoint)
+				if err and type(err) == "table" and err.checkpoint then
+                	self:setCheckpoint(err.checkpoint)
+				end
             end
             self.error = err
             self.status = "error"
         end
-		err.checkpoint = nil -- just for printing
-		-- print("error:", textutils.serialize(err, { allow_repetitions = true }))
-
     else
         self.status = "completed"
     end

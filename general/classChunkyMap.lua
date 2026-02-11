@@ -44,6 +44,10 @@ local sqrt = math.sqrt
 local sqSize = default.chunkSize^2
 local tableinsert = table.insert
 
+local Logger = require("classLogger")
+local log = Logger:new()
+global.log = log -- for debugging, remove later
+
 local ChunkyMap = {}
 ChunkyMap.__index = ChunkyMap
 
@@ -302,8 +306,10 @@ local xyzToId = ChunkyMap.xyzToId
 
 function ChunkyMap:save()
 	for id,chunk in pairs(self.chunks) do
-		self:saveChunk(id)
+		local ok = self:saveChunk(id)
+		-- now what? computer is shutting down but this chunk didnt want to be saved
 	end
+	self:closeAllHandles()
 end
 
 
@@ -356,22 +362,25 @@ function ChunkyMap:closeLeastValuableHandle()
 	end
 end
 
-function ChunkyMap:getFileHandle(fileId)
+function ChunkyMap:getWriteHandle(fileId)
 	local isNewFile = false
 	local fileHandles = self.fileHandles
 	local handle, reason = fileHandles[fileId], nil
+	--local handle = nil
 	if not handle then
 		if self.handleCount >= self.maxHandles then
 			self:closeLeastValuableHandle()
 		end
 		local path = default.folder .. fileId .. ".bin"
 		handle, reason = fs.open(path,"r+")
-		if not handle then 
+		if not handle and reason ~= "Too many files already open" then
+			-- we dont want to try and open in write+ mode if file already exists but cannot be opened as this can cause data loss
 			handle, reason = fs.open(path,"w+")
 			isNewFile = true
 		end
 		if not handle then
 			print("UNABLE TO OPEN FILE HANDLE", fileId, reason)
+			log:add("UNABLE TO OPEN FILE HANDLE " .. fileId .. " reason " .. tostring(reason) .. " exists " .. tostring(fs.exists(path)) .. " size " .. tostring(fs.getSize(path)))
 		end
 		fileHandles[fileId] = handle
 		self.handleCount = self.handleCount + 1
@@ -386,6 +395,35 @@ function ChunkyMap:getFileHandle(fileId)
 	return handle, isNewFile
 end
 
+function ChunkyMap:getReadHandle(fileId)
+	local cached = false
+	local fileHandles = self.fileHandles
+	local handle, reason = fileHandles[fileId], nil
+	if not handle then
+		local path = default.folder .. fileId .. ".bin"
+		handle, reason = fs.open(path,"r")
+		if not handle then
+			local exists = fs.exists(path)
+			log:add("READ, UNABLE TO OPEN FILE HANDLE " .. fileId .. " reason " .. tostring(reason) .. " exists " .. tostring(exists) .. " size " .. tostring(exists and fs.getSize(path)))
+		end
+	else
+		cached = true
+	end
+	if handle then 
+		handle.seek("set", 0) -- read always from beginning
+	end
+	return handle, cached
+end
+
+function ChunkyMap:closeReadHandle(handle, cached)
+	if handle then 
+		if cached then 
+			handle.flush()
+		else
+			handle.close()
+		end
+	end
+end
 
 local chunkWidthPerFile = 3 -- 3x3x3 chunks per file
 local maxChunksPerFile = chunkWidthPerFile^3
@@ -398,14 +436,18 @@ local pad_byte = string.char(0xFF)
 function ChunkyMap:readChunk(chunkId)
 	local fileId = self.chunkIdToFileId(chunkId)
 	-- do not reuse handles for reading, this messes things up
-	local handle = fs.open(default.folder .. fileId .. ".bin", "r")
+	local exists = fs.exists(default.folder .. fileId .. ".bin")
+	-- reuse the handle if its already opened but do not keep it opened
+	local handle, cached = self:getReadHandle(fileId)
 
 	if handle then
 		-- read header 
+
 		local headerDescr = handle.read(headDescrLen)
 		if not headerDescr or #headerDescr < headDescrLen then
-			print("READ, FILE", fileId, "FOR CHUNK", chunkId, "IS CORRUPT OR EMPTY")
-			handle.close()
+			print("READ, FILE", fileId, "FOR CHUNK", chunkId, "IS CORRUPT OR EMPTY", "existed", exists)
+			log:add("READ, CORRUPT FILE " .. fileId .. " FOR CHUNK " .. chunkId .. " existed " .. tostring(exists) .. " exists now " .. tostring(fs.exists(default.folder .. fileId .. ".bin")))
+			self:closeReadHandle(handle, cached)
 			return nil
 		end
 		local subHeadLen, subHeadCount, maxCount, fileLength = string.unpack(headDescrFormat, headerDescr, 1)
@@ -430,33 +472,33 @@ function ChunkyMap:readChunk(chunkId)
 				local padding = headerTab[hdId + 3]
 				handle.seek("set", startPos)
 				local chunkData = handle.read(len)
-				handle.close()
+				self:closeReadHandle(handle, cached)
 				-- print("READ CHUNK", chunkId, "start", startPos, "len", len, "pad", padding, "FROM FILE", fileId, "readLen", chunkData and #chunkData)
 				local chunk = unbinarize(chunkData)
+
+				log:add("READ chunk " .. chunkId .. " from file " .. fileId .. " start " .. startPos .. " len " .. len .. " pad " .. padding .. " existed " .. tostring(exists) .. " exists now " .. tostring(fs.exists(default.folder .. fileId .. ".bin")))
+
 				return chunk
 			end
 		end
+
+		-- we were missing a close handle here
+		log:add("READ, FILE EXISTS BUT NO CHUNK ENTRY " .. fileId .. " FOR CHUNK " .. chunkId .. " existed " .. tostring(exists) .. " exists now " .. tostring(fs.exists(default.folder .. fileId .. ".bin")))
+		self:closeReadHandle(handle, cached)
+		return nil
+
 	else
+		log:add("READ, FILE " .. fileId .. " FOR CHUNK " .. chunkId .. " NOT FOUND " .. " exists now " .. tostring(fs.exists(default.folder .. fileId .. ".bin")))
 		-- print("FILE", fileId, "FOR CHUNK", chunkId, "NOT FOUND")
 		return nil
 	end
 end
-
-local log
 
 function ChunkyMap:saveChunk(chunkId)
 
 	local ok,err = pcall(function()
 
 
-	local function checkSize(fileId, data, fileLength, caller)
-		local path = default.folder .. fileId .. ".bin"
-		local size = fs.getSize(path)
-		if size == 0 then
-			print("FILE", fileId, "IS EMPTY AFTER", caller, "DATA LEN", data and #data, "FILE LEN", fileLength)
-			error("grr")
-		end
-	end
 
 	local chunkData = binarize(self.chunks[chunkId], minIndex, maxIndex)
 	local len = #chunkData
@@ -470,12 +512,25 @@ function ChunkyMap:saveChunk(chunkId)
 	-- files should never be empty and at least contain the header
 
 	local fileId = self.chunkIdToFileId(chunkId)
-	local handle, isNewFile = self:getFileHandle(fileId)
+	local exists = fs.exists(default.folder .. fileId .. ".bin")
+	local startSize = exists and fs.getSize(default.folder .. fileId .. ".bin") or nil
+	local handle, isNewFile = self:getWriteHandle(fileId)
 	if not handle then
 		-- maybe this exits even though the file was created/touched
 		print("UNABLE TO GET FILE HANDLE", fileId, "FOR CHUNK", chunkId, "exists", fs.exists(default.folder .. fileId .. ".bin"))
 		return false
 	end
+
+	local function checkSize(fileId, data, fileLength, caller)
+		local path = default.folder .. fileId .. ".bin"
+		local size = fs.getSize(path)
+		log:add(caller .. " file " .. fileId .. " size " .. size .. " expected " .. fileLength .. " dataLen " .. (data and #data or 0) .. " existed " .. tostring(exists) .. " startSize " .. tostring(startSize))
+		if size == 0 then
+			print("FILE", fileId, "IS EMPTY AFTER", caller, "DATA LEN", data and #data, "FILE LEN", fileLength)
+			error("grr")
+		end
+	end
+
 
 	local minPadding = 256
 	local paddingFactor = 0.15
@@ -494,7 +549,7 @@ function ChunkyMap:saveChunk(chunkId)
 		handle.seek("set", startPos)
 		handle.write(chunkData)
 		handle.flush()
-		-- print("SAVED NEW CHUNK", chunkId, "len", len, "padding", padding, "TO NEW FILE", fileId, "len", fileLength)
+		--print("SAVED NEW CHUNK", chunkId, "len", len, "padding", padding, "TO NEW FILE", fileId, "len", fileLength, "flush", fs.getSize(default.folder .. fileId .. ".bin"))
 		checkSize(fileId, chunkData, fileLength, "new file")
 		return true
 	else
@@ -504,7 +559,9 @@ function ChunkyMap:saveChunk(chunkId)
 		handle.seek("set", 0)
 		local headerDescr = handle.read(headDescrLen)
 		if not headerDescr or #headerDescr < headDescrLen then
-			print("WRITE, FILE", fileId, "FOR CHUNK", chunkId, "IS CORRUPT OR EMPTY")
+			handle.flush()
+			log:add("WRITE, CORRUPT FILE " .. fileId .. " FOR CHUNK " .. chunkId .. " existed " .. tostring(exists) .. " startSize " .. tostring(startSize) .. " flush "  .. fs.getSize(default.folder .. fileId .. ".bin"))
+			print("WRITE, FILE", fileId, "FOR CHUNK", chunkId, "IS CORRUPT OR EMPTY", "existed", exists, "size", startSize, "flush", fs.getSize(default.folder .. fileId .. ".bin"))
 			-- handle.close() handleCount = handleCount - 1 fileHandles[fileId] = nil
 			return nil
 		end
@@ -652,9 +709,11 @@ function ChunkyMap:saveChunk(chunkId)
 	
 	end)	
 	if not ok then
-		print("ERROR SAVING CHUNK", chunkId ":", err)
+		print("ERROR SAVING CHUNK", chunkId, ":", err)
 		sleep(200000)
 		return false
+	else
+		return true
 	end
 end
 
@@ -694,7 +753,7 @@ function ChunkyMap:saveChanged()
 		for id,chunk in pairs(self.chunks) do
 			if chunk._lastChange > self.lastSave then
 				if self.fileHandles[id] then
-					self:saveChunk(id)
+					local ok = self:saveChunk(id)
 					ct = ct + 1
 				else 
 					tableinsert(saveLater, id)
@@ -707,7 +766,7 @@ function ChunkyMap:saveChanged()
 
 		for i = 1, #saveLater do
 			local id = saveLater[i]
-			self:saveChunk(id)
+			local ok = self:saveChunk(id)
 			ct = ct + 1
 			if i % 20 == 0 then 
 				-- sleep instead of yield to actually give others time to catch up?
@@ -937,14 +996,20 @@ end
 
 function ChunkyMap:unloadChunk(chunkId)
 	-- internal use! chunk must exist
+	local ok = true
 	if not self.inMemory then
-		self:saveChunk(chunkId)
+		ok = self:saveChunk(chunkId)
 	end
-	self.chunks[chunkId] = nil	
-	self.chunkCount = self.chunkCount - 1
-	if self.onUnloadChunk then
-		self.onUnloadChunk(chunkId)
+	if ok then 
+		self.chunks[chunkId] = nil	
+		self.chunkCount = self.chunkCount - 1
+		if self.onUnloadChunk then
+			self.onUnloadChunk(chunkId)
+		end
+	else
+		print("FAILED TO SAVE CHUNK", chunkId, "NOT UNLOADED")
 	end
+	return ok
 end
 
 function ChunkyMap:cleanCache()
@@ -962,9 +1027,11 @@ function ChunkyMap:cleanCache()
 		for id,chunk in pairs(self.chunks) do
 			if not chunk.locked then 
 				if time - chunk._lastAccess > self.lifeTime then
-					self:unloadChunk(id)
-					cleared = true
-					ct = ct + 1
+					local ok = self:unloadChunk(id)
+					if ok then
+						cleared = true
+						ct = ct + 1
+					end
 				end
 			end
 		end
@@ -987,11 +1054,12 @@ function ChunkyMap:cleanCache()
 			-- sort ascending by least accesses
 			table.sort(countTable, function(a,b) return a.count < b.count end)
 			for i=1,deleteCount do
-				self:unloadChunk(countTable[i].id)
-				cleared = true
-				ct = ct + 1
+				local ok = self:unloadChunk(countTable[i].id)
+				if ok then
+					cleared = true
+					ct = ct + 1
+				end
 			end
-			
 		end
 		
 	end
