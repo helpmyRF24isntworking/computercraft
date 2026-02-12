@@ -40,10 +40,35 @@ function MinerTaskAssignment:fromFile(fileName)
 	return self:fromData(data)
 end
 
+function MinerTaskAssignment:pseudo()
+	-- create pseudo assignment to add to the queue
+	local o = {}
+	o.id = "pseudo_" .. utils.generateUUID()
+	o.funcName = "pseudo"
+	return self:fromData(o)
+end
+
+function MinerTaskAssignment:setFunction(funcName)
+	self.funcName = funcName
+	if not self.taskName then
+		self.taskName = funcName
+	end
+end
+function MinerTaskAssignment:setFunctionArguments(args)
+	self.args = args
+end
+function MinerTaskAssignment:setExecutionParameters(funcName, args)
+	self:setFunction(funcName)
+	self:setFunctionArguments(args)
+end
+
+
+
 function MinerTaskAssignment:confirmQueued(msg, node)
     -- confirm that task is queued
+	self.status = "queued"
+	-- self:save() -- we assume the task queue manages itself
     node:answer(msg, {"TASK_QUEUED"})
-    self.status = "queued"
 end
 
 function MinerTaskAssignment:reject(msg, node, reason)
@@ -87,7 +112,7 @@ function MinerTaskAssignment:save(path)
 	-- only tasks that are still in the taskqueue need to be saved independently
 	if not path then path = default.path end
 	local data = self:toSerializableData()
-	local fileName = path .. "/task_" .. self.id .. ".txt" 
+	local fileName = path .. "/task_" .. self.id .. ".txt"
 	local f = fs.open(fileName, "w")
 	f.write(textutils.serialize(data, { allow_repetitions = true }))
 	f.close()
@@ -95,9 +120,13 @@ end
 
 function MinerTaskAssignment:getProgress()
     -- progress intentionally nil if task is not trackable
-    local progress = self.miner:getOverallProgress() or self.progress
-    self.progress = progress
-    return progress
+	-- tasks from the queue should not return the current miners progress
+	local progress = self.progress
+	if self.miner and self.status ~= "queued" then
+		progress = self.miner:getOverallProgress() or self.progress
+		self.progress = progress
+	end
+	return progress
 end
 
 function MinerTaskAssignment:toState()

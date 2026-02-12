@@ -74,7 +74,7 @@ function CheckPointer:restoreTaskAssignment(miner)
 				print("WARNING: turtle already has a task assignment")
 			end
 			assignment:setCheckpoint(self.checkpoint)
-			miner:addTaskAssignment(assignment, 1) -- add as first assignment
+			miner.queue:addTask(assignment, 1) -- add as first task in queue
 			self.checkpoint.assignment = assignment:toSerializableData(true)
 			self:printCheckpoint()
 			return true

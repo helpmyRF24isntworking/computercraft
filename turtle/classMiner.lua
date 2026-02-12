@@ -4,7 +4,9 @@ local CheckPointer = require("classCheckPointer")
 require("classLogger")
 require("classList")
 local ChunkyMap = require("classChunkyMap")
+local TaskQueue = require("classTaskQueue")
 local bluenet = require("bluenet")
+local MinerTaskAssignment = require("classMinerTaskAssignment")
 local config = config
 
 -- local blockTranslation = require("blockTranslation")
@@ -196,7 +198,7 @@ function Miner:new()
 	o.lookingAt = vector.new(0,0,0)
 	o.map = ChunkyMap:new(true)
 	o.taskList = List:new()
-	o.taskAssignments = {}
+	o.queue = TaskQueue:new(o)
 	o.vectors = vectors
 	o.checkPointer = CheckPointer:new()
 	o.statusCount = 0
@@ -215,47 +217,56 @@ function Miner:initialize()
 	self.map:setCheckFunction(self.checkOreBlock)
 	
 	self:initPosition()
-	self:refuel(true)
+	self:refuel(true) -- simple refuel
 	print("fuel level:", turtle.getFuelLevel())
 
 	self:initOrientation()
 
-	self.taskList:remove(currentTask)
-end	
-
-function Miner:finishInitialization()
-	-- split initialization into two parts
-	local currentTask = self:addCheckTask({debug.getinfo(1, "n").name})
-	
 	if not self:requestStation() then
-		-- TODO: load station from settings
+		self:loadStation() -- TODO
 		self:setHome(self.pos.x, self.pos.y, self.pos.z)
 	end
 	self:setStartupPos(self.pos)
 
-	self:refuel()
-
-	
-	local existsCheckpoint = self.checkPointer:existsCheckpoint()
-	if not existsCheckpoint then
-		self:returnHome()
-	end
-
 	self.initializing = nil
 	self.taskList:remove(currentTask)
 
-	if existsCheckpoint then
+	self:restoreState()
+end	
+
+function Miner:restoreState()
+	-- split initialization into two parts why tho, because we didnt want to wait for returnhome etc
+	-- but this is not needed anymore if we add everything to the queue which is then executed afterwards
+	
+	self.queue:load()
+	local existsCheckpoint = self.checkPointer:existsCheckpoint()
+
+	if not existsCheckpoint then
+
+		-- do we also return home first if the queue is not empty?
+
+		self.queue:addDirectTask("DO", "refuel", nil, 1)
+		self.queue:addDirectTask("DO", "returnHome", nil, 2)
 		
+	else
 		if self.checkPointer:load(self) then
 				
 			if not self.checkPointer:restoreTaskAssignment(self) then
-				print("CHECKPOINT TASK ASSIGNMENT NOT RESTORED")
-				-- no valid taskAssignment in checkpoint, execute raw tasks from checkpoint
-				-- could also create a pseudo taskAssignment and add it to queue like with a "real" one -> YES TODO
-				local ok, err = pcall( function() self.checkPointer:executeTasks(self) end )
-				if not ok then
-					self:error("CHECKPOINT TASKS NOT EXECUTED")
-				end
+				print("CHECKPOINT TASK ASSIGNMENT NOT RESTORED, USING PSEUDO")
+
+				local task = MinerTaskAssignment:pseudo()
+				task:setCheckpoint(self.checkPointer.checkpoint)
+				self.queue:addTask(task, 1)
+
+				--[[ alternatively: 
+					local func = function()
+						local ok, err = pcall( function() self.checkPointer:executeTasks(self) end )
+						if not ok then
+							self:error("CHECKPOINT TASKS NOT EXECUTED")
+						end
+					end
+					self.queue:addArbitraryTask(func, 1)
+				--]]
 			else
 				print("CHECKPOINT RESTORED")
 			end
@@ -533,18 +544,6 @@ function Miner:getAssignmentState()
 	end
 	return nil
 end
-function Miner:addTaskAssignment(taskAssignment, pos)
-	taskAssignment:setGlobals(self, self.node)
-	if pos then
-		table.insert(self.taskAssignments, pos, taskAssignment)
-	else
-		table.insert(self.taskAssignments, taskAssignment)
-	end
-	return true
-end
-function Miner:getNextTaskAssignment()
-	return table.remove(self.taskAssignments,1)
-end
 function Miner:cancelTaskAssignment(taskId, msg)
 	if not taskId then return false end
 	local taskAssignment = self.currentTaskAssignment
@@ -552,11 +551,8 @@ function Miner:cancelTaskAssignment(taskId, msg)
 		self.currentTaskAssignment = nil
 	end
 
-	for i, ta in ipairs(self.taskAssignments) do
-		if ta.id == taskId then
-			taskAssignment = table.remove(self.taskAssignments,i)
-		end
-	end
+	local qt = self.queue:remove(taskId)
+	if qt then taskAssignment = qt end
 
 	if taskAssignment and taskAssignment.id == taskId then
 		return taskAssignment:onCancel(msg)
@@ -839,6 +835,12 @@ function Miner:condenseInventory()
 		end
 	end
 	self.taskList:remove(currentTask)
+end
+
+function Miner:getSelectedItemName()
+	local slot = turtle.getSelectedSlot()
+	local data = turtle.getItemDetail(slot)
+	return data and data.name
 end
 
 function Miner:select(slot)
@@ -1318,8 +1320,85 @@ function Miner:turnRight()
 	self.orientation = ( self.orientation + 1 ) % 4
 end
 
+
+function Miner:placeBlock(blockName)
+	local ok, reason
+	if blockName then 
+		ok, reason = self:placeInternal(blockName, "front")
+	else
+		blockName = self:getSelectedItemName()
+		ok, reason = self:placeDown()
+	end
+	if ok then 
+		self:setMapValue(self.lookingAt.x, self.lookingAt.y, self.lookingAt.z, blockName)
+	end
+	return ok, reason
+end
+function Miner:placeBlockUp(blockName)
+		local ok, reason
+	if blockName then 
+		ok, reason = self:placeInternal(blockName, "up")
+	else
+		blockName = self:getSelectedItemName()
+		ok, reason = self:placeUp()
+	end
+	if ok then 
+		self:setMapValue(self.pos.x, self.pos.y+1, self.pos.z, blockName)
+	end
+	return ok, reason
+end
+function Miner:placeBlockDown(blockName)
+	local ok, reason
+	if blockName then 
+		ok, reason = self:placeInternal(blockName, "down")
+	else
+		blockName = self:getSelectedItemName()
+		ok, reason = self:placeDown()
+	end
+	if ok then 
+		self:setMapValue(self.pos.x, self.pos.y-1, self.pos.z, blockName)
+	end
+	return ok, reason
+end
+-- special case of using buckets where we place or remove "blocks"
+function Miner:useItem(itemName)
+	local ok, reason = self:placeInternal(itemName, "front")
+	return ok, reason
+end
+function Miner:useItemUp(itemName)
+	local ok, reason = self:placeInternal(itemName, "up")
+	return ok, reason
+end
+function Miner:useItemDown(itemName)
+	local ok, reason = self:placeInternal(itemName, "down")
+	return ok, reason
+end
+function Miner:placeInternal(itemName, side)
+	local ok, reason
+	local slot = self:findInventoryItem(itemName)
+	if slot then
+		local placeFunc
+		if side == "front" then placeFunc = self.place
+		elseif side == "up" then placeFunc = self.placeUp
+		elseif side == "down" then placeFunc = self.placeDown
+		else return false, "invalid side" end
+
+		if self:select(slot) then 
+			ok, reason = placeFunc(self)
+		end
+	end
+	return ok, reason
+end
 function Miner:place(text)
 	local ok, reason = turtle.place(text)
+	return ok, reason
+end
+function Miner:placeDown(text)
+	local ok, reason = turtle.placeDown(text)
+	return ok, reason
+end
+function Miner:placeUp(text)
+	local ok, reason = turtle.placeUp(text)
 	return ok, reason
 end
 
@@ -2586,6 +2665,71 @@ function Miner:navigateToPos(x,y,z)
 	return result
 end
 
+function Miner:navigateInfrontOf(x,y,z,sameYLevel)
+	-- navigate to a position in front of the target pos, keeping the target pos in sight
+	local options = {
+		safe = true,
+		stepOffset = 1, -- stop 1 block away from goal
+	}
+	local result = self:navigate(x,y,z, self.map, options)
+
+	-- idk if this should be part of navigate or not and controlled through options
+	-- no we dont want navigate to be able to call itself recursively (except for returnHome)
+	if result and sameYLevel and self.pos.y ~= y then
+
+		local pathFinder = PathFinder()
+		pathFinder.checkValid = options.checkValidFunc or checkSafe
+		options.stepOffset = 0
+		-- options.safeDistance = 1 ?
+
+		local target = vector.new(x,y,z)
+		local minLen = math.huge
+		local candidates = {}
+
+		for i = 0, 3 do
+			local pos = target + vectors[i]
+			local block = self:getMapValue(pos.x, pos.y, pos.z)
+			if checkSafe(block) then
+				-- before starting the navigation, choose the best block to navigate to
+				-- for this use the least complex path
+				local path = pathFinder:aStarPart(self.pos, self.orientation, pos, self.map, 10)
+				local len = path and ( #path - 1 )
+				if len and len < minLen then 
+					minLen = len 
+					table.insert(candidates, { pos = pos, len = len, path = path })
+				end
+			end
+		end
+		local triedCandidates = {}
+		if #candidates > 0 then
+			table.sort(candidates, function(a,b) return a.len < b.len end)
+			for i ,candidate in ipairs(candidates) do
+				local pos = candidate.pos
+				-- instead of navigate, we can also try using followPath directly
+				-- but that only works for the first candidate the others would need to be recalculated
+				triedCandidates[pos.x .. pos.y .. pos.z] = true
+				result = self:navigate(pos.x, pos.y, pos.z, self.map, options)
+				--result = self:followPath(candidate.path, options.safe, self.map, options.stepOffset)
+				if result then break end
+			end
+		else
+			-- no candidates to get next to the block... thats rough, try anyways
+			for i = 0, 3 do
+				local pos = target + vectors[i]
+				if not triedCandidates[pos.x .. pos.y .. pos.z] then
+					result = self:navigate(pos.x, pos.y, pos.z, self.map, options)
+					if result then break end
+				end
+			end
+		end
+		if not result then
+			print("FAILED TO NAVIGATE IN FRONT OF TARGET ON SAME Y LEVEL")
+		else
+			self:turnToPos(x, y, z)
+		end
+	end
+	return result
+end
 
 -- issues:
 -- navigate is a safe function which does not mine decorative blocks
@@ -2604,13 +2748,15 @@ function Miner:navigate(x, y, z, map, options)
 	local safe = options.safe == nil and true or options.safe
 	local safeDistance = options.safeDistance or nil
 	local maxDistance = options.maxDistance or default.pathfinding.maxDistance
+	local stepOffset = options.stepOffset or 0 -- how many steps away from goal to stop
+
 	local checkValidFunc = options.checkValidFunc or checkSafe
-	local followFunc = options.followFunc or function(path, safe, stepOffset) 
-		local result = self:followPath(path, safe, stepOffset)
+	local followFunc = options.followFunc or function(path, safe, map, stepOffset) 
+		local result = self:followPath(path, safe, map, stepOffset)
 		return result -- to not upset debug.getinfo
 	end
 	local updateGoalFunc = options.updateGoalFunc or nil
-	local stepOffset = options.stepOffset or 0 -- how many steps away from goal to stop
+	
 
 	local checkGoal = function()
 		local diff = self.pos - goal
@@ -2656,7 +2802,7 @@ function Miner:navigate(x, y, z, map, options)
 				local path = pathFinder:aStarPart(self.pos, self.orientation, goal, map, maxDistance)
 
 				local movesToGoal
-				if safeDistance then
+				if safeDistance and safeDistance > 0 then
 					-- check near goal, and path leads to goal
 					-- if path and path[#path].pos == goal and #path < safeDistance + 3 then -- keep eye on this ordeal
 					movesToGoal = math.abs(self.pos.x - goal.x) + math.abs(self.pos.y - goal.y) + math.abs(self.pos.z - goal.z)
@@ -2669,7 +2815,7 @@ function Miner:navigate(x, y, z, map, options)
 				end
 
 				if path then 
-					if not followFunc(path,safe,stepOffset) then 
+					if not followFunc(path,safe,map,stepOffset) then 
 						result = false
 					else 
 						if checkGoal() then
@@ -2707,7 +2853,7 @@ function Miner:navigate(x, y, z, map, options)
 									
 								else
 									print("GOAL POSSIBLE", goal, #path)
-									result = followFunc(path, safe, stepOffset)
+									result = followFunc(path, safe, map, stepOffset)
 								end
 							end
 						end
@@ -2735,26 +2881,26 @@ function Miner:navigate(x, y, z, map, options)
 	return result
 end
 
-function Miner:followPath(path,safe)
+function Miner:followPath(path, safe, map, stepOffset)
 	-- safe function
-	--print("FOLLOWING PATH TO", path[#path].pos)
 	local currentTask = self:addCheckTask({debug.getinfo(1, "n").name})
+
 	local result = true
 	if safe == nil then safe = true end
 
-	for i,step in ipairs(path) do
+	for i=1, #path-stepOffset do
+		local step = path[i]
 		if step.pos ~= self.pos  then
 			local diff = step.pos - self.pos
-			local newOr
 			local upDown = 0
-			if diff.x < 0 then newOr = 1
-			elseif diff.x > 0 then newOr = 3
-			elseif diff.z < 0 then newOr = 2
-			elseif diff.z > 0 then newOr = 0
-			elseif diff.y < 0 then upDown = -1
-			else upDown = 1 end
 
-			local block = self:getMapValue(step.pos.x, step.pos.y, step.pos.z)
+			local newOr = self:getTargetOrientation(step.pos.x, step.pos.y, step.pos.z)
+			if not newOr then
+				if diff.y < 0 then upDown = -1
+				else upDown = 1 end
+			end
+
+			local block = map:getBlockName(step.pos.x, step.pos.y, step.pos.z)
 			local moveBackwards = newOr and (newOr-2)%4 == self.orientation and block == 0
 
 			-- inspect as much as possible without additional movement
@@ -2780,6 +2926,14 @@ function Miner:followPath(path,safe)
 				end
 			end
 		end
+	end
+
+	if result and stepOffset > 0 then
+		local lastStep = path[#path]
+		if lastStep then 
+			self:turnToPos(lastStep.pos.x, lastStep.pos.y, lastStep.pos.z)
+		end
+		-- print("FACING", lastStep.pos) -- !! could also be above or below
 	end
 
 	if result and #path > 0 then

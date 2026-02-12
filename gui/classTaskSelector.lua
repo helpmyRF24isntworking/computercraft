@@ -40,16 +40,19 @@ function TaskSelector:initialize()
 	self.btnNavigateToPos = Button:new("navigateToPos",3,5,14,1)
 	self.btnDigToPos = Button:new("digToPos", 3,7,14,1)
 	self.btnReboot = Button:new("reboot", 3,9,14,1)
-	
+	self.btnPlaceTreeAtPos = Button:new("placeTree", 3, 11, 14, 1)
+
 	self.btnMineArea.click = function() self:mineArea() end
 	self.btnNavigateToPos.click = function() self:navigateToPos() end
 	self.btnDigToPos.click = function() self:digToPos() end
 	self.btnReboot.click = function() self:reboot() end
-	
+	self.btnPlaceTreeAtPos.click = function() self:placeTreeAtPos() end
+
 	self:addObject(self.btnMineArea)
 	self:addObject(self.btnNavigateToPos)
 	self:addObject(self.btnDigToPos)
 	self:addObject(self.btnReboot)
+	self:addObject(self.btnPlaceTreeAtPos)
 end
 
 function TaskSelector:setTask(task)
@@ -153,6 +156,11 @@ end
 
 function TaskSelector:digToPos()
 	self.taskName = "digToPos"
+	self:selectPosition()
+end
+
+function TaskSelector:placeTreeAtPos()
+	self.taskName = "placeTreeAtPos"
 	self:selectPosition()
 end
 

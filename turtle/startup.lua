@@ -8,7 +8,6 @@ if rednet then
 	return
 end
 
-
 os.loadAPI("/runtime/global.lua")
 os.loadAPI("/runtime/config.lua")
 
@@ -28,15 +27,3 @@ multishell.setTitle(tabMain, "main")
 multishell.setTitle(tabReceive, "receive")
 multishell.setTitle(tabSend, "send")
 
-if global.miner then 
-	local status,err = pcall(function() 
-		global.miner:finishInitialization()
-	end )
-	global.handleError(err,status) 
-end
-
--- MultiShell tests: 
--- shell.openTab("/multi/multi_1.lua")
--- shell.openTab("multi/multi_2")
-
---shell.openTab better than multishell.launch because it does not disable some global functionalities like require()

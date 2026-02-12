@@ -9,6 +9,7 @@ local osEpoch = os.epoch
 
 local Extension = {}
 
+local MinerTaskAssignment = require("classMinerTaskAssignment")
 local ChunkyMap = require("classChunkyMap")
 local utils = require("utils")
 local BreadthFirstSearch = require("classBreadthFirstSearch")
@@ -31,6 +32,11 @@ local logBlocks = {
 	["minecraft:jungle_log"] = true,
 	["minecraft:acacia_log"] = true,
 	["minecraft:dark_oak_log"] = true,
+}
+
+local default = {
+	checkupTime = 72000*60*0.2, -- 5 mins
+	checkupInterval = 72000*60*1, -- 5 mins same i guess
 }
 
 
@@ -274,7 +280,7 @@ function Extension:mineTree()
 	local options = { maxDistance = 3, returnPath = true}
 
 
-	local function followPath(path, safe, stepOffset)
+	local function followPath(path, safe, map, stepOffset)
 		-- "interrupting" this func is not possible due to main logic in Miner:navigate
 
 		local result = true
@@ -294,7 +300,7 @@ function Extension:mineTree()
 					else upDown = 1 end
 				end
 
-				local block = treeMap:getBlockName(step.pos.x, step.pos.y, step.pos.z)
+				local block = map:getBlockName(step.pos.x, step.pos.y, step.pos.z)
 				local moveBackwards = newOr and (newOr-2)%4 == self.orientation and block == 0
 
 				-- inspect as much as possible without additional movement
@@ -1128,17 +1134,7 @@ function Extension:growTree()
     end
 
 	if sapling and bonemeal then 
-		self:select(sapling)
-		local ok, reason = self:place()
-		if not ok then
-			local blockName, data = self:inspect(true)
-			if blockName == saplingItem then
-				-- already planted
-				ok = true
-			else
-				print("Placing sapling failed:", reason)
-			end
-		end
+		local ok = self:placeSapling()
 		if ok then
 			-- use bonemeal until tree grows
 			self:select(bonemeal)
@@ -1208,6 +1204,306 @@ function Extension:growTree()
 	end
 	return grown
 end
+
+-- is not loaded by default, only functions are added by loadExtension
+function Extension:placeTreeAtPos(x,y,z)
+	local result = false
+	local replant = true -- ? i guess
+	local saplingItem = "minecraft:oak_sapling"
+	
+	local sameYLevel = true -- we dont want to be above the sapling
+	if not self:navigateInfrontOf(x,y,z, sameYLevel) then
+		-- 
+	else
+		result = self:placeSapling(saplingItem)
+		if result then 
+			-- remember position 
+			result = self:rememberSapling(x, y, z, saplingItem, replant)
+
+		end
+	end
+	return result
+end
+
+
+
+function Extension:placeSapling(saplingItem)
+	-- plant sapling and remember to check on it later
+	local result = false
+
+	local sapling = self:findInventoryItem(saplingItem)
+
+    if not sapling then
+        -- try to pickup some saplings first
+        local ok, count = self:pickupItems(saplingItem, 4)
+        if ok then
+            sapling = self:findInventoryItem(saplingItem)
+        else
+            print("Pickup sapling failed")
+        end
+    end
+
+	if sapling then
+		self:select(sapling)
+		local ok, reason = self:place()
+		result = ok
+		if not ok then
+			local blockName, data = self:inspect(true)
+			if not blockName then
+				if reason == "Cannot place block here" then
+					-- probably not dirt
+					self:forward() -- or up / down depending where we plant the sapling
+					local blockName, data = self:inspectDown(true)
+					if blockName then 
+						self:back()
+						if data.tags and data.tags["minecraft:dirt"] then
+							self:error("why can i not place on dirt?")
+						else
+							print("CANNOT PLACE SAP, NO DIRT", blockName)
+						end
+					else
+						-- no block, place dirt
+						local dirt = self:findInventoryItem("minecraft:dirt")
+						if dirt then
+							self:select(dirt)
+							local ok, reason = self:placeBlockDown()
+							local inPosition = self:back()
+							if ok and inPosition then
+								self:select(sapling)
+								ok, reason = self:place()
+								if ok then
+									result = true
+								else
+									print("placing sapling on dirt failed:", reason)
+								end
+							else
+								print("place dirt failed:", reason)
+							end
+						else
+							print("no dirt for sapling")
+						end
+					end
+				else
+					print("placing sapling failed:", reason)
+				end
+
+			elseif blockName == saplingItem then
+				-- already planted
+				result = true
+			elseif checkLogBlock(data) then
+				-- already grown tree
+			else
+				print("Placing sapling failed:", reason)
+			end
+		end
+	end
+
+	return result
+end
+
+function Extension:addSapling(x, y, z, saplingItem, replant)
+	local time = osEpoch()
+	local saplingData = {
+		x = x,
+		y = y,
+		z = z,
+		item = saplingItem,
+		placed = time,
+		replant = replant or false, 
+		checkupTime = time + default.checkupTime,
+	}
+	-- aaah we also have to save the saplings on disk otherwise we forget them on reboot
+	-- we could add them to the task directly which is saved and restored
+	-- which also fits the host managing checkups, where he can tell which saplings to actually check using the task args
+	-- our internal list can always point to the task args list
+	-- though the whole queue has to be saved for each new sapling entry for this to be persistent
+
+
+	-- check for existing entries
+	local existingSap = nil
+	local saps = self.plantedSaplings
+	if not saps then saps = {}; self.plantedSaplings = saps end
+	for i = 1, #saps do
+		local sap = saps[i]
+		if sap.x == x and sap.y == y and sap.z == z then
+			existingSap = sap
+			break
+		end
+	end
+
+	if not existingSap then
+		table.insert(self.plantedSaplings, saplingData)
+	else
+		existingSap.item = saplingItem
+		existingSap.placed = time
+		existingSap.replant = replant or existingSap.replant
+		existingSap.checkupTime = time + default.checkupTime
+	end
+end
+
+function Extension:rememberSapling(x, y, z, sapling, replant)
+	-- remember where we planted the sapling so we can check on it later
+	-- could also directly add a task for checking on the sapling after some time
+	-- but then we would need to manage those tasks as well, and it might be easier to just check all planted saplings in one go after some time has passed
+	self:addSapling(x, y, z, sapling, replant)
+	print("rem...", x, y, z, "replant", replant)
+	self:createSaplingCheckupTask()
+	return true
+end
+
+function Extension:getNextSapling(saplings)
+	local saps = saplings or self.plantedSaplings
+	if not saps then return nil, nil end
+	local minDist = math.huge
+	local minId, minData = nil, nil
+	local time = osEpoch()
+	local x, y, z = self.pos.x, self.pos.y, self.pos.z
+	for i = 1, #saps do
+		local data = saps[i]
+		if time >= data.checkupTime then
+			local tx, ty, tz = data.x, data.y, data.z
+			local dist = manhattanDistance(x, y, z, tx, ty, tz)
+			if dist < minDist then
+				minDist = dist
+				minId = i
+				minData = data
+			end
+		end
+	end
+	return minId, minData
+end
+
+function Extension:checkOnSaplings(saplings, taskId)
+	-- triggered by self.saplingCheckupTask
+
+	-- TODO: needs to be a checkpointed task
+
+	local respawnTask = false
+	if taskId then
+		local curTask = self.saplingCheckupTask
+		if not curTask then
+			respawnTask = true
+		elseif curTask and curTask.id ~= taskId then
+			-- duplicate task, perhaps from reload, execute but do not respawn
+			print("possibly duplicate sapling checkup task", taskId, "current", curTask.id)
+			return
+		else
+			-- expected case, task triggered by correct taskId, execute and respawn
+			respawnTask = true
+		end
+	else
+		-- called directly or managed by host, do not respawn task
+		respawnTask = false
+	end
+
+	-- TODO: could run forever if the trees grow faster than we can check them
+	-- in that case we want to dynamically reduce this turtles saplings-assignment and 
+	-- have another turtle help us out
+
+	local selfsaps = self.plantedSaplings
+	if not selfsaps then 
+		self.plantedSaplings = saplings or {}
+	elseif saplings and ( #selfsaps == 0 or selfsaps ~= saplings ) then
+		if taskId then 
+			-- on reboot, merge the saplings lists ( or if the host provides a new list )
+			for i = 1, #saplings do
+				local sap = saplings[i]
+				self:addSapling(sap.x, sap.y, sap.z, sap.item, sap.replant)
+			end
+		else -- no reference task id, so overwrite the list instead of merging them?
+			self.plantedSaplings = saplings
+		end
+	end
+
+	local saps = self.plantedSaplings
+	while true do
+		local i, sap = self:getNextSapling(saps)
+		if not sap then break end
+
+		local checkLater = false
+		print("checking sapling at", sap.x, sap.y, sap.z, "checkupTime", sap.checkupTime)
+		self:navigateInfrontOf(sap.x, sap.y, sap.z) -- no need to be on same y level
+		-- what we dont want to happen is break the block below the sapling or chopping the tree in half
+		-- -> navigation should not be allowed to break logs or dirt
+		local blockName, data = self:inspect(true)
+		if blockName and checkLogBlock(data) then 
+			-- harvest the tree
+			print("sapling at", sap.x, sap.y, sap.z, "has grown into a tree, harvesting")
+			self:mineTree()
+			if sap.replant then 
+				local ok = self:placeTreeAtPos(sap.x, sap.y, sap.z)
+				if ok then checkLater = true end
+			end
+		else -- ensure the sapling is still there 
+			if blockName ~= sap.item then 
+				if sap.replant then
+					print("sapling at", sap.x, sap.y, sap.z, "is gone or changed, replanting")
+					local ok = self:placeTreeAtPos(sap.x, sap.y, sap.z)
+					if ok then checkLater = true end
+				else 
+					print("sapling gone", sap.x, sap.y, sap.z, "inspected", blockName, "expected", sap.item)
+				end
+			else
+				checkLater = true
+			end
+		end
+		if checkLater then
+			sap.checkupTime = osEpoch() + default.checkupTime
+		else
+			table.remove(saps, i)
+		end
+	end
+	
+	if not saps or #saps == 0 then 
+		respawnTask = false
+	end
+	print("checked, respawning", respawnTask, "#saps", #saps, "selfsaps", #self.plantedSaplings, "tid", taskId and "yup", "vs", self.saplingCheckupTask and "yup", "same", self.saplingCheckupTask and taskId == self.saplingCheckupTask.id)
+	self.saplingCheckupTask = nil
+	if respawnTask then
+		self:createSaplingCheckupTask()
+	end
+end
+
+function Extension:createSaplingCheckupTask()
+
+	-- on reboot we might temporarily have two running checkup tasks
+	-- but the old one will not be respawned once executed
+
+	if false then
+		-- self:createCheckupTask() then 
+		-- create a new task that triggers at checkupTime
+		-- this should to be done by host if he is up
+		-- self.node:send("CREATE_CHECKUP_TASK", blablabla)
+		-- at host: local task = taskManager:createTask()
+
+		-- rather just inform host about new sapling, and let it handle all the assignments for 
+		-- checkups. 
+		-- best to just use the host for load balancing and have the turtles handle the checkups standalone
+
+	else -- we have to do it standalone
+
+	-- on reload we want this task to continue
+	-- but how do we know if a reloaded task exists and dont
+	-- accidentally spawn a second one?
+	-- make them have the same uuid which errors? 
+	-- no, uuid is called uuid for a reason
+
+		local task = self.saplingCheckupTask
+		if not task then
+			-- spawn new checkupTask for the saplings
+			local task = MinerTaskAssignment:pseudo() -- not really pseudo...
+			task:setExecutionParameters("checkOnSaplings", {self.plantedSaplings, task.id})
+			self.queue:addConditionalTask(task, "timeReached", {osEpoch() + default.checkupInterval})
+			self.saplingCheckupTask = task
+		end
+		
+		-- local alarm = os.setAlarm(saplingData.checkupTime)
+		-- lets hope we dont miss the alarm
+		-- create a new taskAssignment that is added to the queue when the alarm triggers
+
+	end
+end
+
 
 function Extension:fellTree()
 

@@ -128,8 +128,12 @@ node.onRequestAnswer = function(msg)
 		local task = MinerTaskAssignment:fromData(msg.data[2])
 		if task then 
 			if miner then 
-				miner:addTaskAssignment(task)
-				task:confirmQueued(msg, node)
+				local ok = miner.queue:addTask(task)
+				if ok then 
+					task:confirmQueued(msg, node)
+				else
+					task:reject(msg, node, "duplicate task")
+				end
 			else
 				task:reject(msg, node, "no miner object")
 			end
@@ -137,6 +141,7 @@ node.onRequestAnswer = function(msg)
 			node:answer(msg, {"TASK_REJECTED", "invalid task data"})
 			print(textutils.serialize(msg.data[2]))
 		end
+
 	elseif msg.data[1] == "CANCEL_TASK" then
 		local taskId = msg.data[2]
 		if miner then 
@@ -169,7 +174,9 @@ node.onReceive = function(msg)
 				miner.stop = true
 			end		
 		else
-			global.addTask(msg.data)
+			if miner then 
+				miner.queue:addDirectTask(msg.data[1], msg.data[2], msg.data[3])
+			end
 		end
 	end
 end
@@ -179,6 +186,9 @@ local type = type
 
 while true do
 	
+	-- oh no, to listen to alarms we would have to remove the modem_message filter 
+	-- i would rather check the list every x seconds instead of receiving all events here (thats a lot!), though sleep does the same..
+
 	local event, p1, p2, p3, msg, p5 = pullEventRaw("modem_message")
 	if type(msg) == "table" and msg.recipient then
 
