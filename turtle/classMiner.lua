@@ -532,7 +532,9 @@ end
 --- TASK QUEUE AND ASSIGNMENT STUFF
 function Miner:setTaskAssignment(taskAssignment)
 	self.currentTaskAssignment = taskAssignment
-	taskAssignment:setGlobals(self, self.node)
+	if taskAssignment then 
+		taskAssignment:setGlobals(self, self.node)
+	end
 	self:clearProgress()
 end
 function Miner:getTaskAssignment()

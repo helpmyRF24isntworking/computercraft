@@ -1,6 +1,8 @@
 
 local TaskAssignment = require("classTaskAssignment")
 local TaskGroup =  require("classTaskGroup")
+local LoadBalancer = require("classLoadBalancer")
+local RecurringProject = require("classRecurringProject")
 
 local TaskManager = {}
 TaskManager.__index = TaskManager
@@ -24,6 +26,7 @@ function TaskManager:new(node, turtles, groups)
     o.cancelledTasks = {}
     o.node = node or nil
     o.turtles = turtles or {}
+    o.projects = {}
 
     o:initialize()
     return o
@@ -68,6 +71,19 @@ end
 function TaskManager:getTasks()
     return self.tasks
 end
+function TaskManager:getProjects()
+    return self.projects
+end
+function TaskManager:getProject(projectId)
+    local project = self.projects[projectId]
+    if not project then 
+        local interval = 72000 * 60 * 2 -- 2 mins
+        project = RecurringProject:new(projectId, interval)
+        self.projects[projectId] = project
+    end
+    return project
+end
+
 function TaskManager:addTask(task)
     task:setTaskManager(self)
     task:setNode(self.node)
@@ -213,7 +229,17 @@ function TaskManager:getCurrentTurtleTask(turtleId)
     return current
 end
 
-
+function TaskManager:getAvailableTurtles()
+    local result = {}
+	local count = 0
+	for id,turtle in pairs(self.turtles) do
+		if turtle.state.online and turtle.state.task == nil then
+			count = count + 1
+			table.insert(result, turtle)
+		end
+	end
+	return count, result
+end
 
 function TaskManager:addTaskToTurtle(turtleId, funcName, args)
     -- find an assignment for the turtle or create a new one
@@ -446,18 +472,157 @@ function TaskManager:isTaskMessage(msg)
     local txt = msg.data[1]
     local onRequestAnswerMessages = {
         ["TASK_STATE"] = true,
+        ["REQUEST_LOAD_BALANCING"] = true,
+        ["RECURRING_REPORT"] = true,
     }
     return onRequestAnswerMessages[txt]
 end
 
 function TaskManager:handleMessage(msg)
 -- TODO: also have a message handler
-    local txt = msg.data[1]
+
+    local ok,err = pcall(function()
+
+    local data, sender = msg.data, msg.sender
+    local txt = data[1]
     if txt == "TASK_STATE" then
-        local taskState = msg.data[2]
+        local taskState = data[2]
         self.node:answer(msg, {"TASK_STATE_ACK"})
         self:onTaskStateUpdate(taskState)
+
+    elseif txt == "RECURRING_REPORT" then 
+        local report = data[2]
+        
+        print("received recurring report", "proc", report.processed, "of", #report.items, "rtime", report.runtime / 72000) --, textutils.serialize(report, {compact=true, allow_repetitions=true}))
+        local project = self:getProject(report.project)
+
+        local respawnTask, reassignments, unassigned = project:handleReport(report)
+        self.node:answer(msg, {"REPORT_RECEIVED", respawnTask})
+
+        -- TODO: keep task creation generic by using executeRecurringTask 
+        --[[ 
+        if reassignments then
+            for turtleId, items in pairs(reassignments) do
+                local taskArgs = {
+                    project = project.name,
+                    items = items,
+                    interval = project.executionInterval,
+                    source = "host"
+                }
+                global.taskManager:createTask("executeRecurringTask", taskArgs, turtleId)
+            end
+        end
+        --]]
+
+        -- for now
+        if reassignments then
+            local senderTask = self:getTask(report.taskId)
+            local funcName = senderTask.funcName
+            for tid, items in pairs(reassignments) do
+                local args = { items, "host" } -- project.executionInterval }
+                local task = self:createTask(tid, nil) -- TODO groupId for project
+                task:setExecutionParameters(funcName, args)
+                if not task:start() then 
+                    self:removeTask(task)
+                    print("failed to start recurring task for turtle", tid)
+                end
+                print("rebalanced", tid, "#items", #items) --, textutils.serialize(args, {compact=true, allow_repetitions=true}))
+            end
+
+            -- this works for adding new tasks or updating existing ones
+            -- but we have to kill tasks of turtles that have been unassigned 
+            -- for this we should be semi-safe to use the taskId provided in its last report
+            -- might not work on reboot
+            for tid,ass in pairs(unassigned) do
+                local lastTaskId = ass.lastTaskId
+                local task = self:getTask(lastTaskId)
+                local ok = task and task:cancel()
+                if not ok then 
+                    print("unable to stop recurring task", tid, "task", lastTaskId, "obj", task)
+                end
+                -- cannot cancel because status is completed
+                -- current logic for trying to cancel completed tasks does not allow it
+                -- might have to use forced-cancel 
+                -- or different status for those recurring tasks in queue
+                print("unassigned", tid)
+            end
+        end
+
+
+
+
+    elseif txt == "REQUEST_LOAD_BALANCING" then 
+        print("whatever")
+        -- TODO use a taskGroup to manage projects that require loadbalancing
+        local taskState = data[2].taskState
+        local senderTask = self:getTask(taskState.id)
+		local project, assignment = data[2].project, data[2].assignment
+
+        local assignments = { assignment }
+        local assignedTurts = { self.turtles[sender] }
+        local count, availableTurts = self:getAvailableTurtles()
+       
+        local balancer = LoadBalancer:new()
+        local reassignments = balancer:balanceAssignments(assignments, assignedTurts, availableTurts)
+        local answerReassignment = reassignments[sender]
+        -- this is also our chance to create a group for the project if it doesnt exist yet and tell the turts
+        -- have the loadbalancer be part of the group and automatically trigger rebalancing
+        -- based on the utilization of the turtles reported to the group
+        
+        -- man why did i decide to not allow answering on answers, now we cant ack the message...
+
+        print("func", senderTask and senderTask.funcName, senderTask, "state", taskState, "id", taskState and taskState.id)
+         print(textutils.serialize(reassignments, {compact=true, allow_repetitions=true}))
+
+        local funcName = senderTask and senderTask.funcName or nil
+        if not senderTask then
+            senderTask = TaskAssignment:fromData(taskState)
+            if senderTask then 
+                self:addTask(senderTask)
+                funcName = senderTask.funcName
+            end
+        end
+
+        if not funcName then 
+            sleep(10000)
+            error("ALARM") 
+            return
+        end
+        -- how do we make it gerneric so this works with any task
+
+       
+        -- now we can distribute the rest of the assignments
+        for id, reassignment in pairs(reassignments) do
+            if id ~= sender then
+                local groupId = nil -- projectId or idk
+                local task = self:createTask(id, groupId)
+                local args = { reassignment, "host" }
+                task:setExecutionParameters(funcName, args)
+                if not task:start() then 
+                    self:removeTask(task)
+                    print("failed to start load balancing task for turtle", id)
+                end
+                print("rebalanced", id, "assignment", reassignment, textutils.serialize(args, {compact=true, allow_repetitions=true}))
+            end
+            -- TODO: differentiate between new assignments and just updates to the existing assignment
+            -- alternatively we can just override the current recurring task with a new one like we do with newly assigned turtles
+        end
+
+        self.node:answer(msg, {"LOAD_BALANCING_ASSIGNMENT", { project = project, assignment = answerReassignment}})
+
+		--self:rebalanceProject(project, assignment)
+		-- from all turtles currently active on this project, collect their assignment
+		-- then redistribute the assignment evenly and add a new turtle if needed
+		-- for now we just do it for this one request
     end
+
+    end)
+
+    if not ok then
+        print("ERROR", err)
+        sleep(100000)
+    end
+
 end
 
 

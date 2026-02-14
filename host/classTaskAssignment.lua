@@ -50,10 +50,12 @@ function TaskAssignment:new(turtleId, groupId, obj)
 	o.turtle = nil
 	if not o.lastUpdate then o.lastUpdate = 0 end
 	if not o.time then o.time = { created = osEpoch("ingame") } end
-
+	
 	if not obj then 
 		o:initialize()
 	end
+
+	if not o.shortId then o.shortId = string.sub(o.id,1,6) end
 	
 	return o
 end
@@ -157,7 +159,7 @@ function TaskAssignment:updateFromState(state, time)
 		self.progress = state.progress or self.progress
 		self:setStatus(state.status, time)
 	else
-		print("outdated task state", self.shortId, state.status, "time", time, "last", self.lastUpdate)
+		print("outdated task state", self.shortId,  state.status, "turt", self.turtleId, "time", time, "last", self.lastUpdate)
 	end
 end
 

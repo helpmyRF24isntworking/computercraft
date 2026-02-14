@@ -421,6 +421,7 @@ node.onRequestAnswer = function(forMsg)
 	elseif taskManager:isTaskMessage(forMsg) then 
 		taskManager:handleMessage(forMsg)
 
+
 	end
 end
 

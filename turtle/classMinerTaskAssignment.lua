@@ -172,6 +172,10 @@ function MinerTaskAssignment:getCheckpoint()
 	return self.checkpoint
 end
 
+function MinerTaskAssignment:setStatus(status)
+	self.status = status
+end
+
 function MinerTaskAssignment:confirmCancelled(msg)
     -- confirm that task was cancelled
     local node = self.node

@@ -124,8 +124,10 @@ end
 
 node.onRequestAnswer = function(msg)
 
-	if msg.data[1] == "TASK_ASSIGNMENT" then 
-		local task = MinerTaskAssignment:fromData(msg.data[2])
+	local data = msg.data
+	local txt = data[1]
+	if txt == "TASK_ASSIGNMENT" then 
+		local task = MinerTaskAssignment:fromData(data[2])
 		if task then 
 			if miner then 
 				local ok = miner.queue:addTask(task)
@@ -139,11 +141,11 @@ node.onRequestAnswer = function(msg)
 			end
 		else
 			node:answer(msg, {"TASK_REJECTED", "invalid task data"})
-			print(textutils.serialize(msg.data[2]))
+			print(textutils.serialize(data[2]))
 		end
 
-	elseif msg.data[1] == "CANCEL_TASK" then
-		local taskId = msg.data[2]
+	elseif txt == "CANCEL_TASK" then
+		local taskId = data[2]
 		if miner then 
 			local ok = miner:cancelTaskAssignment(taskId, msg)
 			if not ok then
@@ -152,7 +154,7 @@ node.onRequestAnswer = function(msg)
 		else
 			node:answer(msg, {"TASK_CANCEL_FAILED", taskId})
 		end
-	elseif msg.data[1] == "REQUEST_TASK_STATE" then
+	elseif txt == "REQUEST_TASK_STATE" then
 		local task
 		if miner then 
 			task = miner:getTaskAssignment()
@@ -162,20 +164,50 @@ node.onRequestAnswer = function(msg)
 		else
 			node:answer(msg, {"NO_TASK"})
 		end
+	elseif txt == "LOAD_BALANCING_ASSIGNMENT" then 
+		local project, assignment = data[2].project, data[2].assignment
+		local taskData = assignment.taskData
+
+		-- REWRITE, UNUSED
+		if taskData then 
+			local task = MinerTaskAssignment:fromData(taskData)
+			local ok
+			if task then
+				ok = miner.queue:addTask(task) -- how do we add recurring tasks from the host? 
+				-- just add them as normal, but the funciton called needs to respawn the task
+				if ok then
+					task:confirmQueued(msg, node)
+				else
+					task:reject(msg, node, "duplicate task")
+				end
+			else
+				node:answer(msg, {"TASK_REJECTED", "invalid task data"})
+				print(textutils.serialize(data[2]))
+			end
+		else
+			-- we apparently aready have a task and need to update it
+			-- TODO: either scan the queue + current task or just do if project == "sapling" then miner:setSaplings()
+
+		end
+
+		if miner then 
+			miner:handleLoadBalancingAssignment(assignment)
+		end
 	end
 end
 
 node.onReceive = function(msg)
 	-- reboot is handled in NetworkNode
 	if msg and msg.data and not msg.answer then
-		
-		if msg.data[1] == "STOP" then
+		local data = msg.data
+		local txt = msg.data[1]
+		if txt == "STOP" then
 			if miner then 
 				miner.stop = true
 			end		
 		else
 			if miner then 
-				miner.queue:addDirectTask(msg.data[1], msg.data[2], msg.data[3])
+				miner.queue:addDirectTask(data[1], data[2], data[3])
 			end
 		end
 	end

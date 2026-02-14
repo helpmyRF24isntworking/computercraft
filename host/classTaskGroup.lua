@@ -232,15 +232,7 @@ function TaskGroup:getActiveTurtles()
 end
 
 function TaskGroup:getAvailableTurtles()
-	local result = {}
-	local count = 0
-	for id,turtle in pairs(self.turtles) do
-		if turtle.state.online and turtle.state.task == nil then
-			count = count + 1
-			table.insert(result, turtle)
-		end
-	end
-	return count, result
+	return self.taskManager:getAvailableTurtles()
 end
 
 function TaskGroup:setTaskName(taskName)

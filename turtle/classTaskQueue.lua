@@ -80,6 +80,13 @@ function TaskQueue:findTask(taskId)
 			end
 		end
 	end
+	for i = 1, #self.conditional do
+		local conditional = self.conditional[i]
+		local task = conditional.task
+		if task.id == taskId then
+			return task, i
+		end
+	end
 end
 
 function TaskQueue:addTask(task, pos)
@@ -100,6 +107,7 @@ function TaskQueue:addTask(task, pos)
 end
 
 function TaskQueue:executeDirectTask(task)
+	-- self.miner:setTaskAssignment(nil)
 	local status,err = nil,nil
 	if task.command == "RUN" then
 		--status,err = pcall(shellRun,task.funcName,task.args)
@@ -131,6 +139,8 @@ function TaskQueue:executeNext()
 end
 function TaskQueue:save()
 	-- currently running task is saved by checkpointer
+    if self.loading then return end
+
 	local data = {}
 	local tasks = self.tasks
 	for i = 1, #tasks do 
@@ -157,6 +167,7 @@ function TaskQueue:save()
 end
 
 function TaskQueue:load()
+    self.loading = true
 	local f = fs.open(self.path, "r")
 	if f then
 		local data = textutils.unserialize(f.readAll())
@@ -178,6 +189,7 @@ function TaskQueue:load()
 			end
 		end
 	end
+    self.loading = false
 end
 function TaskQueue:remove(taskId)
 	local task, pos = self:findTask(taskId)
@@ -197,8 +209,15 @@ end
 
 function TaskQueue:addConditionalTask(task, conditionKey, params)
     local conditionFunc = createConditionFunc(conditionKey, params)
-	table.insert(self.conditional, {task = task, condition = conditionFunc, conditionKey = conditionKey, params = params})
-    self:save()
+	local result = false
+	if not self:findTask(task.id) then
+		table.insert(self.conditional, {task = task, condition = conditionFunc, conditionKey = conditionKey, params = params})
+		task:setStatus("waiting") -- not really working since the task adds itself and is set to completed after being added
+		task:informHost()
+		self:save()
+		result = true
+	end
+	return result
 end
 
 function TaskQueue:checkConditionalTasks()
@@ -209,6 +228,12 @@ function TaskQueue:checkConditionalTasks()
 		if conditional.condition() then
 			table.remove(conditionals, i)
             self:addTask(conditional.task, 1)
+            -- perhaps always informHost when addTask is called?
+            -- no, for tasks created by host a direct answer is expected.
+            -- only unknown tasks created by the turtle itself must inform the host
+            -- on their own
+            conditional.task:setStatus("queued")
+            conditional.task:informHost() 
 		end
 	end
 end
